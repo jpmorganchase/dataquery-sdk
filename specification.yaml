@@ -1,0 +1,2598 @@
+openapi: 3.0.3
+info:
+  title: DataQuery API
+  version: 2.0.0
+  description: >
+
+    ## Rate limit
+
+    Please note that we have a rate limit of 1 API call per 200 milliseconds per
+
+    Client ID (OAuth).
+
+    ## API URL character limit
+
+    Please note that the maximum character limit for API URL is 2,080
+    characters. If you receive an 403 error with HTML response, you might have
+    passed a URL exceeding the character limit.
+
+    ***
+
+    ## `x-dataquery-interaction-id` is returned in the response header for
+    enhanced tracibility
+
+    `x-dataquery-interaction-id` in the API response headers is a unique
+    identifier for the API request to enhace the API tracebility across our tech
+    stack. Please record and provide the ID alongside the API URL in all issues
+    enquires to DataQuery Support that you encounter.
+
+    ***
+
+    ## Sample starter code
+
+    ###
+    [PyDataQuery](https://developer.jpmorgan.com/products/dataquery_api/guides/python-guide)
+    for API end-users (new)
+
+    PyDataQuery is a Python starter code and notebook for DataQuery API
+    end-users to extract data from DataQuery, with minimum effort. Please note
+    that PyDataQuery is not optimized for machine-to-machine integration given
+    the validator and logic embedded to reduce potential manual errors.
+
+
+    For more information, please visit
+    [https://developer.jpmorgan.com/products/dataquery_api/guides/python-guide](https://developer.jpmorgan.com/products/dataquery_api/guides/python-guide).
+
+
+    ### Machine-to-machine/ systematic integration
+
+    Please refer to
+    [`DQ_OAuth_sample.py`](https://developer.jpmorgan.com/api/v0/items/dataquery_api/attachments/DQ_OAuth_sample.py)
+    for the bare minimum starter code. We have sample Juypter Notebook (see the
+    bottom of this page) and
+    [PyDataquery](https://developer.jpmorgan.com/products/dataquery_api/guides/python-guide)
+    that you can adapt to your production applications. However, we do not
+    recommend directly using the PyDataQuery or Jupyter Notebook code in your
+    production Machine-to-machine integration because they are not optimized for
+    machine-to-machine integration given the validator and logic embedded to
+    reduce potential manual errors.
+
+    ***
+
+    ## FAQ and support
+
+    If you have trouble connecting to our APIs, feel free to check our
+
+    [FAQ](https://developer.jpmorgan.com/products/dataquery_api/guides/faq)
+
+    before contacting our support team.
+x-jpmc-securityDefinitions:
+  JPMC-OAuth2: {}
+x-jpmc-security: {}
+servers:
+  - url: https://api-developer.jpmorgan.com
+    description: Production
+tags:
+  - name: Group Collection
+    description: Explore DataQuery through the official data catalog.
+  - name: Instrument Collection
+    description: >-
+      Explore DataQuery using instrument and attribute identifiers or
+      traditional expressions
+  - name: Grid Collection
+    description: Retrieve grid data
+  - name: Service Collection
+    description: DataQuery maintenance services
+  - name: Basic
+paths:
+  /research/dataquery-authe/api/v2/groups:
+    get:
+      summary: >-
+        Request a complete list of all available datasets with summary level
+        meta-data.
+      description: >-
+        This end-point allows you to retrieve the full catalog of data groups
+        available within DataQuery.
+      parameters:
+        - $ref: '#/components/parameters/page-token'
+          examples:
+            Catalog Data Groups:
+              value: ''
+              summary: First page of group summary results
+      x-examples:
+        - name: Catalog Data Groups
+          description: First page of group summary results
+          parameters:
+            page: ''
+      tags:
+        - Group Collection
+      produces:
+        - application/json
+      responses:
+        '200':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Successful retrieval of group results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupsResponse'
+        '400':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Bad Request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequest'
+        '401':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Authentication Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticationError'
+        '500':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Internal Server Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+  /research/dataquery-authe/api/v2/groups/search:
+    get:
+      summary: >-
+        Search across datasets using keywords to retrieve summary level
+        meta-data.
+      description: >-
+        Narrow the aud of groups retrieved from the catalog using natural
+        language keywords.
+      in: query
+      parameters:
+        - $ref: '#/components/parameters/keywords'
+          examples:
+            Treasury String Search:
+              value: treasurys
+              summary: Search for keyword treasury.
+            CUSIP 912810QK7 Search:
+              value: 912810QK7
+              summary: T 3.875 08/15/40 | USD
+        - $ref: '#/components/parameters/page-token'
+      x-examples:
+        - name: Treasury String Search
+          description: Search for keyword treasury.
+          parameters:
+            keywords: treasury
+        - name: CUSIP 912810QK7 Search
+          description: T 3.875 08/15/40 | USD
+          parameters:
+            keywords: 912810QK7
+      tags:
+        - Group Collection
+      produces:
+        - application/json
+      responses:
+        '200':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Successful retrieval of group results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupsResponse'
+        '204':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: No Content.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoContent'
+        '400':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Bad Request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequest'
+        '401':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Authentication Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticationError'
+        '500':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Internal Server Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+  /research/dataquery-authe/api/v2/group/instruments:
+    get:
+      summary: >-
+        Request the complete list of instruments and identifiers for a given
+        dataset.
+      description: >-
+        Explore the full list of instruments available for a data-group to build
+        a list of instrument-id identifiers that can be used to retrieve
+        time-series data.
+      parameters:
+        - $ref: '#/components/parameters/group-id'
+          examples:
+            Request all instruments - ABS Index | Benchmark Indices:
+              value: IN_CR_USD_ABS
+              summary: Data group IN_CR_USD_ABS
+            Request all instruments - Treasury Securities | Notes & Bonds:
+              value: FI_GO_NOTE_BOND
+              summary: Data group FI_GO_NOTE_BOND
+            Request single instrument - Government Securities | Central Europe:
+              value: FI_GO_BO_CE
+              summary: Data Group FI_GO_BO_CE
+        - $ref: '#/components/parameters/page-token'
+        - $ref: '#/components/parameters/instrument-id'
+          examples:
+            Request single instrument - Government Securities | Central Europe:
+              value: 42588b17d59a1e4f06033d187d98f11f-DQGNMTBNDFIM
+              summary: Instrument 42588b17d59a1e4f06033d187d98f11f-DQGNMTBNDFIM
+      x-examples:
+        - name: Request all instruments - ABS Index | Benchmark Indices
+          description: Data group IN_CR_USD_ABS
+          parameters:
+            group-id: IN_CR_USD_ABS
+        - name: Request all instruments - Treasury Securities | Notes & Bonds
+          description: Data group FI_GO_NOTE_BOND
+          parameters:
+            group-id: FI_GO_NOTE_BOND
+        - name: Request single instrument - Government Securities | Central Europe
+          description: Request single instrument - Government Securities | Central Europe
+          parameters:
+            group-id: FI_GO_BO_CE
+            instrument-id: 42588b17d59a1e4f06033d187d98f11f-DQGNMTBNDFIM
+      tags:
+        - Group Collection
+      produces:
+        - application/json
+      responses:
+        '200':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Successful retrieval of group instrument results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstrumentsResponse'
+        '400':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Bad Request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequest'
+        '401':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Authentication Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticationError'
+        '500':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Internal Server Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+  /research/dataquery-authe/api/v2/group/instruments/search:
+    get:
+      summary: >-
+        Search within a dataset using keywords to create subsets of matching
+        instruments.
+      description: >-
+        Narrow the results returned from our larger data-groups using natural
+        language keyword search.
+      parameters:
+        - $ref: '#/components/parameters/group-id'
+          examples:
+            ABS Index Group String Search:
+              value: IN_CR_USD_ABS
+              summary: Group Id IN_CR_USD_ABS - AAA keyword search
+            Central Europe - Government Securities String Search:
+              value: FI_GO_BO_CE
+              summary: Group Id FI_GO_BO_CE - 3/4 keyword search
+        - $ref: '#/components/parameters/keywords'
+          examples:
+            ABS Index Group String Search:
+              value: AAA
+              summary: Group Id IN_CR_USD_ABS - AAA keyword search
+            Central Europe - Government Securities String Search:
+              value: 3/4
+              summary: Group Id FI_GO_BO_CE - 3/4 keyword search
+        - $ref: '#/components/parameters/page-token'
+      x-examples:
+        - name: ABS Index Group String Search
+          description: Group Id IN_CR_USD_ABS - AAA keyword search
+          parameters:
+            group-id: IN_CR_USD_ABS
+            keywords: AAA
+        - name: Central Europe - Government Securities String Search
+          description: Central Europe - Government Securities String Search
+          parameters:
+            group-id: FI_GO_BO_CE
+            keywords: 3/4
+      tags:
+        - Group Collection
+      produces:
+        - application/json
+      responses:
+        '200':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Successful retrieval of group instrument results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InstrumentsResponse'
+        '204':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: No Content.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoContent'
+        '400':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Bad Request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequest'
+        '401':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Authentication Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticationError'
+        '500':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+  /research/dataquery-authe/api/v2/group/filters:
+    get:
+      summary: >-
+        Request the unique list of filter dimensions that are available for a
+        given dataset.
+      description: >-
+        Our currently supported filters are currency and country codes. Use this
+        end-point to retrieve valid filter values for a data-group.
+      parameters:
+        - $ref: '#/components/parameters/group-id'
+          examples:
+            ABS Index | Benchmark Indices:
+              value: IN_CR_USD_ABS
+              summary: Data Group IN_CR_USD_ABS filters
+        - $ref: '#/components/parameters/page-token'
+      x-examples:
+        - name: ABS Index | Benchmark Indices
+          description: Data Group IN_CR_USD_ABS filters
+          parameters:
+            group-id: IN_CR_USD_ABS
+      tags:
+        - Group Collection
+      produces:
+        - application/json
+      responses:
+        '200':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Successful retrieval of group filter results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FiltersResponse'
+        '400':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Bad Request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequest'
+        '401':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Authentication Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticationError'
+        '500':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Internal Server Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+  /research/dataquery-authe/api/v2/group/attributes:
+    get:
+      summary: >-
+        Request the unique list of analytic attributes for each instrument of a
+        given dataset.
+      description: >-
+        Use this end-point to retrieve a full list of attribute identifiers for
+        each instrument in a data-group.
+      parameters:
+        - $ref: '#/components/parameters/group-id'
+          examples:
+            Request all instruments - ABS Index | Benchmark Indices:
+              value: IN_CR_USD_ABS
+              summary: Data Group IN_CR_USD_ABS attributes
+            Request all instruments - Treasury Securities | Notes & Bonds:
+              value: FI_GO_NOTE_BOND
+              summary: Data group FI_GO_NOTE_BOND attributes
+            Request single instrument - Government Securities | Central Europe:
+              value: FI_GO_BO_CE
+              summary: Data group FI_GO_BO_CE attributes
+        - $ref: '#/components/parameters/page-token'
+        - $ref: '#/components/parameters/instrument-id'
+          examples:
+            Request single instrument - Government Securities | Central Europe:
+              value: 42588b17d59a1e4f06033d187d98f11f-DQGNMTBNDFIM
+              summary: Data group FI_GO_BO_CE attributes
+      x-examples:
+        - name: Request all instruments - ABS Index | Benchmark Indices
+          description: Data Group IN_CR_USD_ABS attributes
+          parameters:
+            group-id: IN_CR_USD_ABS
+        - name: Request all instruments - Treasury Securities | Notes & Bonds
+          description: Data group FI_GO_NOTE_BOND attributes
+          parameters:
+            group-id: FI_GO_NOTE_BOND
+        - name: Request single instrument - Government Securities | Central Europe
+          description: Request single instrument - Government Securities | Central Europe
+          parameters:
+            group-id: FI_GO_BO_CE
+            instrument-id: 42588b17d59a1e4f06033d187d98f11f-DQGNMTBNDFIM
+      tags:
+        - Group Collection
+      produces:
+        - application/json
+      responses:
+        '200':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Successful retrieval of group attribute results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AttributesResponse'
+        '400':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Bad Request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequest'
+        '401':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Authentication Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticationError'
+        '500':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Internal Server Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+  /research/dataquery-authe/api/v2/group/time-series:
+    get:
+      summary: >-
+        Request time-series data across a subset of instruments and analytics of
+        a given dataset.
+      description: >-
+        Bulk-retrieve time-series data and/or reference data for a given
+        group-id, especially useful for our larger data-groups.
+      parameters:
+        - $ref: '#/components/parameters/group-id'
+          examples:
+            ABS Index | Benchmark Indices:
+              value: IN_CR_USD_ABS
+              summary: Data Group IN_CR_USD_ABS Time-Series
+            Government Securities | Central Europe:
+              value: FI_GO_BO_CE
+              summary: Instrument Id Accr Capitalization
+        - $ref: '#/components/parameters/attributes'
+          examples:
+            ABS Index | Benchmark Indices:
+              value: TR,YTDR,LOC
+              summary: Data Group IN_CR_USD_ABS Time-Series
+            Government Securities | Central Europe:
+              value: AM_CAP_ACCR
+              summary: Instrument Id Accr Capitalization
+        - name: filter
+          description: >-
+            Narrow result aud using country or currency filters. Usage-
+            currency(XXX), country(YYY)
+          in: query
+          schema:
+            type: string
+          examples:
+            ABS Index | Benchmark Indices:
+              value: currency(USD)
+              summary: Data Group IN_CR_USD_ABS Time-Series
+            Government Securities | Central Europe:
+              value: currency(EUR)
+              summary: Instrument Id Accr Capitalization
+        - $ref: '#/components/parameters/page-token'
+        - $ref: '#/components/parameters/data'
+          examples:
+            Government Securities | Central Europe:
+              value: ALL
+              summary: Instrument Id Accr Capitalization
+        - $ref: '#/components/parameters/format'
+        - $ref: '#/components/parameters/start-date'
+          examples:
+            Government Securities | Central Europe:
+              value: TODAY-5D
+              summary: Instrument Id Accr Capitalization
+        - $ref: '#/components/parameters/end-date'
+        - $ref: '#/components/parameters/calendar'
+        - $ref: '#/components/parameters/frequency'
+        - $ref: '#/components/parameters/conversion'
+        - $ref: '#/components/parameters/nan-treatment'
+      x-examples:
+        - name: ABS Index | Benchmark Indices
+          description: Data Group IN_CR_USD_ABS Time-Series
+          parameters:
+            group-id: IN_CR_USD_ABS
+            attributes: TR,YTDR,LOC
+            filter: currency(USD)
+        - name: Government Securities | Central Europe
+          description: Data Group FI_GO_BO_CE Time-Series
+          parameters:
+            group-id: FI_GO_BO_CE
+            attributes: AM_CAP_ACCR
+            filter: currency(EUR)
+            data: ALL
+            start-date: TODAY-5D
+      tags:
+        - Group Collection
+      produces:
+        - application/json
+      responses:
+        '200':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Successful retrieval of time-series results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimeSeriesResponse'
+        '204':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: No Content.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoContent'
+        '400':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Bad Request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequest'
+        '401':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Authentication Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticationError'
+        '500':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Internal Server Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+  /research/dataquery-authe/api/v2/instruments/time-series:
+    get:
+      summary: >-
+        Retrieve time-series data for explicit list of instruments and
+        attributes using identifiers.
+      description: >-
+        Retrieve time-series data and/or reference data for a set of instrument
+        identifiers and attributes.
+      parameters:
+        - $ref: '#/components/parameters/instruments'
+          examples:
+            ABS Index | 10Y+ Reference Data:
+              value: 2f4835580ae2f8973886f44004823c0b-DQAGGRABSSEI
+              summary: Instrument Id YTD Return
+            ABS Index | 10Y+ Time-Series Data:
+              value: 2f4835580ae2f8973886f44004823c0b-DQAGGRABSSEI
+              summary: Instrument Id YTD Return
+            Government Securities | Central Europe:
+              value: 42588b17d59a1e4f06033d187d98f11f-DQGNMTBNDFIM
+              summary: Instrument Id Accr Capitalization
+        - $ref: '#/components/parameters/attributes'
+          examples:
+            ABS Index | 10Y+ Reference Data:
+              value: TR,YTDR,LOC
+              summary: Instrument Id YTD Return
+            ABS Index | 10Y+ Time-Series Data:
+              value: TR,YTDR,LOC
+              summary: Instrument Id YTD Return
+            Government Securities | Central Europe:
+              value: AM_CAP_ACCR
+              summary: Instrument Id Accr Capitalization
+        - $ref: '#/components/parameters/page-token'
+        - $ref: '#/components/parameters/data'
+          examples:
+            ABS Index | 10Y+ Reference Data:
+              value: REFERENCE_DATA
+              summary: Instrument Id YTD Return
+            ABS Index | 10Y+ Time-Series Data:
+              value: ALL
+              summary: Instrument Id YTD Return
+            Government Securities | Central Europe:
+              value: ALL
+              summary: Instrument Id Accr Capitalization
+        - $ref: '#/components/parameters/format'
+        - $ref: '#/components/parameters/start-date'
+          examples:
+            ABS Index | 10Y+ Time-Series Data:
+              value: TODAY-5D
+              summary: Instrument Id YTD Return
+          Government Securities | Central Europe:
+            value: TODAY-5D
+            summary: Instrument Id Accr Capitalization
+        - $ref: '#/components/parameters/end-date'
+        - $ref: '#/components/parameters/calendar'
+        - $ref: '#/components/parameters/frequency'
+        - $ref: '#/components/parameters/conversion'
+        - $ref: '#/components/parameters/nan-treatment'
+      x-examples:
+        - name: ABS Index | 10Y+ Reference Data
+          description: Instrument Id YTD Return
+          parameters:
+            instruments: 2f4835580ae2f8973886f44004823c0b-DQAGGRABSSEI
+            attributes: TR,YTDR,LOC
+            data: REFERENCE_DATA
+        - name: ABS Index | 10Y+ Time-Series Data
+          description: Instrument Id YTD Return
+          parameters:
+            instruments: 2f4835580ae2f8973886f44004823c0b-DQAGGRABSSEI
+            attributes: TR,YTDR,LOC
+            data: ALL
+            start-date: TODAY-5D
+        - name: Government Securities | Central Europe
+          description: Instrument Id Accr Capitalization
+          parameters:
+            instruments: 42588b17d59a1e4f06033d187d98f11f-DQGNMTBNDFIM
+            attributes: AM_CAP_ACCR
+            data: ALL
+            start-date: TODAY-5D
+      tags:
+        - Instrument Collection
+      produces:
+        - application/json
+      responses:
+        '200':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Successful retrieval of time-series results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimeSeriesResponse'
+        '204':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: No Content.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoContent'
+        '400':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Bad Request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequest'
+        '401':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Authentication Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticationError'
+        '404':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Not Found Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+        '500':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+  /research/dataquery-authe/api/v2/expressions/time-series:
+    get:
+      summary: >-
+        Retrieve time-series data using an explict list of traditional DataQuery
+        expressions.
+      description: >-
+        Retrieve time-series data spanning multiple data-groups using
+        traditional DataQuery 'expressions'.
+      parameters:
+        - $ref: '#/components/parameters/expressions'
+          examples:
+            ABS Index | 10Y+ | YTD Return:
+              value: DB(BIGI,ABS,Q10,TR,YTDR,LOC)
+              summary: Expression YTD Return
+            Government Securities | Euro Area:
+              value: >-
+                DB(MTE,SPGB EUR 1.000 31-Oct-2050
+                LON,,ES0000012G00,DIRTY_MIDPRC)
+              summary: Instrument Id Dirty Mid Price
+        - $ref: '#/components/parameters/page-token'
+        - $ref: '#/components/parameters/format'
+        - $ref: '#/components/parameters/start-date'
+          examples:
+            Government Securities | Euro Area:
+              value: TODAY-5D
+              summary: Instrument Id Dirty Mid Price
+        - $ref: '#/components/parameters/end-date'
+        - $ref: '#/components/parameters/calendar'
+        - $ref: '#/components/parameters/frequency'
+        - $ref: '#/components/parameters/conversion'
+        - $ref: '#/components/parameters/nan-treatment'
+        - $ref: '#/components/parameters/data'
+      x-examples:
+        - name: ABS Index | 10Y+ | YTD Return
+          description: Expression YTD Return
+          parameters:
+            expressions: DB(BIGI,ABS,Q10,TR,YTDR,LOC)
+        - name: Government Securities | Euro Area
+          description: Instrument Id Dirty Mid Price
+          parameters:
+            expressions: DB(MTE,SPGB EUR 1.000 31-Oct-2050 LON,,ES0000012G00,DIRTY_MIDPRC)
+            start-date: TODAY-5D
+      tags:
+        - Instrument Collection
+      produces:
+        - application/json
+      responses:
+        '200':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Successful retrieval of time-series results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimeSeriesResponse'
+        '204':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: No Content.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoContent'
+        '400':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Bad Request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequest'
+        '401':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Authentication Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticationError'
+        '404':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Not Found Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotFound'
+        '500':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+  /research/dataquery-authe/api/v2/grid-data:
+    get:
+      summary: Retrieve grid data using an expression or a grid ID
+      description: >
+        Get grid data for a specified, related group of data points in a
+        structured grid form
+
+        ### Expression structure
+
+        #### Equity Index Volatility Surfaces
+
+        Format:
+        `DBGRID(EQTY,{equity_ticker},{vol_type},{grid_type},{snapshot_time},VOL)`
+
+
+        Example: `DBGRID(EQTY,2823 HK,ABS_REL,ATMF,CLOSE,VOL)`
+
+
+        For the entire list of varilables, please refer to:
+
+        * DataQuery Web UI at
+        [https://markets.jpmorgan.com/#dataquery](https://markets.jpmorgan.com/#dataquery)
+        (Menu Path: Equities -> Specialized -> Equity Index Volatility Surfaces)
+
+        * or the deep dive doc for the product
+
+
+        #### FXO Calendar Weights
+
+        Format: `DBGRID(FXOVOL,FXO,CW,{ccy1},{ccy2})`
+
+
+        Example: `DBGRID(FXOVOL,FXO,CW,EUR,USD)`
+
+
+        For the entire list of varilables, please refer to:
+
+        * DataQuery Web UI at
+        [https://markets.jpmorgan.com/#dataquery](https://markets.jpmorgan.com/#dataquery)
+        (Menu Path: FX -> FX Options -> Calendar Vol Weights)
+
+        * or the deep dive doc for the product
+
+
+        #### JPMorgan Central Bank Document Level Dataset
+
+        Only one expression: `DBGRID(ESYS,EC_DOC_LEVEL,ALL)`
+
+
+        Note: Date is not required to pass in the API for this expression
+        because it will always return the latest full snapshot.
+
+
+        DataQuery Web UI at
+        [https://markets.jpmorgan.com/#dataquery](https://markets.jpmorgan.com/#dataquery)
+        (Menu Path: Economics -> JPM -> JPMorgan Central Bank NLP -> Document
+        Level Dataset)
+      tags:
+        - Grid Collection
+      parameters:
+        - name: expr
+          in: query
+          description: >
+            The grid expression. Only one expression is supported in one
+            request. `gridId` must not be passed when using this parameter.
+          required: false
+          schema:
+            type: string
+            format: string
+        - name: gridId
+          in: query
+          description: >-
+            The grid ID. Only one gird ID is supported in one request. `expr`
+            must not be passed when using this parameter.
+          required: false
+          schema:
+            type: string
+            format: string
+        - name: date
+          in: query
+          description: >
+            A specific snapshot date in format YYYYMMDD, defaults to today. Only
+            the specific date of snapshot of data will be returned.
+          required: false
+          schema:
+            type: string
+            format: string
+      x-examples:
+        - name: >-
+            Expression | Equity Volatility 2823.HK Absolute_Relative ATMF Close
+            VOL
+          parameters:
+            expr: DBGRID(EQTY,2823 HK,ABS_REL,ATMF,CLOSE,VOL)
+            date: '20180614'
+        - name: Grid ID | Equity Volatility 2823.HK Absolute_Relative ATMF Close VOL
+          parameters:
+            gridId: EQTY-2823.HK-ABS_REL-ATMF-CLOSE-VOL
+            date: '20180614'
+        - name: Expression | Calendar Weights EURUSD
+          parameters:
+            expr: DBGRID(FXOVOL,FXO,CW,EUR,USD)
+            date: '20180614'
+        - name: Grid ID | Calendar Weights EURUSD
+          parameters:
+            gridId: FXO-CW-EURUSD
+            date: '20180614'
+        - name: Expression | Document Level Dataset
+          parameters:
+            expr: DBGRID(ESYS,EC_DOC_LEVEL,ALL)
+      responses:
+        '200':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Successful retrieval of grid data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GridDataResponse'
+        '204':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: No Content.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoContent'
+        '400':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Bad Request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BadRequest'
+        '401':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Authentication Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthenticationError'
+        '403':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForbiddenPremium'
+        '500':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalServerError'
+  /research/dataquery-authe/api/v2/services/heartbeat:
+    get:
+      summary: DataQuery service status.
+      description: >-
+        Call this end-point to determine whether our services are running as
+        expected.
+      x-examples:
+        - name: Example Service Status Message
+          description: Check to see if Services are currently running.
+      tags:
+        - Service Collection
+      produces:
+        - application/json
+      responses:
+        '200':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Service Available.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Available'
+        '503':
+          headers:
+            x-dataquery-interaction-id:
+              schema:
+                type: string
+              description: >-
+                The unique identifier for the API request to enhance the API
+                traceability across our tech stack. Please record and provide
+                the ID alongside the API URL in all issues enquires that you
+                encounter.
+
+                Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+          description: Service Unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Unavailable'
+components:
+  securitySchemes:
+    production:
+      type: JPMC-OAuth2
+      openIdConnectUrl: https://authe.jpmorgan.com
+      x-jpmc-authtype: authe
+      x-jpmc-audience: JPMC:URI:RS-06785-DataQueryExternalApi-PROD
+  schemas:
+    interactionId:
+      type: string
+      description: >-
+        The unique identifier for the API request to enhance the API
+        traceability across our tech stack. Please record and provide the ID
+        alongside the API URL in all issues enquires that you encounter.
+
+        Example: 120aa7a3-597a-4dd4-a584-bba63a9d2707.
+    groupId:
+      type: string
+      description: Unique data group identifier.
+      example: FI_AGY_ONRUN_FNMA_FHLMC
+    groupName:
+      type: string
+      description: Catalog data group name.
+      example: Agency Benchmarks | FHRA
+    averageAvailability:
+      type: string
+      description: >-
+        Average data group availability time (UTC) and COB -> one of [T, T-1,
+        T+1].
+      example: 04:09:32 T+1
+    description:
+      type: string
+      description: Detailed field description.
+    groupDescription:
+      type: string
+      description: Catalog data group description.
+    taxonomyNode1:
+      type: string
+      description: Catalog taxonomy node 1.
+    taxonomyNode2:
+      type: string
+      description: Catalog taxonomy node 2.
+    taxonomyNode3:
+      type: string
+      description: Catalog taxonomy node 3.
+    taxonomyNode4:
+      type: string
+      description: Catalog taxonomy node 4.
+    taxonomyNode5:
+      type: string
+      description: Catalog taxonomy node 5.
+    provider:
+      type: string
+      description: Data Provider.
+    premium:
+      type: boolean
+      description: Indicator for premium data groups that may incur additional cost.
+      example: false
+    message:
+      type: string
+      description: Attribute level user message.
+    attributePopulation:
+      type: integer
+      description: Number of attributes available.
+      example: 33
+    instrumentPopulation:
+      type: integer
+      description: Number of instruments available.
+      example: 24
+    timeSeriesPopulation:
+      type: integer
+      description: Number of time-series available.
+      example: 792
+    instrumentId:
+      type: string
+      description: Unique instrument identifier.
+      example: b24dc4cb184db22799ff71027dadd7bb-DQAGCYBNDFIM
+    instrumentName:
+      type: string
+      description: Instrument short name.
+      example: FHRA Benchmark | 10Y | USD 2nd Previous
+    attributeId:
+      type: string
+      description: Unique attribute measure identifier.
+      example: MIDYLD
+    attributeName:
+      type: string
+      description: Attribute Short Name.
+      example: Yield
+    countryId:
+      type: string
+      description: ISO-3166-1 alpha-3 country code.
+    currencyId:
+      type: string
+      description: ISO-4217 currency code.
+    filterName:
+      type: string
+      description: Name of a filter dimension.
+      example: currency
+    filterDescription:
+      type: string
+      description: Description of a filter.
+    filterValue:
+      type: string
+      description: A filter value.
+    expression:
+      type: string
+      description: Traditional DataQuery time-series identifier.
+      example: DB(FHRA,05Y,MIDYLD)
+    label:
+      type: string
+      description: Name of a time-series data set.
+      example: FHRA Benchmark | 5Y | USD Generic | Yield
+    lastPublished:
+      type: string
+      description: Date/Time data was last published.
+    items:
+      type: integer
+      description: Total number of items on a set of pages.
+      example: 24
+    pageSize:
+      type: integer
+      description: Number of items listed on a page.
+      example: 50
+    errorCode:
+      type: number
+      description: DataQuery error code.
+    errorDescription:
+      type: string
+      description: Description of an error that has occurred.
+    informationCode:
+      type: number
+      description: DataQuery code for information message.
+    infoDescription:
+      type: string
+      description: Description of information provided.
+    instrument-cusip:
+      type: string
+      description: Instrument cusip.
+    instrument-isin:
+      type: string
+      description: Instrument isin.
+    item:
+      type: integer
+      description: Item number in a list of items.
+    date:
+      type: string
+      description: Simple date in format YYYYMMDD.
+    value:
+      type: number
+      description: Measurable value.
+    nextPage:
+      type: string
+      description: URI to next page.
+    currentPage:
+      type: string
+      description: URI to re-request a page.
+    Group:
+      type: object
+      description: >-
+        A collection of related instruments from the official Data Query
+        catalog.
+      required:
+        - group-id
+        - group-name
+        - description
+        - taxonomy-node1
+        - taxonomy-node2
+        - taxonomy-node3
+        - taxonomy-node4
+        - taxonomy-node5
+        - provider
+        - premium
+        - population
+        - top-instruments
+        - attributes
+      properties:
+        group-id:
+          $ref: '#/components/schemas/groupId'
+        group-name:
+          $ref: '#/components/schemas/groupName'
+        average-availability:
+          $ref: '#/components/schemas/averageAvailability'
+        description:
+          $ref: '#/components/schemas/description'
+        taxonomy-node1:
+          $ref: '#/components/schemas/taxonomyNode1'
+        taxonomy-node2:
+          $ref: '#/components/schemas/taxonomyNode2'
+        taxonomy-node3:
+          $ref: '#/components/schemas/taxonomyNode3'
+        taxonomy-node4:
+          $ref: '#/components/schemas/taxonomyNode4'
+        taxonomy-node5:
+          $ref: '#/components/schemas/taxonomyNode5'
+        provider:
+          $ref: '#/components/schemas/provider'
+        premium:
+          $ref: '#/components/schemas/premium'
+        population:
+          type: object
+          properties:
+            attributes:
+              $ref: '#/components/schemas/attributePopulation'
+            instruments:
+              $ref: '#/components/schemas/instrumentPopulation'
+            time-series:
+              $ref: '#/components/schemas/timeSeriesPopulation'
+          required:
+            - attributes
+            - instruments
+            - time-series
+        top-instruments:
+          type: array
+          description: Top-ranked instruments available.
+          items:
+            instrument-id:
+              $ref: '#/components/schemas/instrumentId'
+            instrument-name:
+              $ref: '#/components/schemas/instrumentName'
+        attributes:
+          type: array
+          description: Available attribute identifiers.
+          items:
+            attribute-id:
+              $ref: '#/components/schemas/attributeId'
+        filters:
+          type: object
+          description: >-
+            Filters and values can be applied when retrieving time-series from a
+            data group.
+          properties:
+            countries:
+              type: array
+              description: Country filter values
+              items:
+                country:
+                  $ref: '#/components/schemas/countryId'
+            currencies:
+              type: array
+              description: Currency filter values
+              items:
+                currency:
+                  $ref: '#/components/schemas/currencyId'
+    Filter:
+      type: object
+      description: A dimension that can be used to narrow the aud of a data group.
+      required:
+        - filter-name
+      properties:
+        filter-name:
+          $ref: '#/components/schemas/filterName'
+        description:
+          $ref: '#/components/schemas/filterDescription'
+        values:
+          type: array
+          description: Valid filter value enumerator.
+          items:
+            $ref: '#/components/schemas/filterValue'
+    Instrument:
+      type: object
+      description: A physical or synthetic financial instrument from the DataQuery catalog.
+      required:
+        - instrument-id
+        - instrument-name
+      properties:
+        instrument-id:
+          $ref: '#/components/schemas/instrumentId'
+        instrument-name:
+          $ref: '#/components/schemas/instrumentName'
+        country:
+          $ref: '#/components/schemas/countryId'
+        currency:
+          $ref: '#/components/schemas/currencyId'
+        instrument-cusip:
+          $ref: '#/components/schemas/instrument-cusip'
+        instrument-isin:
+          $ref: '#/components/schemas/instrument-isin'
+    Attribute:
+      type: object
+      description: A unit of measurement for an Instrument.
+      required:
+        - attribute-id
+        - attribute-name
+        - expression
+        - label
+      properties:
+        attribute-id:
+          $ref: '#/components/schemas/attributeId'
+        attribute-name:
+          $ref: '#/components/schemas/attributeName'
+        expression:
+          $ref: '#/components/schemas/expression'
+        label:
+          $ref: '#/components/schemas/label'
+        last-published:
+          $ref: '#/components/schemas/lastPublished'
+        time-series:
+          type: array
+          items:
+            type: array
+            items:
+              oneOf:
+                date:
+                  $ref: '#/components/schemas/date'
+                value:
+                  $ref: '#/components/schemas/value'
+    Error:
+      type: object
+      description: A DataQuery error message.
+      required:
+        - code
+        - description
+      properties:
+        code:
+          $ref: '#/components/schemas/errorCode'
+        description:
+          $ref: '#/components/schemas/errorDescription'
+    Information:
+      type: object
+      description: A DataQuery information message.
+      required:
+        - code
+        - description
+      properties:
+        code:
+          $ref: '#/components/schemas/informationCode'
+        description:
+          $ref: '#/components/schemas/infoDescription'
+    GroupsResponse:
+      description: Query result
+      type: object
+      properties:
+        links:
+          type: array
+          items:
+            type: object
+            properties:
+              self:
+                $ref: '#/components/schemas/currentPage'
+              next:
+                $ref: '#/components/schemas/nextPage'
+            required:
+              - self
+              - next
+        items:
+          type: number
+          $ref: '#/components/schemas/items'
+        page-size:
+          type: number
+          $ref: '#/components/schemas/pageSize'
+        groups:
+          type: array
+          items:
+            type: object
+            properties:
+              item:
+                $ref: '#/components/schemas/item'
+              group-id:
+                $ref: '#/components/schemas/groupId'
+              group-name:
+                $ref: '#/components/schemas/groupName'
+              average-availability:
+                $ref: '#/components/schemas/averageAvailability'
+              description:
+                $ref: '#/components/schemas/groupDescription'
+              taxonomy-node1:
+                $ref: '#/components/schemas/taxonomyNode1'
+              taxonomy-node2:
+                $ref: '#/components/schemas/taxonomyNode2'
+              taxonomy-node3:
+                $ref: '#/components/schemas/taxonomyNode3'
+              taxonomy-node4:
+                $ref: '#/components/schemas/taxonomyNode4'
+              taxonomy-node5:
+                $ref: '#/components/schemas/taxonomyNode5'
+              provider:
+                $ref: '#/components/schemas/provider'
+              premium:
+                $ref: '#/components/schemas/premium'
+              population:
+                type: object
+                properties:
+                  attributes:
+                    $ref: '#/components/schemas/attributePopulation'
+                  instruments:
+                    $ref: '#/components/schemas/instrumentPopulation'
+                  time-series:
+                    $ref: '#/components/schemas/timeSeriesPopulation'
+                required:
+                  - attributes
+                  - instruments
+                  - time-series
+              attributes:
+                type: array
+                items:
+                  $ref: '#/components/schemas/attributeObject'
+              top-instruments:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    instrument-id:
+                      type: string
+                      $ref: '#/components/schemas/instrumentId'
+                    instrument-name:
+                      type: string
+                      $ref: '#/components/schemas/instrumentName'
+              filters:
+                type: object
+                properties:
+                  currencies:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/filterValue'
+                  countries:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/filterValue'
+              api-delivery-type:
+                type: string
+                enum: [TIME_SERIES]
+                description: API delivery type for the group.
+                example: TIME_SERIES
+              is-file-delivery-enabled:
+                type: boolean
+                description: Indicates if file delivery is enabled for the group.
+                example: false
+            required:
+              - item
+              - group-id
+              - group-name
+              - description
+              - taxonomy-node1
+              - taxonomy-node2
+              - taxonomy-node3
+              - taxonomy-node4
+              - taxonomy-node5
+              - premium
+              - population
+              - attributes
+              - top-instruments
+              - api-delivery-type
+              - is-file-delivery-enabled
+      required:
+        - links
+        - items
+        - page-size
+        - groups
+    InstrumentsResponse:
+      description: Query result
+      type: object
+      properties:
+        links:
+          type: array
+          items:
+            type: object
+            properties:
+              self:
+                $ref: '#/components/schemas/currentPage'
+              next:
+                $ref: '#/components/schemas/nextPage'
+            required:
+              - self
+              - next
+        items:
+          $ref: '#/components/schemas/items'
+        page-size:
+          $ref: '#/components/schemas/pageSize'
+        instruments:
+          type: array
+          items:
+            type: object
+            properties:
+              item:
+                $ref: '#/components/schemas/item'
+              instrument-id:
+                $ref: '#/components/schemas/instrumentId'
+              instrument-name:
+                $ref: '#/components/schemas/instrumentName'
+              country:
+                $ref: '#/components/schemas/countryId'
+              currency:
+                $ref: '#/components/schemas/currencyId'
+              instrument-cusip:
+                $ref: '#/components/schemas/instrument-cusip'
+              instrument-isin:
+                $ref: '#/components/schemas/instrument-isin'
+            required:
+              - item
+              - instrument-id
+              - instrument-name
+      required:
+        - links
+        - items
+        - page-size
+        - instruments
+    GridDataResponse:
+      description: Successful retrieval of grid data
+      properties:
+        errorCode:
+          type: string
+          description: >-
+            The error or information/notice code for **the entire API request**
+            if there is an error
+        errorMessage:
+          type: string
+          description: >-
+            The error or information/notice details for **the entire API
+            request** if there is an error
+        series:
+          type: array
+          items:
+            type: object
+            properties:
+              expr:
+                type: string
+                description: The expression for the grid data
+              errorCode:
+                type: string
+                description: >-
+                  The error or information/notice code for **this specific
+                  expression** if there is an error
+              errorMessage:
+                type: string
+                description: >-
+                  The error or information/notice details for **this specific
+                  expression** if there is an error
+              records:
+                type: array
+                description: >-
+                  The grid data. Please note that each grid dataset might have
+                  different format, therefore no example is provided at the data
+                  point level.
+                items:
+                  type: object
+    AttributesResponse:
+      description: Query result
+      type: object
+      properties:
+        links:
+          type: array
+          items:
+            type: object
+            properties:
+              self:
+                $ref: '#/components/schemas/currentPage'
+              next:
+                $ref: '#/components/schemas/nextPage'
+            required:
+              - self
+              - next
+        items:
+          $ref: '#/components/schemas/items'
+        page-size:
+          $ref: '#/components/schemas/pageSize'
+        instruments:
+          type: array
+          items:
+            type: object
+            properties:
+              item:
+                $ref: '#/components/schemas/item'
+              instrument-id:
+                $ref: '#/components/schemas/instrumentId'
+              instrument-name:
+                $ref: '#/components/schemas/instrumentName'
+              attributes:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    attribute-id:
+                      $ref: '#/components/schemas/attributeId'
+                    attribute-name:
+                      $ref: '#/components/schemas/attributeName'
+                  required:
+                    - attribute-id
+                    - attribute-name
+            required:
+              - item
+              - instrument-id
+              - instrument-name
+              - attributes
+      required:
+        - links
+        - items
+        - page-size
+        - instruments
+    FiltersResponse:
+      description: Query result
+      type: object
+      properties:
+        links:
+          type: array
+          items:
+            type: object
+            properties:
+              self:
+                $ref: '#/components/schemas/currentPage'
+              next:
+                $ref: '#/components/schemas/nextPage'
+            required:
+              - self
+              - next
+        items:
+          $ref: '#/components/schemas/items'
+        page-size:
+          $ref: '#/components/schemas/pageSize'
+        filters:
+          type: array
+          items:
+            $ref: '#/components/schemas/Filter'
+      required:
+        - links
+        - items
+        - page-size
+        - filters
+    TimeSeriesResponse:
+      description: Query result
+      type: object
+      properties:
+        links:
+          type: array
+          items:
+            type: object
+            properties:
+              self:
+                $ref: '#/components/schemas/currentPage'
+              next:
+                $ref: '#/components/schemas/nextPage'
+            required:
+              - self
+              - next
+        items:
+          $ref: '#/components/schemas/items'
+        page-size:
+          $ref: '#/components/schemas/pageSize'
+        instruments:
+          type: array
+          items:
+            type: object
+            properties:
+              item:
+                $ref: '#/components/schemas/item'
+              instrument-id:
+                $ref: '#/components/schemas/instrumentId'
+              instrument-name:
+                type: string
+                $ref: '#/components/schemas/instrumentName'
+              instrument-cusip:
+                type: string
+                $ref: '#/components/schemas/instrument-cusip'
+              instrument-isin:
+                type: string
+                $ref: '#/components/schemas/instrument-isin'
+              group:
+                type: object
+                properties:
+                  group-id:
+                    $ref: '#/components/schemas/groupId'
+                  group-name:
+                    $ref: '#/components/schemas/groupName'
+                required:
+                  - group-id
+                  - group-name
+              attributes:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    attribute-id:
+                      $ref: '#/components/schemas/attributeId'
+                    attribute-name:
+                      $ref: '#/components/schemas/attributeName'
+                    expression:
+                      $ref: '#/components/schemas/expression'
+                    label:
+                      $ref: '#/components/schemas/label'
+                    last-published:
+                      $ref: '#/components/schemas/lastPublished'
+                    message:
+                      $ref: '#/components/schemas/message'
+                    time-series:
+                      type: array
+                      items:
+                        type: array
+                        items:
+                          oneOf:
+                            date:
+                              $ref: '#/components/schemas/date'
+                            value:
+                              $ref: '#/components/schemas/value'
+                  required:
+                    - attribute-id
+                    - attribute-name
+                    - expression
+                    - label
+                    - time-series
+            required:
+              - item
+              - instrument-id
+              - instrument-name
+              - group
+              - attributes
+      required:
+        - links
+        - items
+        - page-size
+        - instruments
+    NoContent:
+      description: Request successfully processed but no content available.
+      type: object
+      $ref: '#/components/schemas/Information'
+    Unavailable:
+      description: DataQuery Services are currently unavailable.
+      type: object
+      $ref: '#/components/schemas/Error'
+    Available:
+      description: DataQuery Services are functioning as expected.
+      type: object
+      $ref: '#/components/schemas/Information'
+    AuthenticationError:
+      description: Authentication or Authorization information missing or invalid..
+      type: object
+      $ref: '#/components/schemas/Error'
+    ForbiddenPremium:
+      description: >-
+        Requested API endpoint and/or dataset is a part of DataQuery premium
+        offerings. To inquire about premium data and connectivity solutions
+        please contact DataQuery Sales at DataQuery_Sales@jpmorgan.com
+      type: object
+      $ref: '#/components/schemas/Error'
+    NotFound:
+      description: The requested resource was not found.
+      type: object
+      $ref: '#/components/schemas/Error'
+    BadRequest:
+      description: The request received was malformed or invalid.
+      type: object
+      $ref: '#/components/schemas/Error'
+    InternalServerError:
+      description: Internal Server Error
+      type: object
+      $ref: '#/components/schemas/Error'
+    attributeObject:
+      type: object
+      description: Attribute object with id and name.
+      properties:
+        attribute-id:
+          type: string
+          description: Unique attribute identifier.
+          example: DPOSITION
+        attribute-name:
+          type: string
+          description: Attribute name.
+          example: Delta Position
+      required:
+        - attribute-id
+        - attribute-name
+  parameters:
+    page-token:
+      in: query
+      name: page
+      description: >-
+        Token provided to retrieve a page of items in a set of pages. Page token
+        has a 30 minute life before expiry.
+      required: false
+      schema:
+        type: string
+        format: string
+    keywords:
+      in: query
+      name: keywords
+      description: Keywords to narrow aud of results returned from the catalog.
+      required: true
+      schema:
+        type: string
+    group-id:
+      in: query
+      name: group-id
+      description: Catalog data group identifier.
+      required: true
+      schema:
+        type: string
+    instruments:
+      in: query
+      name: instruments
+      description: Instrument identifiers in the form instruments=x&instruments=y
+      required: true
+      schema:
+        type: string
+      style: form
+      explode: true
+    instrument-id:
+      in: query
+      name: instrument-id
+      description: >-
+        Instrument identifiers in the form `instrument-id=x&instrument-id=y`. At
+        max only **20** instrument IDs are supported for one group Id in one API
+        call.
+      required: false
+      schema:
+        type: string
+      style: form
+      explode: true
+    attributes:
+      in: query
+      name: attributes
+      description: Attribute identifiers in the form `attributes=x&attributes=y`
+      required: true
+      schema:
+        type: string
+    expressions:
+      in: query
+      name: expressions
+      description: Expressions in the form `expressions=x&expressions=y`
+      required: true
+      schema:
+        type: string
+    data:
+      in: query
+      name: data
+      description: |
+        Retrieve REFERENCE_DATA (default), NO_REFERENCE_DATA or ALL.
+
+        | Enum                 | Description                              |
+        | -------------------- | ---------------------------------------- |
+        | **`REFERENCE_DATA`** | **Return reference data only (default)** |
+        | NO_REFERENCE_DATA    | Return values only                       |
+        | ALL                  | Return both reference data and values    |
+      default: REFERENCE_DATA
+      schema:
+        type: string
+        enum:
+          - REFERENCE_DATA
+          - NO_REFERENCE_DATA
+          - ALL
+    format:
+      in: query
+      name: format
+      description: Message response format - currently only JSON is supported
+      default: JSON
+      schema:
+        type: string
+        enum:
+          - JSON
+    start-date:
+      in: query
+      name: start-date
+      description: >
+        YYYYMMDD start-date of first data point in time-series, or period
+
+        TODAY-nX where X in array['D', 'W', 'M', 'Y'].
+
+
+        | Acceptable formats |
+        Description                                                                   
+        | Example                                       |
+
+        | ------------------ |
+        ------------------------------------------------------------------------------
+        | --------------------------------------------- |
+
+        | `TODAY-Nx`         | Today minus N x, where N is integer and x is one
+        of enum['D','W','M','Y'] | **`TODAY-1D` (default): Today minus one day**
+        |
+
+        | `TODAY`            |
+        Today                                                                         
+        | Today                                         |
+
+        | `YYYYMMDD`         | Year Month
+        Day                                                                  |
+        20221130                                      |
+      default: TODAY-1D
+      schema:
+        type: string
+    end-date:
+      in: query
+      name: end-date
+      description: >
+        YYYYMMDD end-date for last data point in time-series, or period in
+
+        format TODAY-nX where X in array['D', 'W', 'M', 'Y'].
+
+
+        | Acceptable formats |
+        Description                                                                   
+        | Example                              |
+
+        | ------------------ |
+        ------------------------------------------------------------------------------
+        | ------------------------------------ |
+
+        | **`TODAY`**        | **Today
+        (default)**                                                            |
+        **`TODAY`**                          |
+
+        | `TODAY-Nx`         | Today minus N x, where N is integer and x is one
+        of enum['D','W','M','Y'] | `TODAY-3M`: Today minus three months |
+
+        | `YYYYMMDD`         | Year Month
+        Day                                                                  |
+        20221130                             |
+      default: TODAY
+      schema:
+        type: string
+        format: date
+    calendar:
+      in: query
+      name: calendar
+      description: |-
+        Calendar convention to be used for time-series.
+
+        | Enum              | Description             |
+        | ----------------- | ----------------------- |
+        | **`CAL_USBANK`**  | **U.S. Bank (Default)** |
+        | `CAL_ALLDAYS`     | All Days                |
+        | `CAL_WEEKDAYS`    | All Weekdays            |
+        | `CAL_AUSTRALIA`   | Australia               |
+        | `CAL_BELGIUM`     | Belgium                 |
+        | `CAL_CANADA`      | Canada                  |
+        | `CAL_DENMARK`     | Denmark                 |
+        | `CAL_EURO`        | Euro                    |
+        | `CAL_FINLAND`     | Finland                 |
+        | `CAL_FRANCE`      | France                  |
+        | `CAL_GERMANY`     | Germany                 |
+        | `CAL_HONGKONG`    | Hong Kong               |
+        | `CAL_IRELAND`     | Ireland                 |
+        | `CAL_ITALY`       | Italy                   |
+        | `CAL_JAPAN`       | Japan                   |
+        | `CAL_MALAYSIA`    | Malaysia                |
+        | `CAL_NETHERLANDS` | Netherlands             |
+        | `CAL_NEWZEALAND`  | New Zealand             |
+        | `CAL_NYSE`        | NYSE                    |
+        | `CAL_PORTUGAL`    | Portugal                |
+        | `CAL_SAFRICA`     | South Africa            |
+        | `CAL_SINGAPORE`   | Singapore               |
+        | `CAL_SPAIN`       | Spain                   |
+        | `CAL_SWEDEN`      | Sweden                  |
+        | `CAL_SWITZERLAND` | Switzerland             |
+        | `CAL_USEXCH`      | USEXCH                  |
+        | `CAL_UK`          | UK                      |
+        | `CALSOF`          | Eurex DE FI             |
+        | `CALTGT`          | TARGET                  |
+        | `CALLIF`          | Liffe UK Fin            |
+        | `CAL_EUR_UKFIN`   | TGT+UK Fin              |
+        | `CAL_UK_TGT`      | TGT+UK                  |
+      default: CAL_USBANK
+      schema:
+        type: string
+        enum:
+          - CAL_USBANK
+          - CAL_ALLDAYS
+          - CAL_WEEKDAYS
+          - CAL_AUSTRALIA
+          - CAL_BELGIUM
+          - CAL_CANADA
+          - CAL_DENMARK
+          - CAL_EURO
+          - CAL_FINLAND
+          - CAL_FRANCE
+          - CAL_GERMANY
+          - CAL_HONGKONG
+          - CAL_IRELAND
+          - CAL_ITALY
+          - CAL_JAPAN
+          - CAL_MALAYSIA
+          - CAL_NETHERLANDS
+          - CAL_NEWZEALAND
+          - CAL_NYSE
+          - CAL_PORTUGAL
+          - CAL_SAFRICA
+          - CAL_SINGAPORE
+          - CAL_SPAIN
+          - CAL_SWEDEN
+          - CAL_SWITZERLAND
+          - CAL_USEXCH
+          - CAL_UK
+          - CALSOF
+          - CALTGT
+          - CALLIF
+          - CAL_EUR_UKFIN
+          - CAL_UK_TGT
+    frequency:
+      in: query
+      name: frequency
+      description: |
+        Frequency convention to be used for time-series.
+
+        | Enum           | Description         |
+        | -------------- | ------------------- |
+        | **`FREQ_DAY`** | **Daily (Default)** |
+        | `FREQ_WEEK`    | Weekly              |
+        | `FREQ_MONTH`   | Monthly             |
+        | `FREQ_QUARTER` | Quarterly           |
+        | `FREQ_ANN`     | Annually            |
+      default: FREQ_DAY
+      schema:
+        type: string
+        enum:
+          - FREQ_INTRA
+          - FREQ_DAY
+          - FREQ_WEEK
+          - FREQ_MONTH
+          - FREQ_QUARTER
+          - FREQ_ANN
+    conversion:
+      in: query
+      name: conversion
+      description: >
+        Conversion convention to be used for time-series.
+
+
+        | Enum                   |
+        Description                                        |
+
+        | ---------------------- |
+        -------------------------------------------------- |
+
+        | **`CONV_LASTBUS_ABS`** | **Last Business Day of Absolute Period
+        (Default)** |
+
+        | `CONV_FIRSTBUS_ABS`    | First Business Day of Absolute
+        Period              |
+
+        | `CONV_LASTBUS_REL`     | Last Business Day of Relative
+        Period               |
+
+        | `CONV_FIRSTBUS_REL`    | First Business Day of Relative
+        Period              |
+
+        | `CONV_SUM_ABS_SDT`     | Sum of Absolute Period (Start
+        Date)                |
+
+        | `CONV_SUM_ABS_EDT`     | Sum of Absolute Period (End
+        Date)                  |
+
+        | `CONV_SUM_REL_SDT`     | Sum of Relative Period (Start
+        Date)                |
+
+        | `CONV_SUM_REL_EDT`     | Sum of Relative Period (End
+        Date)                  |
+
+        | `CONV_AVG_ABS_SDT`     | Average of Absolute Period (Start
+        Date)            |
+
+        | `CONV_AVG_ABS_EDT`     | Average of Absolute Period (End
+        Date)              |
+
+        | `CONV_AVG_REL_SDT`     | Average of Relative Period (Start
+        Date)            |
+
+        | `CONV_AVG_REL_EDT`     | Average of Relative Period (End
+        Date)              |
+      default: CONV_LASTBUS_ABS
+      schema:
+        type: string
+        enum:
+          - CONV_LASTBUS_ABS
+          - CONV_FIRSTBUS_ABS
+          - CONV_LASTBUS_REL
+          - CONV_FIRSTBUS_REL
+          - CONV_SUM_ABS_SDT
+          - CONV_SUM_ABS_EDT
+          - CONV_SUM_REL_SDT
+          - CONV_SUM_REL_EDT
+          - CONV_AVG_ABS_SDT
+          - CONV_AVG_ABS_EDT
+          - CONV_AVG_REL_SDT
+          - CONV_AVG_REL_EDT
+    nan-treatment:
+      in: query
+      name: nan-treatment
+      description: >
+        How NA data should be represented in the values. Missing data point
+        convention to be used for time-series.
+
+
+        | Enum             | Description        |
+
+        | ---------------- | ------------------ |
+
+        | **`NA_NOTHING`** | **Leave as N/A**   |
+
+        | `NA_LAST`        | Last valid value   |
+
+        | `NA_NEXT`        | Next valid value   |
+
+        | `NA_INTERP`      | Interpolated value |
+      default: NA_NOTHING
+      schema:
+        type: string
+        enum:
+          - NA_NOTHING
+          - NA_LAST
+          - NA_NEXT
+          - NA_INTERP
