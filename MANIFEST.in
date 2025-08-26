@@ -1,0 +1,28 @@
+include README.md
+include LICENSE
+include CHANGELOG.md
+include CONTRIBUTING.md
+include requirements.txt
+include requirements-dev.txt
+include pyproject.toml
+include .env.template
+
+# Include package data
+recursive-include dataquery *.py
+recursive-include dataquery *.typed
+
+# Exclude development and testing files
+recursive-exclude tests *
+recursive-exclude examples *
+recursive-exclude docs *
+exclude .gitignore
+exclude .pre-commit-config.yaml
+exclude tox.ini
+exclude pytest.ini
+exclude mypy.ini
+exclude .coverage
+exclude coverage.xml
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]
+recursive-exclude * *.so
+recursive-exclude * *.dylib

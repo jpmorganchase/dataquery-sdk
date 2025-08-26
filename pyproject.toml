@@ -1,0 +1,196 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dataquery-sdk"
+authors = [
+    {name = "DATAQUERY SDK Team", email = "support@dataquery.com"}
+]
+description = "Python SDK for DATAQUERY Data API - Query, download, and check availability of economic data files"
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Financial and Insurance Industry",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Office/Business :: Financial",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+]
+dependencies = [
+    "aiohttp>=3.8.0,<4.0.0",
+    "pydantic>=2.0.0,<3.0.0",
+    "structlog>=23.0.0",
+    "python-dotenv>=1.0.0",
+    "pytest-asyncio>=1.1.0",
+]
+dynamic = ["version"]
+keywords = [
+    "dataquery",
+    "data",
+    "api",
+    "economic",
+    "financial",
+    "download",
+    "async",
+    "oauth",
+    "rate-limiting",
+    "sdk",
+]
+
+[project.urls]
+Homepage = "https://github.com/dataquery/dataquery-sdk-python"
+"Bug Tracker" = "https://github.com/dataquery/dataquery-sdk-python/issues"
+Documentation = "https://github.com/dataquery/dataquery-sdk-python/wiki"
+"Source Code" = "https://github.com/dataquery/dataquery-sdk-python"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.5.0",
+    "isort>=5.12.0",
+    "pre-commit>=3.0.0",
+    "pip-audit>=2.7.0",
+]
+docs = [
+    "sphinx>=7.0.0",
+    "sphinx-rtd-theme>=1.3.0",
+    "sphinx-autodoc-typehints>=1.24.0",
+]
+pandas = [
+    "pandas>=2.0.0",
+]
+all = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.5.0",
+    "isort>=5.12.0",
+    "pre-commit>=3.0.0",
+    "sphinx>=7.0.0",
+    "sphinx-rtd-theme>=1.3.0",
+    "sphinx-autodoc-typehints>=1.24.0",
+    "pandas>=2.0.0",
+    "pip-audit>=2.7.0",
+]
+
+[project.scripts]
+dataquery = "dataquery.cli:main"
+
+[tool.setuptools]
+packages = ["dataquery"]
+
+[tool.setuptools.dynamic]
+version = {attr = "dataquery.__version__"}
+
+[tool.setuptools.package-data]
+dataquery = ["py.typed"]
+
+[tool.black]
+line-length = 88
+target-version = ['py310']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["dataquery"]
+
+
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "aiohttp.*",
+    "structlog.*",
+    "dotenv.*",
+    "pytest.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers --strict-config"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+#asyncio_mode = "auto"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+    "asyncio: marks tests as async tests",
+]
+filterwarnings = [
+  # Silence noisy runtime warnings from mocked async coroutines in tests
+  "ignore:coroutine .* was never awaited:RuntimeWarning",
+  "ignore:Enable tracemalloc to get traceback where the object was allocated:RuntimeWarning",
+  # Silence aiohttp connector deprecation noise on Python 3.13+
+  "ignore:enable_cleanup_closed ignored because .* is fixed:DeprecationWarning",
+]
+
+[tool.coverage.run]
+source = ["dataquery"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+    "setup.py"
+    ]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\(Protocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
