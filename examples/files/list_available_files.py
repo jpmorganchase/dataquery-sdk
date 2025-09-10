@@ -47,8 +47,10 @@ async def main():
             )
             print(f"✅ Found {len(files)} available files")
             for i, f in enumerate(files[:20], 1):
-
-                print(f)
+                name = f.get('filename') or f.get('file_group_id') or 'unknown'
+                date = f.get('file_datetime', '')
+                size = f.get('file_size', 0)
+                print(f"{i}. {name} ({date}) - {size:,} bytes")
             if len(files) > 20:
                 print(f"... and {len(files)-20} more")
     except AuthenticationError as e:

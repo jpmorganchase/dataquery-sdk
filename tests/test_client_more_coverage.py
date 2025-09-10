@@ -18,7 +18,7 @@ class _Resp:
     async def json(self):
         return {}
 
-    class content:
+    class _Content:
         def __init__(self, outer):
             self._outer = outer
 
@@ -28,7 +28,8 @@ class _Resp:
 
     @property
     def content(self):
-        return _Resp.content(self)
+        # Return a lightweight stream-like wrapper
+        return _Resp._Content(self)
 
     async def __aenter__(self):
         return self
@@ -110,4 +111,110 @@ async def test_download_file_partial_range_request(tmp_path, monkeypatch):
     # Some environments may not fully simulate the partial content path; ensure no exception
     assert result is not None
 
+
+
+@pytest.mark.asyncio
+async def test_download_file_parallel_async_splits_parts(tmp_path, monkeypatch):
+    client = _make_client(tmp_path)
+
+    # First probe: content-range reveals total size 10, with a filename
+    probe_headers = {
+        "Content-Range": "bytes 0-0/10",
+        "content-disposition": 'attachment; filename="file.bin"',
+        "content-length": "1",
+    }
+
+    async def fake_req(method, url, **kwargs):  # noqa: ARG001
+        hdrs = kwargs.get("headers", {})
+        rng = hdrs.get("Range")
+        if rng == "bytes=0-0":
+            return _Ctx(_Resp(status=206, headers=probe_headers, chunks=[b"0"]))
+        # For actual part requests, return as many bytes as requested
+        # Range format: bytes=start-end
+        if not rng:
+            # Fallback path: single-stream full download
+            full_headers = {
+                "content-disposition": 'attachment; filename="file.bin"',
+                "content-length": "10",
+            }
+            return _Ctx(_Resp(status=200, headers=full_headers, chunks=[b"01234", b"56789"]))
+        assert rng and rng.startswith("bytes=")
+        try:
+            start_end = rng.split("=")[1]
+            start_str, end_str = start_end.split("-")
+            start = int(start_str)
+            end = int(end_str)
+        except Exception:  # pragma: no cover - guard
+            start, end = 0, 0
+        length = max(0, end - start + 1)
+        part_headers = {
+            "content-length": str(length),
+            "Content-Range": f"bytes {start}-{end}/10",
+        }
+        # Yield bytes in smaller chunks to exercise write loop
+        chunks = []
+        remaining = length
+        while remaining > 0:
+            n = min(4, remaining)
+            chunks.append(b"X" * n)
+            remaining -= n
+        return _Ctx(_Resp(status=206, headers=part_headers, chunks=chunks))
+
+    monkeypatch.setattr(client, "_make_authenticated_request", fake_req)
+
+    # Perform parallel download: expect a 10-byte file assembled
+    result = await client.download_file_parallel_async(
+        file_group_id="FG1",
+        options=DownloadOptions(destination_path=str(tmp_path), overwrite_existing=True),
+        num_parts=5,
+    )
+
+    assert result is not None
+    assert result.status == DownloadStatus.COMPLETED
+    assert result.local_path is not None
+    # Verify the assembled file size is 10 bytes
+    p = Path(result.local_path)
+    assert p.exists()
+    assert p.stat().st_size == 10
+
+
+@pytest.mark.asyncio
+async def test_download_file_parallel_async_small_file_falls_back(tmp_path, monkeypatch):
+    client = _make_client(tmp_path)
+
+    # Small file: 6 bytes total
+    probe_headers = {
+        "Content-Range": "bytes 0-0/6",
+        "content-disposition": 'attachment; filename="small.bin"',
+        "content-length": "1",
+    }
+
+    async def fake_req(method, url, **kwargs):  # noqa: ARG001
+        hdrs = kwargs.get("headers", {})
+        rng = hdrs.get("Range")
+        if rng == "bytes=0-0":
+            return _Ctx(_Resp(status=206, headers=probe_headers, chunks=[b"0"]))
+        # After probe, implementation should fall back to single stream (no Range)
+        if not rng:
+            full_headers = {
+                "content-disposition": 'attachment; filename="small.bin"',
+                "content-length": "6",
+            }
+            return _Ctx(_Resp(status=200, headers=full_headers, chunks=[b"abc", b"def"]))
+        # Should not request ranged parts for small file, but guard anyway
+        return _Ctx(_Resp(status=416, headers={}, chunks=[]))
+
+    monkeypatch.setattr(client, "_make_authenticated_request", fake_req)
+
+    result = await client.download_file_parallel_async(
+        file_group_id="FGS",
+        options=DownloadOptions(destination_path=str(tmp_path), overwrite_existing=True),
+        num_parts=5,
+    )
+
+    assert result is not None
+    assert result.status == DownloadStatus.COMPLETED
+    p = Path(result.local_path)
+    assert p.exists()
+    assert p.stat().st_size == 6
 

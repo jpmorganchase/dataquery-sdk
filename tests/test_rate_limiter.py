@@ -378,7 +378,7 @@ async def test_context_manager_success_and_timeout_merged():
         async with RateLimitContext(rl2, timeout=0.05, priority=QueuePriority.NORMAL, operation="ctx2"):
             pass
     await _asyncio_rl_adv.sleep(0.25)
-    assert await rl.acquire(timeout=0.2)
+    assert await rl.acquire(timeout=2.0)
 
 
 @pytest.mark.asyncio

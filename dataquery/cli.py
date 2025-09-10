@@ -138,7 +138,7 @@ async def cmd_groups(args: argparse.Namespace) -> int:
                         print(f"   Description: {group.description}")
                     if group.provider:
                         print(f"   Provider: {group.provider}")
-                    print(f"   Files: {group.associated_file_count or 0}")
+                    print(f"   Files: {getattr(group, 'file_groups', 0) or 0}")
                 print(f"\n✅ Successfully listed {len(groups)} groups!")
             return 0
             
@@ -161,7 +161,9 @@ async def cmd_files(args: argparse.Namespace) -> int:
                 print(f"\nFound {len(files)} files:")
                 for file_info in files[: args.limit or len(files) ]:
                     print(f"\n📄 {getattr(file_info, 'file_group_id', None)}")
-                    print(f"   Type: {file_info.file_type}")
+                    ftypes = getattr(file_info, 'file_type', None)
+                    type_display = ", ".join(ftypes) if isinstance(ftypes, list) else (ftypes or "")
+                    print(f"   Type: {type_display}")
                     if file_info.description:
                         print(f"   Description: {file_info.description}")
                 print(f"\n✅ Successfully listed {len(files)} files!")
@@ -185,21 +187,17 @@ async def cmd_availability(args: argparse.Namespace) -> int:
                 import json
                 print(json.dumps(availability.model_dump()))
             else:
-                print(f"\n📊 Availability Results:")
-                print(f"Group ID: {availability.group_id}")
-                print(f"File Group ID: {availability.file_group_id}")
-                print(f"Date Range: {availability.date_range.earliest} to {availability.date_range.latest}")
-                print(f"Total Files: {len(availability.availability)}")
-                print(f"Available Files: {len(availability.available_files)}")
-                print(f"Availability Rate: {availability.availability_rate:.1f}%")
-                print(f"\n📋 File Details:")
-                for file_info in availability.availability:
-                    status = "✅ Available" if file_info.is_available else "❌ Not Available"
-                    print(f"  {file_info.file_date}: {status}")
-                    if file_info.is_available:
-                        print(f"    File: {file_info.file_name}")
-                        print(f"    Created: {file_info.first_created_on}")
-                        print(f"    Modified: {file_info.last_modified}")
+                print(f"\n📊 Availability Result:")
+                status = "✅ Available" if getattr(availability, 'is_available', False) else "❌ Not Available"
+                print(f"  Datetime: {getattr(availability, 'file_date', getattr(availability, 'file_datetime', args.file_datetime))}")
+                print(f"  Status: {status}")
+                if getattr(availability, 'is_available', False):
+                    if getattr(availability, 'file_name', None):
+                        print(f"    File: {availability.file_name}")
+                    if getattr(availability, 'first_created_on', None):
+                        print(f"    Created: {availability.first_created_on}")
+                    if getattr(availability, 'last_modified', None):
+                        print(f"    Modified: {availability.last_modified}")
                 print(f"\n✅ Availability check completed!")
             return 0
             

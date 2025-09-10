@@ -1,13 +1,12 @@
 import asyncio
-from types import SimpleNamespace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from unittest.mock import AsyncMock, Mock
 
 from dataquery.auto_download import AutoDownloadManager
 from dataquery.models import FileList, FileInfo, DownloadProgress, DownloadResult, DownloadStatus
-from dataquery.exceptions import NotFoundError
 
 
 @pytest.mark.asyncio
@@ -19,6 +18,7 @@ async def test_init_creates_directory_and_defaults(temp_download_dir):
     assert manager.download_options.output_dir == str(temp_download_dir)
     assert manager.max_retries == 3
     assert manager.check_current_date_only is True
+    assert manager.max_concurrent_downloads == 7
     assert manager.is_running is False
 
 
@@ -53,15 +53,19 @@ def test_file_exists_locally(temp_download_dir):
 async def test_check_and_download_skips_when_already_downloaded(temp_download_dir):
     client = Mock()
     manager = AutoDownloadManager(client, group_id="g", destination_dir=str(temp_download_dir))
+    manager._running = True
     file_id = "fid"
     date_str = "20240115"
     manager._downloaded_files.add(f"{file_id}_{date_str}")
 
-    # Should silently return without calling availability or download
-    client.check_availability_async = AsyncMock()
+    # available-files returns same entry but it should be skipped
+    client.list_available_files_async = AsyncMock(return_value=[{
+        "file-group-id": file_id,
+        "file-datetime": date_str,
+        "is-available": True,
+    }])
     manager._download_file = AsyncMock()
-    await manager._check_and_download_file_for_date(file_id, date_str)
-    client.check_availability_async.assert_not_called()
+    await manager._check_and_download_files()
     manager._download_file.assert_not_called()
 
 
@@ -69,14 +73,18 @@ async def test_check_and_download_skips_when_already_downloaded(temp_download_di
 async def test_check_and_download_skips_when_exceeded_retries(temp_download_dir):
     client = Mock()
     manager = AutoDownloadManager(client, group_id="g", destination_dir=str(temp_download_dir), max_retries=2)
+    manager._running = True
     file_id = "fid"
     date_str = "20240115"
     manager._failed_files[f"{file_id}_{date_str}"] = 2
 
-    client.check_availability_async = AsyncMock()
+    client.list_available_files_async = AsyncMock(return_value=[{
+        "file-group-id": file_id,
+        "file-datetime": date_str,
+        "is-available": True,
+    }])
     manager._download_file = AsyncMock()
-    await manager._check_and_download_file_for_date(file_id, date_str)
-    client.check_availability_async.assert_not_called()
+    await manager._check_and_download_files()
     manager._download_file.assert_not_called()
 
 
@@ -84,33 +92,34 @@ async def test_check_and_download_skips_when_exceeded_retries(temp_download_dir)
 async def test_check_and_download_skips_when_exists_locally(temp_download_dir):
     client = Mock()
     manager = AutoDownloadManager(client, group_id="g", destination_dir=str(temp_download_dir))
+    manager._running = True
     file_id = "fid"
     date_str = "20240115"
-    # Create a file that should match
     Path(temp_download_dir, f"{file_id}_{date_str}.csv").write_text("x")
 
-    await manager._check_and_download_file_for_date(file_id, date_str)
+    client.list_available_files_async = AsyncMock(return_value=[{
+        "file-group-id": file_id,
+        "file-datetime": date_str,
+        "is-available": True,
+    }])
+    await manager._check_and_download_files()
     assert manager.stats["files_skipped"] == 1
     assert f"{file_id}_{date_str}" in manager.get_downloaded_files()
 
 
 @pytest.mark.asyncio
-async def test_check_and_download_handles_not_found_and_unavailable(temp_download_dir):
+async def test_check_and_download_handles_unavailable_entries(temp_download_dir):
     client = Mock()
     manager = AutoDownloadManager(client, group_id="g", destination_dir=str(temp_download_dir))
-    file_id = "fid"
-    date_str = "20240115"
+    manager._running = True
 
-    # NotFoundError path
-    client.check_availability_async = AsyncMock(side_effect=NotFoundError("File", file_id))
-    await manager._check_and_download_file_for_date(file_id, date_str)
-
-    # Unavailable path
-    client.check_availability_async = AsyncMock(return_value=SimpleNamespace(available=False))
-    await manager._check_and_download_file_for_date(file_id, date_str)
-
-    # Neither should trigger download
+    client.list_available_files_async = AsyncMock(return_value=[{
+        "file-group-id": "fid",
+        "file-datetime": "20240115",
+        "is-available": False,
+    }])
     manager._download_file = AsyncMock()
+    await manager._check_and_download_files()
     manager._download_file.assert_not_called()
 
 
@@ -118,13 +127,19 @@ async def test_check_and_download_handles_not_found_and_unavailable(temp_downloa
 async def test_check_and_download_triggers_download_on_available(temp_download_dir):
     client = Mock()
     manager = AutoDownloadManager(client, group_id="g", destination_dir=str(temp_download_dir))
+    manager._running = True
     file_id = "fid"
     date_str = "20240115"
 
-    client.check_availability_async = AsyncMock(return_value=SimpleNamespace(available=True))
+    client.list_available_files_async = AsyncMock(return_value=[{
+        "file-group-id": file_id,
+        "file-datetime": date_str,
+        "is-available": True,
+    }])
     manager._download_file = AsyncMock()
-    await manager._check_and_download_file_for_date(file_id, date_str)
+    await manager._check_and_download_files()
     manager._download_file.assert_awaited_once()
+
 
 
 @pytest.mark.asyncio
@@ -194,17 +209,18 @@ async def test_download_file_exception_increments_and_raises(temp_download_dir):
 
 
 @pytest.mark.asyncio
-async def test_process_file_respects_filter(temp_download_dir):
+async def test_available_files_respects_filter(temp_download_dir):
     client = Mock()
-    # Filter out all files
+    # Filter out all files (returns False)
     manager = AutoDownloadManager(client, group_id="g", destination_dir=str(temp_download_dir), file_filter=lambda f: False)
-
-    class F:
-        file_group_id = "fg1"
-
-    manager._check_and_download_file_for_date = AsyncMock()
-    await manager._process_file(F())
-    manager._check_and_download_file_for_date.assert_not_called()
+    client.list_available_files_async = AsyncMock(return_value=[{
+        "file-group-id": "fg1",
+        "file-datetime": "20240115",
+        "is-available": True,
+    }])
+    manager._download_file = AsyncMock()
+    await manager._check_and_download_files()
+    manager._download_file.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -231,10 +247,8 @@ async def test_start_and_stop_state_transitions(temp_download_dir):
     client = Mock()
     manager = AutoDownloadManager(client, group_id="g", destination_dir=str(temp_download_dir), interval_minutes=0)
 
-    # Provide a minimal list_files_async response for the loop
-    # Use FileList/FileInfo to satisfy attribute checks
-    file_list = FileList(group_id="g", file_group_ids=[])
-    client.list_files_async = AsyncMock(return_value=file_list)
+    # Provide an empty available-files response for the loop
+    client.list_available_files_async = AsyncMock(return_value=[])
 
     await manager.start()
     assert manager.is_running is True

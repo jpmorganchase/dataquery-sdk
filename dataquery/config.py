@@ -35,7 +35,8 @@ class EnvConfig:
         'OAUTH_TOKEN_URL': None,
         'CLIENT_ID': None,
         'CLIENT_SECRET': None,
-        'A': 'data.read',
+        # scope removed
+        'AUDIENCE': '',
         'GRANT_TYPE': 'client_credentials',
         
         # Bearer Token Configuration
@@ -43,7 +44,7 @@ class EnvConfig:
         'TOKEN_REFRESH_THRESHOLD': '300',
         
         # HTTP Configuration
-        'TIMEOUT': '30.0',
+        'TIMEOUT': '6000.0',
         'MAX_RETRIES': '3',
         'RETRY_DELAY': '1.0',
         
@@ -118,7 +119,8 @@ class EnvConfig:
         'oauth_token_url': 'DATAQUERY_OAUTH_TOKEN_URL',
         'client_id': 'DATAQUERY_CLIENT_ID',
         'client_secret': 'DATAQUERY_CLIENT_SECRET',
-        'aud': 'DATAQUERY_OAUTH_SCOPE',
+        # scope removed
+        'aud': 'DATAQUERY_OAUTH_AUD',
         'grant_type': 'DATAQUERY_OAUTH_GRANT_TYPE',
         
         # Bearer Token Configuration
@@ -258,7 +260,8 @@ class EnvConfig:
                 oauth_token_url=oauth_token_url,
                 client_id=cls.get_env_var("CLIENT_ID"),
                 client_secret=cls.get_env_var("CLIENT_SECRET"),
-                aud=cls.get_env_var("OAUTH_SCOPE"),
+                # scope removed
+                aud=cls.get_env_var("OAUTH_AUD"),
                 grant_type=cls.get_env_var("GRANT_TYPE") or "client_credentials",
                 
                 # Bearer token configuration
@@ -266,7 +269,7 @@ class EnvConfig:
                 token_refresh_threshold=cls.get_int("TOKEN_REFRESH_THRESHOLD", "300"),
                 
                 # HTTP configuration
-                timeout=cls.get_float("TIMEOUT", "30.0"),
+                timeout=cls.get_float("TIMEOUT", "600.0"),
                 max_retries=cls.get_int("MAX_RETRIES", "3"),
                 retry_delay=cls.get_float("RETRY_DELAY", "1.0"),
                 
@@ -305,7 +308,7 @@ class EnvConfig:
             "chunk_size": cls.get_int("CHUNK_SIZE", "8192"),
             "max_retries": cls.get_int("MAX_RETRIES", "3"),
             "retry_delay": cls.get_float("RETRY_DELAY", "1.0"),
-            "timeout": cls.get_float("TIMEOUT", "30.0"),
+            "timeout": cls.get_float("TIMEOUT", "600.0"),
             "enable_range_requests": cls.get_bool("ENABLE_RANGE_REQUESTS"),
             "show_progress": cls.get_bool("SHOW_PROGRESS"),
             "create_directories": cls.get_bool("CREATE_DIRECTORIES"),
@@ -424,7 +427,8 @@ class EnvConfig:
 {cls.PREFIX}OAUTH_TOKEN_URL=https://api.dataquery.com/oauth/token
 {cls.PREFIX}CLIENT_ID=your_client_id_here
 {cls.PREFIX}CLIENT_SECRET=your_client_secret_here
-{cls.PREFIX}AUD=data.read
+{cls.PREFIX}SCOPE=data.read
+{cls.PREFIX}AUDIENCE=
 {cls.PREFIX}GRANT_TYPE=client_credentials
 
 # Bearer Token Configuration (alternative to OAuth)
@@ -432,7 +436,7 @@ class EnvConfig:
 {cls.PREFIX}TOKEN_REFRESH_THRESHOLD=300
 
 # HTTP Configuration
-{cls.PREFIX}TIMEOUT=30.0
+{cls.PREFIX}TIMEOUT=6000.0
 {cls.PREFIX}MAX_RETRIES=3
 {cls.PREFIX}RETRY_DELAY=1.0
 

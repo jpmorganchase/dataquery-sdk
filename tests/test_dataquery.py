@@ -12,7 +12,7 @@ from dataquery.dataquery import (
 )
 from dataquery.models import (
     ClientConfig, Group, FileInfo, DownloadResult, DownloadStatus,
-    AvailabilityResponse, DownloadOptions, DownloadProgress,
+    DownloadOptions, DownloadProgress,
     InstrumentsResponse, TimeSeriesResponse, FiltersResponse, 
     AttributesResponse, GridDataResponse, Instrument, InstrumentWithAttributes,
     Attribute, Filter, GridDataSeries, DateRange, AvailabilityInfo
@@ -542,12 +542,7 @@ class TestDataQueryAsyncMethods:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
                 
-                mock_availability = AvailabilityResponse(
-                    group_id="group1",
-                    file_group_id="file1",
-                    date_range=DateRange(earliest="20200101", latest="20200131"),
-                    availability=[AvailabilityInfo(file_date="20200101", is_available=True)]
-                )
+                mock_availability = AvailabilityInfo(file_date="20200101", is_available=True)
                 mock_client.check_availability_async.return_value = mock_availability
                 
                 dataquery = DataQuery(config)
@@ -1149,13 +1144,8 @@ class TestDataQuerySyncMethods:
                 mock_client = AsyncMock()  # Use AsyncMock instead of MagicMock
                 mock_client_class.return_value = mock_client
                 
-                # Create a proper AvailabilityResponse with required fields
-                mock_availability = AvailabilityResponse(
-                    group_id="group1",
-                    file_group_id="file1",
-                    date_range=DateRange(earliest="20200101", latest="20200131"),
-                    availability=[AvailabilityInfo(file_date="20200101", is_available=True)]
-                )
+                # Mock single AvailabilityInfo result
+                mock_availability = AvailabilityInfo(file_date="20200101", is_available=True)
                 mock_client.check_availability_async.return_value = mock_availability
                 
                 dataquery = DataQuery(config)
@@ -1676,15 +1666,7 @@ class TestDataQueryWorkflowMethods:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
                 
-                mock_availability = AvailabilityResponse(
-                    group_id="group1",
-                    file_group_id="file1",
-                    date_range=DateRange(earliest="20200101", latest="20200131"),
-                    availability=[AvailabilityInfo(file_date="20200101", is_available=True)],
-                    availability_rate=0.5,
-                    available_files=[],
-                    unavailable_files=[]
-                )
+                mock_availability = AvailabilityInfo(file_date="20200101", is_available=True)
                 mock_client.check_availability_async.return_value = mock_availability
                 
                 dataquery = DataQuery(config)
@@ -1693,15 +1675,10 @@ class TestDataQueryWorkflowMethods:
                 
                 result = await dataquery.run_availability_async("file1", "20200101")
                 
-                # Fix: Check for the actual keys returned by the method
+                # Adjusted keys for single AvailabilityInfo
                 assert "file_group_id" in result
                 assert "file_datetime" in result
-                assert "availability_rate" in result
-                assert "total_files" in result
-                assert "available_files" in result
-                assert "unavailable_files" in result
-                assert "available_dates" in result
-                assert "unavailable_dates" in result
+                assert "is_available" in result
                 assert result["file_group_id"] == "file1"
                 assert result["file_datetime"] == "20200101"
     
@@ -1762,10 +1739,10 @@ class TestDataQueryWorkflowMethods:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
                 
-                # Mock available files
+                # Mock available files (mark as available per new filtering)
                 mock_available_files = [
-                    {"file_group_id": "file1", "file_datetime": "20240101"},
-                    {"file_group_id": "file2", "file_datetime": "20240102"}
+                    {"file_group_id": "file1", "file_datetime": "20240101", "is-available": True},
+                    {"file_group_id": "file2", "file_datetime": "20240102", "is-available": True}
                 ]
                 mock_client.list_available_files_async.return_value = mock_available_files
                 
@@ -1807,6 +1784,115 @@ class TestDataQueryWorkflowMethods:
                 assert result["start_date"] == "20240101"
                 assert result["end_date"] == "20240131"
                 assert result["total_files"] == 2
+
+    @pytest.mark.asyncio
+    async def test_run_group_download_parallel_async(self):
+        """Test run_group_download_parallel_async method."""
+        config = ClientConfig(
+            base_url="https://api.example.com",
+            oauth_enabled=False,
+            bearer_token="test_token"
+        )
+        
+        with patch('dataquery.dataquery.EnvConfig.validate_config'):
+            with patch('dataquery.dataquery.DataQueryClient') as mock_client_class:
+                mock_client = AsyncMock()
+                mock_client_class.return_value = mock_client
+                
+                # Mock rate limiter configuration
+                mock_rate_limiter = AsyncMock()
+                mock_rate_limiter.config.requests_per_minute = 100
+                mock_rate_limiter.config.burst_capacity = 20
+                mock_rate_limiter.config.enable_queuing = False
+                mock_client.rate_limiter = mock_rate_limiter
+                
+                # Mock available files (mark as available per new filtering)
+                mock_available_files = [
+                    {"file_group_id": "file1", "file_datetime": "20240101", "is-available": True},
+                    {"file_group_id": "file2", "file_datetime": "20240102", "is-available": True}
+                ]
+                mock_client.list_available_files_async.return_value = mock_available_files
+                
+                # Mock download method (used in fallback cases)
+                mock_download_result = DownloadResult(
+                    file_group_id="file1",
+                    group_id="group1",
+                    local_path=Path("./downloads/file1.bin"),
+                    file_size=1024,
+                    download_time=1.0,
+                    bytes_downloaded=1024,
+                    status=DownloadStatus.COMPLETED
+                )
+                mock_client.download_file_async.return_value = mock_download_result
+                
+                # Mock HTTP request methods used by _download_file_parallel_flattened
+                mock_response = AsyncMock()
+                mock_response.headers = {
+                    'content-range': 'bytes 0-1023/1024',
+                    'content-length': '1024',
+                    'content-disposition': 'attachment; filename="file1.bin"'
+                }
+                mock_response.content.iter_chunked.return_value = [b'x' * 1024]
+                
+                mock_client._enter_request_cm.return_value.__aenter__.return_value = mock_response
+                mock_client._handle_response.return_value = None
+                
+                dataquery = DataQuery(config)
+                dataquery._client = mock_client
+                
+                result = await dataquery.run_group_download_parallel_async(
+                    group_id="group1",
+                    start_date="20240101",
+                    end_date="20240131",
+                    destination_dir=Path("./downloads"),
+                    max_concurrent=2,
+                    num_parts=4,
+                )
+                
+                assert "group_id" in result
+                assert "start_date" in result
+                assert "end_date" in result
+                assert "total_files" in result
+                assert "successful_downloads" in result
+                assert "failed_downloads" in result
+                assert result["total_files"] == 2
+                # Ensure the client download method was used
+                assert mock_client.download_file_async.await_count >= 1
+
+    def test_run_group_download_parallel_sync(self):
+        """Test run_group_download_parallel sync wrapper."""
+        config = ClientConfig(
+            base_url="https://api.example.com",
+            oauth_enabled=False,
+            bearer_token="test_token"
+        )
+        
+        with patch('dataquery.dataquery.EnvConfig.validate_config'):
+            dataquery = DataQuery(config)
+            expected = {
+                "group_id": "group1",
+                "start_date": "20240101",
+                "end_date": "20240131",
+                "total_files": 2,
+                "successful_downloads": 2,
+                "failed_downloads": 0,
+                "downloaded_files": ["file1", "file2"],
+                "failed_files": [],
+                "num_parts": 5,
+            }
+            
+            with patch.object(dataquery, '_run_async') as mock_run_async:
+                mock_run_async.return_value = expected
+                result = dataquery.run_group_download_parallel(
+                    group_id="group1",
+                    start_date="20240101",
+                    end_date="20240131",
+                    destination_dir=Path("./downloads"),
+                    max_concurrent=2,
+                    num_parts=5,
+                )
+                assert result == expected
+                mock_run_async.assert_called_once()
     
     def test_run_groups_sync(self):
         """Test run_groups sync wrapper."""
@@ -1877,13 +1963,8 @@ class TestDataQueryWorkflowMethods:
                 mock_client = AsyncMock()  # Use AsyncMock instead of MagicMock
                 mock_client_class.return_value = mock_client
                 
-                # Create a proper AvailabilityResponse with required fields
-                mock_availability = AvailabilityResponse(
-                    group_id="group1",
-                    file_group_id="file1",
-                    date_range=DateRange(earliest="20200101", latest="20200131"),
-                    availability=[AvailabilityInfo(file_date="20200101", is_available=True)]
-                )
+                # Mock single AvailabilityInfo result
+                mock_availability = AvailabilityInfo(file_date="20200101", is_available=True)
                 mock_client.check_availability_async.return_value = mock_availability
                 
                 dataquery = DataQuery(config)

@@ -289,7 +289,7 @@ async def main():
     parser.add_argument("--start-date", required=False, help="Start date (YYYYMMDD)")
     parser.add_argument("--end-date", required=False, help="End date (YYYYMMDD)")
     parser.add_argument("--destination", default="./downloads", help="Destination directory")
-    parser.add_argument("--max-concurrent", type=int, default=3, help="Maximum concurrent downloads")
+    parser.add_argument("--max-concurrent", type=int, default=6, help="Maximum concurrent downloads")
     parser.add_argument("--progress-type", choices=list(GROUP_PROGRESS_CALLBACKS.keys()),
                         default="detailed", help="Type of progress callback to use")
     args = parser.parse_args()

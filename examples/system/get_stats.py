@@ -304,7 +304,7 @@ def performance_analysis_example():
 
 def main():
     """Run all examples."""
-    print("🚀 PyDataQuery SDK - Get Statistics Example")
+    print("🚀 dataquery-sdk - Get Statistics Example")
     print("=" * 60)
     
     # Run async example

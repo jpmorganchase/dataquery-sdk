@@ -37,10 +37,10 @@ help:
 
 # Development
 install:
-	pip install -e .
+	python3 -m pip install -e .
 
 install-dev:
-	pip install -e ".[dev]"
+	python3 -m pip install -e ".[dev]"
 
 test:
 	pytest tests/ -v
@@ -63,6 +63,7 @@ type-check:
 
 # Security audit using pip-audit
 audit:
+	python3 -m pip install -q pip-audit || true
 	pip-audit || true
 
 # Building

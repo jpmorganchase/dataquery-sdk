@@ -14,7 +14,42 @@ from dataquery.client import DataQueryClient
 from dataquery.models import ClientConfig
 
 
-@pytest.fixture(aud="session")
+# Fallback async test runner if pytest-asyncio plugin is unavailable
+try:
+    import pytest_asyncio  # type: ignore
+    _HAS_PYTEST_ASYNCIO = True
+except Exception:  # pragma: no cover - environment dependent
+    _HAS_PYTEST_ASYNCIO = False
+
+def pytest_pyfunc_call(pyfuncitem):  # noqa: D401
+    """Execute async test functions without pytest-asyncio plugin.
+
+    If pytest-asyncio is installed, defer to it. Otherwise, detect coroutine
+    test functions and run them in a fresh event loop. Filter injected kwargs
+    to only those declared by the function to avoid unexpected-kw errors.
+    """
+    if _HAS_PYTEST_ASYNCIO:
+        return None
+    testfunction = pyfuncitem.obj
+    if asyncio.iscoroutinefunction(testfunction):
+        import inspect
+        sig = inspect.signature(testfunction)
+        allowed = set(sig.parameters.keys())
+        kwargs = {k: v for k, v in (pyfuncitem.funcargs or {}).items() if k in allowed}
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(testfunction(**kwargs))
+        finally:
+            try:
+                loop.close()
+            finally:
+                asyncio.set_event_loop(None)
+        return True
+    return None
+
+
+@pytest.fixture(scope="session")
 def event_loop():
     """Create an instance of the default event loop for the test session."""
     loop = asyncio.get_event_loop_policy().new_event_loop()

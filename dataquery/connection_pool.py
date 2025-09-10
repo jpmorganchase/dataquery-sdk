@@ -36,10 +36,10 @@ class ConnectionPoolStats:
 class ConnectionPoolConfig:
     """Configuration for connection pool monitoring."""
     
-    max_connections: int = 20
-    max_keepalive_connections: int = 10  # Renamed for test compatibility
-    keepalive_timeout: int = 30
-    connection_timeout: int = 30  # Added for test compatibility
+    max_connections: int = 64
+    max_keepalive_connections: int = 16  # Renamed for test compatibility; tuned for high parallelism
+    keepalive_timeout: int = 300
+    connection_timeout: int = 300  # Increased for better reliability
     enable_cleanup: bool = True
     cleanup_interval: int = 300  # 5 minutes
     max_idle_time: int = 60  # 1 minute
@@ -75,11 +75,17 @@ class ConnectionPoolMonitor:
         self._cleanup_task: Optional[asyncio.Task] = None
         self._health_check_task: Optional[asyncio.Task] = None
         self._running = False
-        self._shutdown_event = asyncio.Event()  # Added for test compatibility
+        self._shutdown_event: Optional[asyncio.Event] = None  # Added for test compatibility
         
         logger.info("Connection pool monitor initialized", 
                    max_connections=config.max_connections,
                    cleanup_interval=config.cleanup_interval)
+    
+    def _get_shutdown_event(self) -> asyncio.Event:
+        """Get the shutdown event, creating it if necessary."""
+        if self._shutdown_event is None:
+            self._shutdown_event = asyncio.Event()
+        return self._shutdown_event
     
     def start_monitoring(self, connector: Optional[aiohttp.TCPConnector] = None) -> None:
         """Start monitoring the connection pool."""
@@ -237,97 +243,74 @@ class ConnectionPoolMonitor:
             logger.error("Error during health check", error=str(e))
     
     def _get_pool_stats(self) -> Dict[str, Any]:
-        """Get current connection pool statistics."""
+        """Get current connection pool statistics with optimized performance."""
         if not hasattr(self, 'connector'):
             return {}
         
         try:
-            # Get basic connector stats
+            # Get basic connector stats efficiently
             connector_stats = {
                 'limit': getattr(self.connector, 'limit', 0),
                 'limit_per_host': getattr(self.connector, 'limit_per_host', 0),
-                'resolver': str(getattr(self.connector, '_resolver', 'unknown')),
             }
             
-            # Extract connection pool statistics
-            total_connections = 0
-            active_connections = 0
-            idle_connections = 0
-            
-            # Try to get detailed connection stats from the connector
-            if hasattr(self.connector, '_resolver'):
-                resolver = self.connector._resolver
-                # Try different possible cache attribute names
-                cache_attr = None
-                for attr_name in ['_cache', '_resolver_cache', 'cache']:
-                    if hasattr(resolver, attr_name):
-                        try:
-                            cache_attr = getattr(resolver, attr_name)
-                            # Verify it's actually a cache-like object
-                            if hasattr(cache_attr, '__len__') and hasattr(cache_attr, 'items'):
-                                break
-                            else:
-                                cache_attr = None
-                        except (AttributeError, TypeError):
-                            cache_attr = None
-                            continue
+            # Use aiohttp's built-in stats if available (more efficient)
+            if hasattr(self.connector, 'closed') and not self.connector.closed:
+                # Try to get stats from aiohttp's internal structures
+                total_connections = 0
+                active_connections = 0
+                idle_connections = 0
                 
-                if cache_attr:
+                # Check if we have the newer aiohttp stats API
+                if hasattr(self.connector, '_conns'):
                     try:
-                        cache_size = len(cache_attr)
-                        connector_stats['cache_size'] = cache_size
-                        
-                        # Count connections in the cache
-                        for key, value in cache_attr.items():
-                            if hasattr(value, 'connection'):
-                                total_connections += 1
-                                # Check if connection is active (has pending requests)
-                                if hasattr(value.connection, '_request_count'):
-                                    if value.connection._request_count > 0:
+                        # More efficient iteration
+                        for host_connections in self.connector._conns.values():
+                            if isinstance(host_connections, (list, tuple)):
+                                total_connections += len(host_connections)
+                                # For performance, assume most connections are idle
+                                # Only check a sample for active status
+                                sample_size = min(5, len(host_connections))
+                                for conn in host_connections[:sample_size]:
+                                    if hasattr(conn, '_request_count') and conn._request_count > 0:
                                         active_connections += 1
                                     else:
                                         idle_connections += 1
-                                else:
-                                    # If we can't determine, assume idle
-                                    idle_connections += 1
-                    except Exception as e:
-                        logger.debug("Could not access resolver cache", error=str(e))
+                                # Estimate remaining connections as idle
+                                remaining = len(host_connections) - sample_size
+                                idle_connections += remaining
+                    except Exception:
+                        # Fallback to simple counting
+                        total_connections = sum(len(conns) for conns in self.connector._conns.values() if isinstance(conns, (list, tuple)))
+                        idle_connections = total_connections
+                
+                # Update our internal stats
+                self.stats.total_connections = total_connections
+                self.stats.active_connections = active_connections
+                self.stats.idle_connections = idle_connections
+                
+                # Add connection stats to the result
+                connector_stats.update({
+                    'total_connections': total_connections,
+                    'active_connections': active_connections,
+                    'idle_connections': idle_connections,
+                    'connection_utilization': (active_connections / max(total_connections, 1)) * 100,
+                    'pool_utilization': (total_connections / max(self.config.max_connections, 1)) * 100
+                })
+                
+                return connector_stats
             
-            # Try to get stats from the connector's connection pool
-            if hasattr(self.connector, '_conns'):
-                try:
-                    for host, connections in self.connector._conns.items():
-                        for conn in connections:
-                            total_connections += 1
-                            # Check if connection is active
-                            if hasattr(conn, '_request_count'):
-                                if conn._request_count > 0:
-                                    active_connections += 1
-                                else:
-                                    idle_connections += 1
-                            else:
-                                idle_connections += 1
-                except Exception as e:
-                    logger.debug("Could not access connector connections", error=str(e))
-            
-            # Update our internal stats
-            self.stats.total_connections = total_connections
-            self.stats.active_connections = active_connections
-            self.stats.idle_connections = idle_connections
-            
-            # Add connection stats to the result
-            connector_stats.update({
-                'total_connections': total_connections,
-                'active_connections': active_connections,
-                'idle_connections': idle_connections,
-                'connection_utilization': (active_connections / max(total_connections, 1)) * 100,
-                'pool_utilization': (total_connections / max(self.config.max_connections, 1)) * 100
-            })
-            
-            return connector_stats
+            # Fallback for older aiohttp versions or when connector is closed
+            return {
+                'total_connections': 0,
+                'active_connections': 0,
+                'idle_connections': 0,
+                'connection_utilization': 0.0,
+                'pool_utilization': 0.0
+            }
             
         except Exception as e:
-            logger.warning("Could not get detailed pool stats", error=str(e))
+            logger.debug("Could not get pool stats", error=str(e))
             return {
                 'total_connections': 0,
                 'active_connections': 0,
@@ -463,8 +446,8 @@ async def managed_connection_pool(
 
 
 def create_connection_pool_config(
-    max_connections: int = 20,
-    max_connections_per_host: int = 10,
+    max_connections: int = 300,
+    max_connections_per_host: int = 100,
     enable_cleanup: bool = True,
     cleanup_interval: int = 300
 ) -> ConnectionPoolConfig:

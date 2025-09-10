@@ -2,7 +2,7 @@
 """
 Example: Complete Workflow
 
-This example demonstrates a complete workflow using multiple PyDataQuery SDK endpoints.
+This example demonstrates a complete workflow using multiple dataquery-sdk endpoints.
 
 Features demonstrated:
 - Complete end-to-end workflow
@@ -44,7 +44,7 @@ def progress_callback(progress: DownloadProgress):
 
 async def complete_workflow():
     """Demonstrate a complete workflow."""
-    print("🚀 PyDataQuery SDK - Complete Workflow Example")
+    print("🚀 dataquery-sdk - Complete Workflow Example")
     print("=" * 70)
     
     workflow_start = datetime.now()
@@ -291,7 +291,7 @@ async def show_statistics(dq: DataQuery):
 
 def main():
     """Run the complete workflow."""
-    print("🔄 Starting complete PyDataQuery SDK workflow...")
+    print("🔄 Starting complete dataquery-sdk workflow...")
     print("💡 This example demonstrates all major SDK features")
     print()
     

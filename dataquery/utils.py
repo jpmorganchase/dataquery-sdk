@@ -13,6 +13,26 @@ from .models import ClientConfig
 logger = structlog.get_logger(__name__)
 
 
+def load_env_file(env_file: Optional[Path] = None) -> None:
+    """
+    Load environment variables from a .env file.
+    
+    Args:
+        env_file: Path to the .env file (default: .env)
+    """
+    env_path = env_file or Path(".env")
+    
+    if env_path.exists():
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(env_path)
+            logger.info("Loaded environment variables from .env file", file=str(env_path))
+        except ImportError:
+            logger.warning("python-dotenv not available, skipping .env file loading")
+        except Exception as e:
+            logger.error("Failed to load .env file", file=str(env_path), error=str(e))
+
+
 def create_env_template(env_file: Optional[Path] = None) -> Path:
     """
     Create a .env template file with all available configuration options.
@@ -68,10 +88,11 @@ DATAQUERY_OAUTH_TOKEN_URL=https://api-developer.jpmorgan.com/oauth/token
 DATAQUERY_CLIENT_ID=your_client_id_here
 DATAQUERY_CLIENT_SECRET=your_client_secret_here
 
-# OAuth aud (optional)
-# Example: data.read
-# Example: data.read data.write
-DATAQUERY_SCOPE=data.read
+# OAuth scope removed
+
+# OAuth audience (optional)
+# Example: api://default or a full audience URI
+DATAQUERY_OAUTH_AUD=
 
 # OAuth grant type (usually client_credentials)
 DATAQUERY_GRANT_TYPE=client_credentials
@@ -93,8 +114,8 @@ DATAQUERY_TOKEN_REFRESH_THRESHOLD=300
 # HTTP Configuration
 # =============================================================================
 
-# Request timeout in seconds (default: 30.0)
-DATAQUERY_TIMEOUT=30.0
+# Request timeout in seconds (default: 600.0)
+DATAQUERY_TIMEOUT=600.0
 
 # Maximum retry attempts for failed requests (default: 3)
 DATAQUERY_MAX_RETRIES=3
@@ -247,7 +268,8 @@ DATAQUERY_OAUTH_ENABLED={str(config.oauth_enabled).lower()}
 DATAQUERY_OAUTH_TOKEN_URL={config.oauth_token_url or ''}
 DATAQUERY_CLIENT_ID={config.client_id or ''}
 DATAQUERY_CLIENT_SECRET={config.client_secret or ''}
-DATAQUERY_SCOPE={config.aud or ''}
+## scope removed
+DATAQUERY_OAUTH_AUD={getattr(config, 'aud', '') or ''}
 DATAQUERY_GRANT_TYPE={config.grant_type}
 
 # Bearer Token Configuration
@@ -372,23 +394,10 @@ def validate_env_config() -> None:
     if oauth_enabled_val and oauth_enabled_val.lower() not in ('true', 'false'):
         raise ValueError(f"Invalid OAuth enabled value: {oauth_enabled_val}")
     
-    # Check required variables
-    required_vars = ["DATAQUERY_BASE_URL"]
-    
-    # First check for missing required variables (None values)
-    missing_vars = []
-    for var in required_vars:
-        value = get_env_value(var)
-        if value is None:
-            missing_vars.append(var)
-    
-    if missing_vars:
-        raise ValueError(f"DATAQUERY_BASE_URL is required")
-    
-    # Then check if BASE_URL has invalid format (including empty strings)
+    # Check required variables - BASE_URL is always required
     base_url = get_env_value("DATAQUERY_BASE_URL")
     if not base_url or not base_url.startswith(('http://', 'https://')):
-        raise ValueError(f"Invalid URL format")
+        raise ValueError("DATAQUERY_BASE_URL is required")
     
     # Validate OAuth configuration
     oauth_enabled = get_env_value("DATAQUERY_OAUTH_ENABLED", "false").lower() == "true"

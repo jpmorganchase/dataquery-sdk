@@ -39,7 +39,7 @@ class RetryConfig:
     
     max_retries: int = 3
     base_delay: float = 1.0
-    max_delay: float = 60.0
+    max_delay: float = 300.0
     exponential_base: float = 2.0
     jitter: bool = True
     jitter_factor: float = 0.1
@@ -49,7 +49,7 @@ class RetryConfig:
     timeout: Optional[float] = None
     enable_circuit_breaker: bool = True
     circuit_breaker_threshold: int = 5
-    circuit_breaker_timeout: float = 60.0
+    circuit_breaker_timeout: float = 300.0
     circuit_breaker_success_threshold: int = 2
 
 
@@ -284,17 +284,22 @@ class RetryManager:
         return len(self.config.retryable_exceptions) == 0
     
     def _calculate_delay(self, attempt: int) -> float:
-        """Calculate delay for retry attempt."""
+        """Calculate delay for retry attempt with optimized performance."""
         if self.config.strategy == RetryStrategy.EXPONENTIAL:
-            delay = self.config.base_delay * (self.config.exponential_base ** attempt)
+            # Use bit shifting for faster exponentiation when possible
+            if self.config.exponential_base == 2.0:
+                delay = self.config.base_delay * (1 << min(attempt, 10))  # Cap at 2^10
+            else:
+                delay = self.config.base_delay * (self.config.exponential_base ** attempt)
         elif self.config.strategy == RetryStrategy.LINEAR:
             delay = self.config.base_delay * (attempt + 1)
         else:  # CONSTANT
             delay = self.config.base_delay
         
-        # Apply jitter
-        if self.config.jitter:
-            jitter = random.uniform(0, self.config.jitter_factor * delay)
+        # Apply jitter more efficiently
+        if self.config.jitter and self.config.jitter_factor > 0:
+            # Use faster random generation
+            jitter = random.random() * self.config.jitter_factor * delay
             delay += jitter
         
         # Cap at maximum delay
@@ -335,7 +340,7 @@ class RetryManager:
 def create_retry_config(
     max_retries: int = 3,
     base_delay: float = 1.0,
-    max_delay: float = 60.0,
+    max_delay: float = 300.0,
     strategy: RetryStrategy = RetryStrategy.EXPONENTIAL,
     enable_circuit_breaker: bool = True
 ) -> RetryConfig:

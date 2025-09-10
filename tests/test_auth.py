@@ -871,7 +871,9 @@ class TestTokenManager:
         
         token_manager = TokenManager(config)
         
-        with patch.object(token_manager, '_get_new_token') as mock_get_new:
+        with patch.object(token_manager, '_load_token') as mock_load, \
+             patch.object(token_manager, '_get_new_token') as mock_get_new:
+            mock_load.return_value = None
             mock_get_new.return_value = None
             
             token = await token_manager.get_valid_token()

@@ -1,5 +1,5 @@
 """
-Auto-Download Manager for PyDataQuery SDK
+Auto-Download Manager for dataquery-sdk
 
 This module provides automatic file download functionality that continuously
 monitors data groups and downloads new files when they become available.
@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Callable, Set, Dict, Any, List
 import time
+import inspect
 
 from .models import DownloadOptions, DownloadProgress
 from .exceptions import DataQueryError, NotFoundError, NetworkError
@@ -43,7 +44,8 @@ class AutoDownloadManager:
         progress_callback: Optional[Callable] = None,
         error_callback: Optional[Callable] = None,
         max_retries: int = 3,
-        check_current_date_only: bool = True
+        check_current_date_only: bool = True,
+        max_concurrent_downloads: int = 7,
     ):
         """
         Initialize the AutoDownloadManager.
@@ -68,6 +70,7 @@ class AutoDownloadManager:
         self.error_callback = error_callback
         self.max_retries = max_retries
         self.check_current_date_only = check_current_date_only
+        self.max_concurrent_downloads = max_concurrent_downloads
         
         # Create destination directory if it doesn't exist
         self.destination_dir.mkdir(parents=True, exist_ok=True)
@@ -190,57 +193,76 @@ class AutoDownloadManager:
             self._running = False
     
     async def _check_and_download_files(self):
-        """Check for new files and download them if needed."""
+        """Use available-files to find and download files if needed."""
         try:
-            # Get list of files in the group
-            files = await self.client.list_files_async(self.group_id)
-            
-            if not files or not hasattr(files, 'file_group_ids') or not files.file_group_ids:
-                self.logger.debug(f"No files found in group '{self.group_id}'")
+            if not self._running:
                 return
-            
-            self.logger.debug(f"Found {len(files.file_group_ids)} files in group '{self.group_id}'")
-            
-            # Process each file
-            for file_info in files.file_group_ids:
+
+            # Determine date window to check
+            dates_to_check = self._get_dates_to_check()
+            start_date = min(dates_to_check)
+            end_date = max(dates_to_check)
+
+            # Query available files for the date window
+            available_files = await self.client.list_available_files_async(
+                group_id=self.group_id,
+                file_group_id=None,
+                start_date=start_date,
+                end_date=end_date,
+            )
+
+            if not isinstance(available_files, list) or not available_files:
+                self.logger.debug(f"No available files for group '{self.group_id}' between {start_date} and {end_date}")
+                return
+
+            self.logger.debug(f"Found {len(available_files)} available file entries for group '{self.group_id}'")
+
+            # Build eligible downloads
+            eligible: List[tuple[str, str, str]] = []  # (file_id, date_str, file_key)
+            for item in available_files:
                 if not self._running:
                     break
-                
-                await self._process_file(file_info)
-                
+                file_id = item.get('file-group-id')
+                date_str = item.get('file-datetime')
+                avail_flag = item.get('is-available')
+                is_available = bool(avail_flag)
+                if not file_id or not date_str or not is_available:
+                    continue
+                if self.file_filter and not self.file_filter(item):
+                    continue
+                file_key = f"{file_id}_{date_str}"
+                if file_key in self._downloaded_files:
+                    continue
+                if self._failed_files.get(file_key, 0) >= self.max_retries:
+                    continue
+                if self._file_exists_locally(file_id, date_str):
+                    self.stats['files_skipped'] += 1
+                    self._downloaded_files.add(file_key)
+                    continue
+                eligible.append((file_id, date_str, file_key))
+
+            if not eligible:
+                return
+
+            # Parallel downloads with concurrency limit
+            semaphore = asyncio.Semaphore(max(1, int(self.max_concurrent_downloads)))
+
+            async def worker(fid: str, dstr: str, fkey: str):
+                if not self._running:
+                    return
+                async with semaphore:
+                    await self._download_file(fid, dstr, fkey)
+
+            tasks = [asyncio.create_task(worker(fid, dstr, fkey)) for fid, dstr, fkey in eligible]
+            await asyncio.gather(*tasks, return_exceptions=True)
+
         except Exception as e:
-            self.logger.error(f"Error checking files: {e}")
+            self.logger.error(f"Error checking available files: {e}")
             raise
     
     async def _process_file(self, file_info):
-        """Process a single file for potential download."""
-        file_id = file_info.file_group_id
-        
-        try:
-            # Apply file filter if provided
-            if self.file_filter and not self.file_filter(file_info):
-                self.logger.debug(f"File '{file_id}' filtered out")
-                return
-            
-            self.stats['files_discovered'] += 1
-            
-            # Determine what dates to check
-            dates_to_check = self._get_dates_to_check()
-            
-            for date_str in dates_to_check:
-                if not self._running:
-                    break
-                
-                await self._check_and_download_file_for_date(file_id, date_str)
-                
-        except Exception as e:
-            self.logger.error(f"Error processing file '{file_id}': {e}")
-            self.stats['errors'].append({
-                'timestamp': datetime.now().isoformat(),
-                'error': str(e),
-                'type': 'file_processing',
-                'file_id': file_id
-            })
+        """Deprecated path; available-files flow supersedes this."""
+        return
     
     def _get_dates_to_check(self) -> List[str]:
         """Get list of dates to check for files."""
@@ -257,60 +279,8 @@ class AutoDownloadManager:
             return dates
     
     async def _check_and_download_file_for_date(self, file_id: str, date_str: str):
-        """Check and download a file for a specific date."""
-        file_key = f"{file_id}_{date_str}"
-        
-        try:
-            # Skip if already downloaded
-            if file_key in self._downloaded_files:
-                return
-            
-            # Skip if too many failures
-            if self._failed_files.get(file_key, 0) >= self.max_retries:
-                return
-            
-            # Check if file already exists locally
-            if self._file_exists_locally(file_id, date_str):
-                self.logger.debug(f"File '{file_id}' for {date_str} already exists locally")
-                self.stats['files_skipped'] += 1
-                self._downloaded_files.add(file_key)
-                return
-            
-            # Check if file is available on the server
-            try:
-                availability = await self.client.check_availability_async(file_id, date_str)
-                is_available = False
-                if availability is None:
-                    is_available = False
-                elif hasattr(availability, 'available'):
-                    # Some implementations may expose a simple boolean
-                    is_available = bool(getattr(availability, 'available'))
-                elif hasattr(availability, 'available_files'):
-                    # Model helper returns list of available entries
-                    try:
-                        is_available = len(availability.available_files) > 0
-                    except Exception:
-                        is_available = False
-                elif hasattr(availability, 'availability'):
-                    # Raw list of AvailabilityInfo entries
-                    try:
-                        is_available = any(getattr(item, 'is_available', False) for item in availability.availability)
-                    except Exception:
-                        is_available = False
-                if not is_available:
-                    self.logger.debug(f"File '{file_id}' not available for {date_str}")
-                    return
-            except NotFoundError:
-                self.logger.debug(f"File '{file_id}' not found for {date_str}")
-                return
-            
-            # Download the file
-            await self._download_file(file_id, date_str, file_key)
-            
-        except Exception as e:
-            self.logger.error(f"Error checking/downloading '{file_id}' for {date_str}: {e}")
-            self._failed_files[file_key] = self._failed_files.get(file_key, 0) + 1
-            self.stats['download_failures'] += 1
+        """Deprecated path; available-files flow supersedes this."""
+        return
     
     def _file_exists_locally(self, file_id: str, date_str: str) -> bool:
         """Check if file already exists in the destination directory."""
@@ -357,16 +327,12 @@ class AutoDownloadManager:
             )
             
             succeeded = False
-            if result is not None:
-                # Treat either legacy success flag or status COMPLETED as success
-                if getattr(result, 'success', False):
-                    succeeded = True
-                elif getattr(result, 'status', None) is not None:
-                    try:
-                        from .models import DownloadStatus  # import inside to avoid cycles in some tools
-                        succeeded = result.status == DownloadStatus.COMPLETED
-                    except Exception:
-                        succeeded = False
+            if result is not None and getattr(result, 'status', None) is not None:
+                try:
+                    from .models import DownloadStatus  # import inside to avoid cycles in some tools
+                    succeeded = result.status == DownloadStatus.COMPLETED
+                except Exception:
+                    succeeded = False
 
             if succeeded:
                 self.logger.info(f"Successfully downloaded '{file_id}' for {date_str}")

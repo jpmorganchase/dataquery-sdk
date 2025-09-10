@@ -263,7 +263,7 @@ class TestConnectionPoolIntegration:
         
         # Reset stats
         monitor.reset_stats()
-        assert stats.total_connections == 0
+        assert monitor.stats.total_connections == 0
         
         # Stop monitoring
         monitor.stop_monitoring()
