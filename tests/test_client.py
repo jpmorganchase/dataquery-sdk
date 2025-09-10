@@ -25,8 +25,9 @@ from dataquery.client import (
 )
 from dataquery.models import (
     ClientConfig, Group, FileInfo, DownloadOptions, DownloadProgress, DownloadResult,
-    AvailabilityResponse, InstrumentsResponse, TimeSeriesResponse, GridDataResponse,
-    FiltersResponse, AttributesResponse, GroupList, FileList, OAuthToken
+    InstrumentsResponse, TimeSeriesResponse, GridDataResponse,
+    FiltersResponse, AttributesResponse, GroupList, FileList, OAuthToken, AvailabilityInfo,
+    DownloadStatus,
 )
 from dataquery.exceptions import (
     ValidationError, ConfigurationError, AuthenticationError, NetworkError,
@@ -373,7 +374,8 @@ class TestDataQueryClientInitialization:
         client = create_test_client(config)
         
         assert client.config.base_url == "https://api.example.com"
-        assert client.config.timeout == 30.0
+        # Default timeout updated to 600.0 in models/config
+        assert client.config.timeout == 600.0
         assert client.config.max_retries == 3
     
     def test_client_initialization_with_oauth_config(self):
@@ -1714,18 +1716,18 @@ class TestAdvancedScenarios:
         
         # Test download with authentication failure
         with patch.object(client, '_ensure_authenticated', side_effect=AuthenticationError("Not authenticated")):
-            options = DownloadOptions(output_dir="./downloads")
+            options = DownloadOptions(destination_path="./downloads")
             result = await client.download_file_async("file123", "20240115", options)
             
-            assert result.success is False
+            assert result.status != DownloadStatus.COMPLETED
             assert "Not authenticated" in str(result.error_message)
         
         # Test download with network failure during request
         with patch.object(client, '_make_authenticated_request', side_effect=NetworkError("Network failed")):
-            options = DownloadOptions(output_dir="./downloads")
+            options = DownloadOptions(destination_path="./downloads")
             result = await client.download_file_async("file123", "20240115", options)
             
-            assert result.success is False
+            assert result.status != DownloadStatus.COMPLETED
             assert "Network failed" in str(result.error_message)
 
 

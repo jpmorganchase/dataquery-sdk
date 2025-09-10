@@ -1,4 +1,4 @@
-### PyDataQuery SDK (Python)
+### dataquery-sdk (Python)
 
 Production-ready client for the DataQuery API with first-class async support, safe sync wrappers, OAuth, rate limiting, retries, connection pooling, and structured logging.
 
@@ -9,9 +9,9 @@ This README is task-oriented: copy/paste the snippets and you’re productive in
 ## 1) Install
 
 ```bash
-pip install -e .
+python3 -m pip install -e .
 # optional (recommended):
-pip install pandas  # enables dataframe helpers
+python3 -m pip install pandas  # enables dataframe helpers
 ```
 
 ---
@@ -37,6 +37,7 @@ DATAQUERY_OAUTH_ENABLED=true
 DATAQUERY_OAUTH_TOKEN_URL=https://your.api.base/oauth/token
 DATAQUERY_CLIENT_ID=xxx
 DATAQUERY_CLIENT_SECRET=xxx
+DATAQUERY_OAUTH_AUD=
 
 # OR Bearer token
 # DATAQUERY_BEARER_TOKEN=xxx
@@ -116,7 +117,22 @@ for f in files[:3]:
 
 ```python
 availability = await dq.check_availability_async(file_group_id, "20240101")
-print(availability.availability_rate)
+print(availability.is_available)
+```
+
+- List available files for a date range
+
+```python
+available = await dq.list_available_files_async(
+    group_id=group_id,            # required
+    file_group_id=file_group_id,  # optional filter
+    start_date="20250801",
+    end_date="20250801",
+)
+
+# Entries contain hyphenated keys per API: 'file-datetime', 'is-available', etc.
+for item in available:
+    print(item.get("file-datetime"), item.get("is-available"), item.get("file-name"))
 ```
 
 - Download a file
@@ -200,6 +216,8 @@ async def run():
         await manager.stop()
 ```
 
+Note: the auto-downloader checks availability via the available-files endpoint using these keys: `file-group-id`, `file-datetime`, `is-available`.
+
 ---
 
 ## 7) CLI (optional)
@@ -209,6 +227,7 @@ The package includes a simple CLI for quick checks. Examples:
 ```bash
 python -m dataquery.cli groups --limit 10 --json
 python -m dataquery.cli files --group-id <GROUP> --limit 5 --json
+python -m dataquery.cli availability --file-group-id <FILE> --file-datetime 20240101 --json
 python -m dataquery.cli download --file-group-id <FILE> --file-datetime 20240101 --destination ./downloads --json
 ```
 
@@ -259,10 +278,71 @@ logger.info("Logging initialized")
 
 Complete, runnable examples live in `examples/`. Good starting points:
 - `examples/groups/list_groups.py`
+- `examples/groups/list_all_groups.py`
+- `examples/groups/search_groups.py`
+- `examples/groups_advanced/get_group_attributes.py`
+- `examples/groups_advanced/get_group_filters.py`
+- `examples/groups_advanced/get_group_time_series.py`
+- `examples/instruments/list_instruments.py`
+- `examples/instruments/search_instruments.py`
+- `examples/instruments/get_instrument_time_series.py`
 - `examples/files/list_files.py`
 - `examples/files/download_file.py`
 - `examples/system/health_check.py`
 - `examples/auto_download_example.py`
+
+### Lean example scripts (CLI)
+
+These scripts default to sensible values and accept overrides via flags.
+
+Groups:
+
+```bash
+# list groups
+python examples/groups/list_groups.py --limit 20
+
+# list all groups (optionally capped by limit)
+python examples/groups/list_all_groups.py --limit 100
+
+# search groups
+python examples/groups/search_groups.py --keyword economy --limit 10
+
+# get group attributes
+python examples/groups_advanced/get_group_attributes.py \
+  --group-id <GROUP_ID> --filters '{"key":"value"}' --page <TOKEN> --show 5
+
+# get group filters
+python examples/groups_advanced/get_group_filters.py --group-id <GROUP_ID> --show 5
+
+# get group time series (defaults: last 90 days, CLOSE)
+python examples/groups_advanced/get_group_time_series.py \
+  --group-id <GROUP_ID> --attributes CLOSE,VOLUME --start 20240101 --end 20240630 \
+  --frequency FREQ_DAY --calendar CAL_USBANK --conversion CONV_LASTBUS_ABS --nan NA_FILL_FORWARD
+```
+
+Instruments:
+
+```bash
+# list instruments in a group
+python examples/instruments/list_instruments.py --group-id <GROUP_ID> --limit 20 --offset 0
+
+# search instruments in a group
+python examples/instruments/search_instruments.py --group-id <GROUP_ID> --keyword bond --show 10
+
+# get instrument time series (defaults: last 60 days, CLOSE)
+python examples/instruments/get_instrument_time_series.py \
+  --instruments IBM,MSFT --attributes CLOSE,VOLUME --start 20240101 --end 20240630 \
+  --frequency FREQ_DAY --calendar CAL_USBANK --conversion CONV_LASTBUS_ABS --nan NA_FILL_FORWARD
+```
+
+Expressions:
+
+```bash
+# get expressions time series (defaults: last 30 days, JSON)
+python examples/expressions/get_expressions_time_series.py \
+  --expressions GDP_US_REAL,CPI_US_CORE --start 20240101 --end 20240630 \
+  --frequency FREQ_DAY --calendar CAL_USBANK --conversion CONV_LASTBUS_ABS --nan NA_NOTHING --data REFERENCE_DATA --show 5
+```
 
 ---
 

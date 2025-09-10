@@ -32,7 +32,11 @@ async def main():
             except NotFoundError:
                 print("📭 Not found")
                 return
-            print(availability)
+            if availability:
+                has = bool(getattr(availability, 'is_available', False))
+                print("✅ Available" if has else "❌ Not available")
+            else:
+                print("❌ Not available")
     except AuthenticationError as e:
         print(f"❌ Authentication failed: {e}")
     except Exception as e:
@@ -41,3 +45,12 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
+ 
+
+
+ 
+
+
+ 

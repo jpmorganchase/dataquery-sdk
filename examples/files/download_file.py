@@ -61,7 +61,7 @@ async def main():
                     file_group_id=file_group_id,
                     file_datetime=file_datetime,
                     options=options,
-                    progress_callback=detailed_progress_callback
+                    progress_callback=simple_progress_callback
                 )
             except NotFoundError:
                 print("📭 Not available for that date")

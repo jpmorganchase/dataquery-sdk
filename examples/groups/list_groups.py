@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """
-Lean example: interactively list groups.
+Lean example: list groups using core API with simple CLI args.
 
-Prompts for limit and prints basic info. Press Ctrl+C to exit.
+Defaults:
+- limit: 10
+
+Usage:
+  python examples/groups/list_groups.py --limit 20
 """
 
 import asyncio
+import argparse
 import sys
 from pathlib import Path
 
@@ -13,28 +18,21 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from dataquery import DataQuery
-from dataquery.exceptions import AuthenticationError
 
 
 async def main():
-    print("🚀 List Groups (lean)")
-    try:
-        limit_raw = input("Enter limit [10]: ").strip() or "10"
-        limit = int(limit_raw)
-    except ValueError:
-        print("❌ Invalid limit")
-        return
+    parser = argparse.ArgumentParser(description="List groups (lean)")
+    parser.add_argument("--limit", type=int, default=10, help="Max groups to list (default: 10)")
+    args = parser.parse_args()
 
     try:
         async with DataQuery() as dq:
-            groups = await dq.list_groups_async(limit=limit)
-            print(f"✅ Found {len(groups)} groups")
+            groups = await dq.list_groups_async(limit=args.limit)
+            print(f"Found {len(groups)} groups")
             for i, g in enumerate(groups, 1):
                 print(f"{i}. {getattr(g, 'group_id', '')} | {getattr(g, 'group_name', '')}")
-    except AuthenticationError as e:
-        print(f"❌ Authentication failed: {e}")
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"Error: {e}")
 
 
 if __name__ == "__main__":

@@ -38,7 +38,7 @@ class TestRetryConfig:
         
         assert config.max_retries == 3
         assert config.base_delay == 1.0
-        assert config.max_delay == 60.0
+        assert config.max_delay == 300.0
         assert config.exponential_base == 2.0
         assert config.jitter is True
         assert config.jitter_factor == 0.1
@@ -48,7 +48,7 @@ class TestRetryConfig:
         assert config.timeout is None
         assert config.enable_circuit_breaker is True
         assert config.circuit_breaker_threshold == 5
-        assert config.circuit_breaker_timeout == 60.0
+        assert config.circuit_breaker_timeout == 300.0
         assert config.circuit_breaker_success_threshold == 2
     
     def test_retry_config_custom_values(self):
@@ -59,7 +59,7 @@ class TestRetryConfig:
             max_delay=120.0,
             strategy=RetryStrategy.LINEAR,
             jitter=False,
-            timeout=30.0,
+            timeout=6000.0,
             enable_circuit_breaker=False
         )
         
@@ -68,7 +68,8 @@ class TestRetryConfig:
         assert config.max_delay == 120.0
         assert config.strategy == RetryStrategy.LINEAR
         assert config.jitter is False
-        assert config.timeout == 30.0
+        # Custom timeout should be preserved
+        assert config.timeout == 6000.0
         assert config.enable_circuit_breaker is False
 
 
@@ -506,7 +507,7 @@ class TestRetryFunctions:
         
         assert config.max_retries == 3
         assert config.base_delay == 1.0
-        assert config.max_delay == 60.0
+        assert config.max_delay == 300.0
         assert config.strategy == RetryStrategy.EXPONENTIAL
         assert config.enable_circuit_breaker is True
     

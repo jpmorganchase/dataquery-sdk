@@ -46,7 +46,8 @@ class ClientConfig(BaseModel):
     oauth_token_url: Optional[str] = Field(default=None, description="OAuth token endpoint URL")
     client_id: Optional[str] = Field(default=None, description="OAuth client ID")
     client_secret: Optional[str] = Field(default=None, description="OAuth client secret")
-    aud: Optional[str] = Field(default=None, description="OAuth aud")
+    # scope removed
+    aud: Optional[str] = Field(default=None, description="OAuth audience (aud)")
     grant_type: str = Field(default="client_credentials", description="OAuth grant type")
     
     # Bearer token configuration
@@ -54,7 +55,7 @@ class ClientConfig(BaseModel):
     token_refresh_threshold: int = Field(default=300, description="Seconds before expiry to refresh token")
     
     # HTTP configuration
-    timeout: float = Field(default=30.0, description="Default request timeout in seconds")
+    timeout: float = Field(default=600.0, description="Default request timeout in seconds")
     max_retries: int = Field(default=3, description="Maximum retry attempts")
     retry_delay: float = Field(default=1.0, description="Delay between retries in seconds")
     
@@ -189,7 +190,7 @@ class OAuthToken(BaseModel):
     access_token: str = Field(..., description="Access token")
     token_type: str = Field(default="Bearer", description="Token type")
     expires_in: Optional[int] = Field(default=None, description="Token expiry time in seconds")
-    aud: Optional[str] = Field(default=None, description="Token aud")
+    # scope removed
     refresh_token: Optional[str] = Field(default=None, description="Refresh token")
     
     # Internal tracking
@@ -241,7 +242,8 @@ class TokenRequest(BaseModel):
     grant_type: str = Field("client_credentials", description="OAuth grant type")
     client_id: Optional[str] = Field(None, description="OAuth client ID")
     client_secret: Optional[str] = Field(None, description="OAuth client secret")
-    aud: Optional[str] = Field(None, description="OAuth aud")
+    # scope removed
+    aud: Optional[str] = Field(None, description="OAuth audience (aud)")
     
     model_config = ConfigDict(extra="allow", populate_by_name=True)  # Allow extra fields from API and populate by both alias and name
     
@@ -254,7 +256,9 @@ class TokenRequest(BaseModel):
             data["client_id"] = self.client_id
         if self.client_secret:
             data["client_secret"] = self.client_secret
-        if self.aud:
+        # scope removed
+        if getattr(self, 'aud', None):
+            # Send audience as 'aud' per provider requirement
             data["aud"] = self.aud
         return data
 
@@ -265,7 +269,7 @@ class TokenResponse(BaseModel):
     access_token: str = Field(..., description="Access token")
     token_type: Optional[str] = Field(default=None, description="Token type")
     expires_in: Optional[int] = Field(default=None, description="Token expiry time in seconds")
-    aud: Optional[str] = Field(default=None, description="Token aud")
+    # scope removed
     refresh_token: Optional[str] = Field(default=None, description="Refresh token")
     
     model_config = ConfigDict(extra="allow", populate_by_name=True)  # Allow extra fields from API and populate by both alias and name
@@ -276,7 +280,7 @@ class TokenResponse(BaseModel):
             access_token=self.access_token,
             token_type=self.token_type or "Bearer",
             expires_in=self.expires_in,
-            aud=self.aud,
+            # scope removed
             refresh_token=self.refresh_token,
             issued_at=datetime.now(),  # Set issued_at when converting
             # status is computed property
@@ -299,10 +303,26 @@ class FileMetadata(BaseModel):
 class SchemaColumn(BaseModel):
     """Schema column information."""
     
-    column_id: str = Field(..., alias="columnId", description="Column identifier")
-    column_name: str = Field(..., alias="columnName", description="Column name")
-    column_description: Optional[str] = Field(None, alias="columnDescription", description="Column description")
-    data_type: str = Field(..., alias="dataType", description="Data type")
+    column_id: str = Field(
+        ..., 
+        alias="columnId", 
+        description="Column identifier"
+    )
+    column_name: str = Field(
+        ..., 
+        alias="columnName", 
+        description="Column name"
+    )
+    column_description: Optional[str] = Field(
+        None, 
+        alias="columnDescription", 
+        description="Column description"
+    )
+    data_type: str = Field(
+        ..., 
+        alias="dataType", 
+        description="Data type"
+    )
     
     model_config = ConfigDict(extra="allow", populate_by_name=True)  # Allow extra fields from API and populate by both alias and name
 
@@ -337,11 +357,6 @@ class Group(BaseModel):
     group_id: Optional[str] = Field(None, alias="group-id", description="Unique group identifier")
     group_name: Optional[str] = Field(None, alias="group-name", description="Display name of the group")
     
-    # Backward compatibility
-    id: Optional[str] = Field(None, description="Legacy ID field for backward compatibility")
-    name: Optional[str] = Field(None, description="Legacy name field for backward compatibility")
-    file_count: Optional[int] = Field(None, description="Legacy file count for backward compatibility") 
-    last_updated: Optional[Union[str, datetime]] = Field(None, description="Legacy last updated for backward compatibility")
     description: Optional[str] = Field(None, description="Group description")
     provider: Optional[str] = Field(None, description="Data provider")
     premium: Optional[bool] = Field(None, description="Whether this is a premium group")
@@ -351,10 +366,7 @@ class Group(BaseModel):
     
     model_config = ConfigDict(extra="allow", populate_by_name=True)  # Allow extra fields from API and populate by both alias and name
     
-    @property
-    def associated_file_count(self) -> Optional[int]:
-        """Backward compatibility property."""
-        return self.file_groups
+    # associated_file_count removed; use file_groups instead
     
 
     
@@ -403,48 +415,53 @@ class FileInfo(BaseModel):
 
     # Additional info
     description: Optional[str] = Field(None, description="File description")
-    file_type: Optional[List[str]] = Field(None, alias="file-type", description="Type of the file")
-    filename: Optional[str] = Field(None, description="Legacy filename for backward compatibility")
-    size: Optional[int] = Field(None, description="Legacy size for backward compatibility")
-    content_type: Optional[str] = Field(None, description="Legacy content type for backward compatibility")
-    last_modified: Optional[Union[str, datetime]] = Field(None, description="Legacy last modified for backward compatibility")
-    checksum: Optional[str] = Field(None, description="Legacy checksum for backward compatibility")
+    file_type: Optional[List[str]] = Field(None, alias="file-type", description="Type(s) of the file")
+    # legacy fields removed
     metadata: Optional[FileMetadata] = Field(None, description="File metadata")
     file_schema: Optional[List[SchemaColumn]] = Field(None, description="File schema", alias="schema")
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
-    # No legacy mapping for 'file-id'; inputs must use 'file-group-id'
+    @field_validator('file_type', mode='before')
+    @classmethod
+    def normalize_file_type(cls, v):
+        """Accept string or list; normalize to list[str]."""
+        if v is None:
+            return None
+        if isinstance(v, str):
+            return [v]
+        if isinstance(v, list):
+            return [str(x) for x in v if x is not None]
+        # Fallback: coerce to string and wrap
+        return [str(v)]
 
-    @property
-    def file_group_id_prop(self) -> Optional[str]:
-        """Backward compatibility property."""
-        return self.file_group_id
+    # inputs must use 'file-group-id'
     
     def get_file_extension(self) -> str:
         """Get file extension based on file type."""
         if not self.file_type:
             return ".bin"
-        if self.file_type.lower() == "parquet":
+        types_lower = [t.lower() for t in self.file_type]
+        if "parquet" in types_lower:
             return ".parquet"
-        elif self.file_type.lower() == "csv":
+        elif "csv" in types_lower:
             return ".csv"
-        elif self.file_type.lower() == "json":
+        elif "json" in types_lower:
             return ".json"
         else:
             return ".bin"
     
     def is_parquet(self) -> bool:
         """Check if file is Parquet format."""
-        return self.file_type and self.file_type.lower() == "parquet"
+        return bool(self.file_type) and any(t.lower() == "parquet" for t in self.file_type)
     
     def is_csv(self) -> bool:
         """Check if file is CSV format."""
-        return self.file_type and self.file_type.lower() == "csv"
+        return bool(self.file_type) and any(t.lower() == "csv" for t in self.file_type)
     
     def is_json(self) -> bool:
         """Check if file is JSON format."""
-        return self.file_type and self.file_type.lower() == "json"
+        return bool(self.file_type) and any(t.lower() == "json" for t in self.file_type)
 
 
 class FileList(BaseModel):
@@ -463,11 +480,19 @@ class FileList(BaseModel):
     @property
     def file_types(self) -> List[str]:
         """Get list of file types."""
-        return list(set(f.file_type for f in self.file_group_ids))
+        types: List[str] = []
+        for f in self.file_group_ids:
+            if getattr(f, 'file_type', None):
+                types.extend([t for t in f.file_type if isinstance(t, str)])
+        return list(set(types))
     
     def get_files_by_type(self, file_type: str) -> List[FileInfo]:
         """Get files by type."""
-        return [f for f in self.file_group_ids if f.file_type.lower() == file_type.lower()]
+        target = (file_type or "").lower()
+        return [
+            f for f in self.file_group_ids
+            if getattr(f, 'file_type', None) and any((t or "").lower() == target for t in f.file_type)
+        ]
     
     def get_date_range(self) -> Optional[DateRange]:
         """Get overall date range from metadata if available."""
@@ -476,9 +501,11 @@ class FileList(BaseModel):
         return None
 
 
-class AvailabilityResponse(BaseModel):
+class AvailabilityInfo(BaseModel):
     """Model representing file availability information."""
     
+    group_id: Optional[str] = Field(None, alias="group-id", description="Group identifier")
+    file_group_id: Optional[str] = Field(None, alias="file-group-id", description="File group identifier")
     file_date: str = Field(..., alias="file-datetime", description="File date in YYYYMMDD format")
     is_available: bool = Field(..., alias="is-available", description="Whether the file is available")
     file_name: Optional[str] = Field(None, alias="file-name", description="Name of the file")
@@ -494,32 +521,28 @@ class AvailabilityResponse(BaseModel):
         except ValueError:
             return None
 
-#
-# class AvailabilityResponse(BaseModel):
-#     """Response model for file availability check."""
-#
-#     group_id: str = Field(..., alias="group-id", description="Group identifier")
-#     file_group_id: str = Field(..., alias="file-group-id", description="File identifier")
-#     availability: List[AvailabilityInfo] = Field(..., description="List of availability information")
-#     model_config = ConfigDict(extra="allow", populate_by_name=True)  # Allow extra fields from API and populate by both alias and name
-#
-#     @property
-#     def available_files(self) -> List[AvailabilityInfo]:
-#         """Get list of available files."""
-#         return [f for f in self.availability if f.is_available]
-#
-#     @property
-#     def unavailable_files(self) -> List[AvailabilityInfo]:
-#         """Get list of unavailable files."""
-#         return [f for f in self.availability if not f.is_available]
-#
-#     @property
-#     def availability_rate(self) -> float:
-#         """Calculate availability rate as percentage."""
-#         if not self.availability:
-#             return 0.0
-#         available_count = len(self.available_files)
-#         return (available_count / len(self.availability)) * 100
+
+class AvailabilityResponse(BaseModel):
+    """Deprecated: Use AvailabilityInfo directly."""
+    group_id: Optional[str] = Field(None, alias="group-id")
+    file_group_id: Optional[str] = Field(None, alias="file-group-id")
+    date_range: Optional[DateRange] = Field(None, alias="date-range")
+    availability: List[AvailabilityInfo] = Field(default_factory=list)
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+    
+    @property
+    def available_files(self) -> List[AvailabilityInfo]:
+        return [f for f in self.availability if f.is_available]
+    
+    @property
+    def unavailable_files(self) -> List[AvailabilityInfo]:
+        return [f for f in self.availability if not f.is_available]
+    
+    @property
+    def availability_rate(self) -> float:
+        if not self.availability:
+            return 0.0
+        return (len(self.available_files) / len(self.availability)) * 100
 
 
 class AvailableFilesResponse(BaseModel):
@@ -530,6 +553,7 @@ class AvailableFilesResponse(BaseModel):
     start_date: Optional[str] = Field(None, alias="start-date", description="Start date")
     end_date: Optional[str] = Field(None, alias="end-date", description="End date")
     available_files: List[Dict[str, Any]] = Field(..., alias="available-files", description="List of available files")
+    summary: Optional[Dict[str, Any]] = Field(None, alias="summary", description="Summary of available files")
     
     model_config = ConfigDict(extra="allow", populate_by_name=True)  # Allow extra fields from API and populate by both alias and name
 
@@ -582,7 +606,7 @@ class DownloadOptions(BaseModel):
     chunk_size_setting: int = Field(default=8192, description="Chunk size for streaming downloads", alias="chunk_size")
     max_retries: int = Field(default=3, description="Maximum number of retry attempts")
     retry_delay: float = Field(default=1.0, description="Delay between retries in seconds")
-    timeout: float = Field(default=30.0, description="Request timeout in seconds")
+    timeout: float = Field(default=600.0, description="Request timeout in seconds")
     
     # Range requests
     enable_range_requests: bool = Field(default=True, description="Enable HTTP range requests for resumable downloads")
@@ -668,11 +692,7 @@ class DownloadResult(BaseModel):
     status: DownloadStatus = Field(DownloadStatus.FAILED, description="Download status")
     error_message: Optional[str] = Field(None, description="Error message if download failed")
     
-    # Backward compatibility fields  
-    success: Optional[bool] = Field(False, description="Legacy success field for backward compatibility")
-    file_path: Optional[Path] = Field(None, description="Legacy file_path field for backward compatibility")
-    error: Optional[str] = Field(None, description="Legacy error field for backward compatibility")
-    progress: Optional['DownloadProgress'] = Field(None, description="Legacy progress field for backward compatibility")
+    # legacy download result fields removed
     
     model_config = {
         "extra": "allow"  # Allow extra fields from API
@@ -745,6 +765,14 @@ class InstrumentWithAttributes(BaseModel):
     instrument_isin: Optional[str] = Field(None, alias="instrument-isin", description="Instrument ISIN")
     group: Optional[Dict[str, str]] = Field(None, description="Group information")
     attributes: List[Attribute] = Field(..., description="List of attributes")
+    
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+
+class InstrumentResponse(BaseModel):
+    """Response model for a single instrument."""
+    
+    instrument: Instrument = Field(..., description="Single instrument")
     
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 

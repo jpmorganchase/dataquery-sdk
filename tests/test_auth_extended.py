@@ -15,7 +15,7 @@ def make_config(tmp_path: Path, oauth: bool = True) -> ClientConfig:
         oauth_enabled=oauth,
         client_id="cid" if oauth else None,
         client_secret="csec" if oauth else None,
-        aud="data.read",
+        # scope removed
         timeout=5.0,
         download_dir=str(tmp_path),
     )
@@ -50,7 +50,7 @@ async def test_get_new_token_success_and_save_load(tmp_path: Path, monkeypatch):
         "access_token": "abc",
         "token_type": "Bearer",
         "expires_in": 3600,
-        "aud": "data.read",
+        # "scope": "data.read",
         "refresh_token": "r1",
     }
 

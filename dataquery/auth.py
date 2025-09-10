@@ -4,19 +4,19 @@ Authentication module for the DATAQUERY SDK.
 Provides OAuth token management and Bearer token authentication.
 """
 
-import json
-from datetime import datetime
-from pathlib import Path
+import asyncio
+from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
-
+from pathlib import Path
+import json
 import aiohttp
 import structlog
 
-from .exceptions import (
-    AuthenticationError, ConfigurationError
-)
 from .models import (
     ClientConfig, OAuthToken, TokenRequest, TokenResponse
+)
+from .exceptions import (
+    DataQueryError, AuthenticationError, ConfigurationError
 )
 
 logger = structlog.get_logger(__name__)
@@ -98,7 +98,8 @@ class TokenManager:
             grant_type=self.config.grant_type,
             client_id=self.config.client_id,
             client_secret=self.config.client_secret,
-            aud=self.config.aud
+            # scope removed
+            aud=getattr(self.config, 'aud', None)
         )
         
         try:
@@ -108,7 +109,11 @@ class TokenManager:
                     self.config.oauth_token_url,
                     data=token_request.to_dict(),
                     headers={'Content-Type': 'application/x-www-form-urlencoded'},
-                    timeout=aiohttp.ClientTimeout(total=self.config.timeout)
+                    timeout=aiohttp.ClientTimeout(
+                        total=self.config.timeout,
+                        connect=min(300.0, self.config.timeout * 0.5),
+                        sock_read=min(300.0, self.config.timeout * 0.5)
+                    )
                 ) as response:
                     if response.status == 200:
                         data = await response.json()
@@ -156,7 +161,11 @@ class TokenManager:
                     self.config.oauth_token_url,
                     data=refresh_data,
                     headers={'Content-Type': 'application/x-www-form-urlencoded'},
-                    timeout=aiohttp.ClientTimeout(total=self.config.timeout)
+                    timeout=aiohttp.ClientTimeout(
+                        total=self.config.timeout,
+                        connect=min(300.0, self.config.timeout * 0.5),
+                        sock_read=min(300.0, self.config.timeout * 0.5)
+                    )
                 ) as response:
                     if response.status == 200:
                         data = await response.json()

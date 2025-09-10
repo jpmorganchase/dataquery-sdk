@@ -9,14 +9,16 @@ import urllib.parse
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Callable, Union
-
+from .auto_download import AutoDownloadManager
 import aiohttp
 import structlog
+import pandas as pd
 
 from .models import (
-    ClientConfig, Group, GroupList, FileInfo, FileList, AvailabilityResponse,
+    ClientConfig, Group, GroupList, FileInfo, FileList, AvailabilityInfo,
     DownloadOptions, DownloadProgress, DownloadResult, DownloadStatus,
-    InstrumentsResponse, TimeSeriesResponse, FiltersResponse, AttributesResponse, GridDataResponse
+    InstrumentsResponse, TimeSeriesResponse, FiltersResponse, AttributesResponse, GridDataResponse,
+    Instrument, InstrumentResponse
 )
 from .exceptions import (
     DataQueryError, AuthenticationError, ValidationError, NotFoundError,
@@ -26,6 +28,7 @@ from .auth import OAuthManager
 from .rate_limiter import TokenBucketRateLimiter, RateLimitConfig, RateLimitContext, QueuePriority
 from .retry import RetryManager, RetryConfig, RetryStrategy
 from .connection_pool import ConnectionPoolMonitor, ConnectionPoolConfig
+from functools import lru_cache
 from .logging_config import LoggingManager, LoggingConfig, LogLevel, LogFormat
 from .utils import format_file_size as _base_format_file_size
 
@@ -294,7 +297,7 @@ class DataQueryClient:
         retry_config = RetryConfig(
             max_retries=self.config.max_retries,
             base_delay=self.config.retry_delay,
-            max_delay=60.0,
+            max_delay=300.0,
             strategy=RetryStrategy.EXPONENTIAL,
             enable_circuit_breaker=True,
             retryable_exceptions=[
@@ -316,6 +319,10 @@ class DataQueryClient:
             cleanup_interval=300
         )
         self.pool_monitor = ConnectionPoolMonitor(pool_config)
+        
+        # Initialize response cache for read-only operations
+        self._response_cache: Dict[str, tuple] = {}  # key -> (data, timestamp)
+        self._cache_ttl = 300  # 5 minutes cache TTL
         
         self.logger.info("Enhanced client components initialized",
                         rate_limiting=rate_limit_config.enable_rate_limiting,
@@ -410,29 +417,72 @@ class DataQueryClient:
         """Async context manager exit."""
         await self.close()
     
+    def _get_cache_key(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> str:
+        """Generate cache key for endpoint and parameters."""
+        if params:
+            # Sort params for consistent cache keys
+            sorted_params = sorted(params.items())
+            param_str = "&".join(f"{k}={v}" for k, v in sorted_params)
+            return f"{endpoint}?{param_str}"
+        return endpoint
+    
+    def _get_from_cache(self, cache_key: str) -> Optional[Any]:
+        """Get data from cache if not expired."""
+        if cache_key in self._response_cache:
+            data, timestamp = self._response_cache[cache_key]
+            if time.time() - timestamp < self._cache_ttl:
+                return data
+            else:
+                # Remove expired entry
+                del self._response_cache[cache_key]
+        return None
+    
+    def _set_cache(self, cache_key: str, data: Any) -> None:
+        """Store data in cache."""
+        self._response_cache[cache_key] = (data, time.time())
+    
+    def clear_cache(self) -> None:
+        """Clear all cached responses."""
+        self._response_cache.clear()
+    
     async def connect(self):
-        """Initialize HTTP session with enhanced monitoring and proxy support."""
+        """Initialize HTTP session with optimized configuration."""
         if self.session is None:
-            timeout = aiohttp.ClientTimeout(total=self.config.timeout)
+            # Optimize timeout configuration
+            timeout = aiohttp.ClientTimeout(
+                total=self.config.timeout,
+                connect=min(300.0, self.config.timeout * 0.5),  # 50% of total timeout for connect
+                sock_read=min(300.0, self.config.timeout * 0.5)  # 50% for read operations
+            )
             
-            # Configure connector (proxy support handled in session creation for aiohttp 3.x)
+            # Optimize connector configuration for better performance
             connector = aiohttp.TCPConnector(
                 limit=self.config.pool_maxsize,
                 limit_per_host=self.config.pool_connections,
-                keepalive_timeout=30,
-                enable_cleanup_closed=True
+                keepalive_timeout=300,  # Increased for better connection reuse with longer timeouts
+                enable_cleanup_closed=True,
+                use_dns_cache=True,  # Enable DNS caching
+                ttl_dns_cache=300,   # 5 minutes DNS cache
+                family=0,            # Allow both IPv4 and IPv6
+                ssl=False,           # Let aiohttp handle SSL context
+                local_addr=None,     # Let OS choose local address
+                force_close=False    # Keep connections alive
             )
             
             # Start connection pool monitoring
             self.pool_monitor.start_monitoring(connector)
             
-            # Configure session
+            # Configure session with optimized settings
             session_kwargs = {
                 'timeout': timeout,
                 'connector': connector,
                 'headers': {
-                    'User-Agent': f'DATAQUERY-SDK/1.0.0'
-                }
+                    'User-Agent': f'DATAQUERY-SDK/1.0.0',
+                    'Connection': 'keep-alive',  # Explicit keep-alive
+                    'Accept-Encoding': 'gzip, deflate'  # Enable compression
+                },
+                'auto_decompress': True,  # Enable automatic decompression
+                'raise_for_status': False  # Let our code handle status codes
             }
             
             # Note: Proxy is applied per-request in _execute_request
@@ -447,7 +497,7 @@ class DataQueryClient:
                 except Exception:
                     pass
 
-            self.logger.info("Client connected with enhanced monitoring", 
+            self.logger.info("Client connected with optimized configuration", 
                            base_url=self.config.base_url,
                            proxy_enabled=self.config.proxy_enabled,
                            proxy_url=self.config.proxy_url if self.config.proxy_enabled else None,
@@ -814,7 +864,7 @@ class DataQueryClient:
         self,
         file_group_id: str,
         file_datetime: str
-    ) -> AvailabilityResponse:
+    ) -> AvailabilityInfo:
         """
         Check file availability for a specific datetime.
         
@@ -823,7 +873,7 @@ class DataQueryClient:
             file_datetime: File datetime in YYYYMMDD, YYYYMMDDTHHMM, or YYYYMMDDTHHMMSS format
             
         Returns:
-            Availability response with status for the datetime
+            AvailabilityInfo for the requested datetime (or closest entry)
         Raises:
             ValueError: If file_datetime format is invalid
         """
@@ -839,15 +889,35 @@ class DataQueryClient:
             async with await self._make_authenticated_request('GET', url, params=params) as response:
                 await self._handle_response(response)
                 data = await response.json()
-                
-                availability_response = AvailabilityResponse(**data)
+                # Extract a single availability item matching the requested datetime if present
+                items = []
+                try:
+                    items = data.get('availability') or []
+                except Exception:
+                    items = []
+                selected = None
+                for it in items:
+                    try:
+                        if it.get('file-datetime') == file_datetime:
+                            selected = it
+                            break
+                    except Exception:
+                        pass
+                if selected is None:
+                    selected = items[0] if items else {
+                        'file-datetime': file_datetime,
+                        'is-available': False,
+                        'file-name': None,
+                        'first-created-on': None,
+                        'last-modified': None,
+                    }
+                availability_info = AvailabilityInfo(**selected)
                 self.logger.info(
                     "Availability checked",
                     file_group_id=file_group_id,
-                    available_count=1
+                    is_available=availability_info.is_available,
                 )
-                
-                return availability_response
+                return availability_info
         
         except Exception as e:
             self.logger.error(
@@ -950,29 +1020,44 @@ class DataQueryClient:
                     start_time=datetime.now()
                 )
                 
-                # Download file with progress tracking
+                # Download file with optimized progress tracking
                 if not isinstance(destination, Path):
                     raise ValueError(f"Invalid destination path: {destination}")
                 # Write to a temp file first, then atomically rename upon success
                 temp_destination = destination.with_suffix(destination.suffix + '.part')
+                
+                # Optimize chunk size based on file size
+                chunk_size = options.chunk_size or 8192
+                if total_bytes > 0:
+                    # Use larger chunks for bigger files, but cap at 1MB
+                    optimal_chunk_size = min(max(chunk_size, total_bytes // 1000), 1024 * 1024)
+                    chunk_size = optimal_chunk_size
+                
+                # Progress update frequency optimization
+                progress_update_interval = max(1, chunk_size // 4)  # Update every 1/4 chunk
+                last_progress_update = 0
+                
                 with open(temp_destination, 'wb') as f:
-                    # Ensure valid chunk size
-                    chunk_size = options.chunk_size or 8192
                     async for chunk in response.content.iter_chunked(chunk_size):
                         f.write(chunk)
                         bytes_downloaded += len(chunk)
                         
-                        # Update progress
-                        progress.update_progress(bytes_downloaded)
-                        
-                        # Call progress callback
-                        if progress_callback:
-                            progress_callback(progress)
-                        elif options.show_progress:
-                            self.logger.info("Download progress", 
-                                           file=file_group_id,
-                                           percentage=f"{progress.percentage:.1f}%",
-                                           downloaded=format_file_size(bytes_downloaded))
+                        # Update progress less frequently for better performance
+                        if bytes_downloaded - last_progress_update >= progress_update_interval:
+                            progress.update_progress(bytes_downloaded)
+                            last_progress_update = bytes_downloaded
+                            
+                            # Call progress callback
+                            if progress_callback:
+                                progress_callback(progress)
+                            elif options.show_progress:
+                                self.logger.info("Download progress", 
+                                               file=file_group_id,
+                                               percentage=f"{progress.percentage:.1f}%",
+                                               downloaded=format_file_size(bytes_downloaded))
+                
+                # Final progress update
+                progress.update_progress(bytes_downloaded)
                 
                 download_time = time.time() - start_time
 
@@ -1007,6 +1092,233 @@ class DataQueryClient:
                 bytes_downloaded=bytes_downloaded,
                 status=DownloadStatus.FAILED,
                 error_message=f"{type(e).__name__}: {e}"
+            )
+    
+    async def download_file_parallel_async(
+        self,
+        file_group_id: str,
+        file_datetime: Optional[str] = None,
+        options: Optional[DownloadOptions] = None,
+        num_parts: int = 10,
+        progress_callback: Optional[Callable] = None
+    ) -> DownloadResult:
+        """
+        Download a specific file using parallel HTTP range requests.
+        
+        Args:
+            file_group_id: File ID to download
+            file_datetime: Optional datetime of the file (YYYYMMDD, YYYYMMDDTHHMM, or YYYYMMDDTHHMMSS)
+            options: Download options
+            num_parts: Number of parallel parts to split the file into (default 5)
+            progress_callback: Optional progress callback function
+        
+        Returns:
+            DownloadResult with download information
+        """
+        if file_datetime:
+            validate_file_datetime(file_datetime)
+        if options is None:
+            options = DownloadOptions()
+        if num_parts <= 0:
+            num_parts = 5
+        
+        # Build base params
+        params = {
+            "file-group-id": file_group_id
+        }
+        if file_datetime:
+            params["file-datetime"] = file_datetime
+        
+        # Determine destination directory like single download method
+        if options.destination_path:
+            dest_path = Path(options.destination_path)
+            if dest_path.suffix:
+                destination_dir = dest_path.parent
+            else:
+                destination_dir = dest_path
+        else:
+            destination_dir = Path(self.config.download_dir)
+        
+        if options.create_directories:
+            destination_dir.mkdir(parents=True, exist_ok=True)
+        
+        start_time = time.time()
+        bytes_downloaded = 0
+        destination: Optional[Path] = None
+        temp_destination: Optional[Path] = None
+        total_bytes: int = 0
+        shared_fh = None
+        
+        try:
+            url = self._build_files_api_url('group/file/download')
+            
+            # Probe size with a 1-byte range request
+            probe_headers = {"Range": "bytes=0-0"}
+            async with (await self._enter_request_cm('GET', url, params=params, headers=probe_headers)) as probe_resp:
+                await self._handle_response(probe_resp)
+                content_range = probe_resp.headers.get('content-range') or probe_resp.headers.get('Content-Range')
+                if content_range and '/' in content_range:
+                    try:
+                        total_bytes = int(content_range.split('/')[-1])
+                    except Exception:
+                        total_bytes = int(probe_resp.headers.get('content-length', '0'))
+                else:
+                    # Fallback to single-stream download if range not supported
+                    return await self.download_file_async(
+                        file_group_id=file_group_id,
+                        file_datetime=file_datetime,
+                        options=options,
+                        progress_callback=progress_callback,
+                    )
+
+                # If file is small (<10MB), prefer a single-stream download
+                try:
+                    ten_mb = 10 * 1024 * 1024
+                    if total_bytes and total_bytes < ten_mb:
+                        return await self.download_file_async(
+                            file_group_id=file_group_id,
+                            file_datetime=file_datetime,
+                            options=options,
+                            progress_callback=progress_callback,
+                        )
+                except Exception:
+                    pass
+                # Determine filename from headers if available
+                filename = get_filename_from_response(probe_resp, file_group_id, file_datetime)
+                destination = destination_dir / filename
+                
+                if destination.exists() and not options.overwrite_existing:
+                    raise FileExistsError(f"File already exists: {destination}")
+            
+            # Prepare temp file with full size for random access writes
+            if not isinstance(destination, Path):
+                raise ValueError(f"Invalid destination path: {destination}")
+            temp_destination = destination.with_suffix(destination.suffix + '.part')
+            with open(temp_destination, 'wb') as f:
+                f.truncate(total_bytes)
+            
+            # Compute ranges
+            part_size = total_bytes // num_parts
+            ranges = []
+            start = 0
+            for i in range(num_parts):
+                end = (start + part_size - 1) if i < num_parts - 1 else (total_bytes - 1)
+                if start > end:
+                    break
+                ranges.append((start, end))
+                start = end + 1
+            
+            progress = DownloadProgress(
+                file_group_id=file_group_id,
+                total_bytes=total_bytes,
+                start_time=datetime.now()
+            )
+            
+            bytes_lock = asyncio.Lock()
+            file_lock = asyncio.Lock()
+            # Open a single shared handle for all range writers
+            shared_fh = open(temp_destination, 'r+b')
+            
+            # Get the current event loop
+            loop = asyncio.get_running_loop()
+            
+            async def download_range(start_byte: int, end_byte: int):
+                nonlocal bytes_downloaded
+                headers = {"Range": f"bytes={start_byte}-{end_byte}"}
+                # each part request
+                async with (await self._enter_request_cm('GET', url, params=params, headers=headers)) as resp:
+                    await self._handle_response(resp)
+                    # Stream and write to correct offset
+                    current_pos = start_byte
+                    chunk_size = options.chunk_size or 8192
+                    async for chunk in resp.content.iter_chunked(chunk_size):
+                        async with file_lock:
+                            await loop.run_in_executor(None, shared_fh.seek, current_pos)
+                            await loop.run_in_executor(None, shared_fh.write, chunk)
+                        current_pos += len(chunk)
+                        async with bytes_lock:
+                            bytes_downloaded += len(chunk)
+                            progress.update_progress(bytes_downloaded)
+                            if progress_callback:
+                                progress_callback(progress)
+                            elif options.show_progress:
+                                self.logger.info(
+                                    "Download progress",
+                                    file=file_group_id,
+                                    percentage=f"{progress.percentage:.1f}%",
+                                    downloaded=format_file_size(bytes_downloaded),
+                                )
+            
+            # Run all parts concurrently
+            await asyncio.gather(*(download_range(s, e) for s, e in ranges))
+            
+            # Ensure all data is flushed and handle is closed before rename
+            try:
+                async with file_lock:
+                    shared_fh.flush()
+            finally:
+                try:
+                    shared_fh.close()
+                except Exception:
+                    pass
+            # Rename temp to final
+            temp_destination.replace(destination)
+            
+            download_time = time.time() - start_time
+            return DownloadResult(
+                file_group_id=file_group_id,
+                group_id="",
+                local_path=destination,
+                file_size=total_bytes,
+                download_time=download_time,
+                bytes_downloaded=bytes_downloaded,
+                status=DownloadStatus.COMPLETED,
+                error_message=None,
+            )
+        except Exception as e:
+            try:
+                # Attempt salvage: if temp file exists and appears complete, finalize it
+                if temp_destination and temp_destination.exists():
+                    try:
+                        # Ensure any open handle is closed
+                        if shared_fh:
+                            try:
+                                shared_fh.flush()
+                            except Exception:
+                                pass
+                            try:
+                                shared_fh.close()
+                            except Exception:
+                                pass
+                        if total_bytes and temp_destination.stat().st_size >= total_bytes:
+                            if destination is None:
+                                destination = temp_destination.with_suffix("")
+                            temp_destination.replace(destination)
+                            return DownloadResult(
+                                file_group_id=file_group_id,
+                                group_id="",
+                                local_path=destination,
+                                file_size=total_bytes,
+                                download_time=time.time() - start_time,
+                                bytes_downloaded=max(bytes_downloaded, total_bytes),
+                                status=DownloadStatus.COMPLETED,
+                                error_message=None,
+                            )
+                        else:
+                            temp_destination.unlink()
+                    except Exception:
+                        temp_destination.unlink()
+            except Exception:
+                pass
+            return DownloadResult(
+                file_group_id=file_group_id,
+                group_id="",
+                local_path=destination or (Path(self.config.download_dir) / f"{file_group_id}.tmp"),
+                file_size=0,
+                download_time=time.time() - start_time,
+                bytes_downloaded=bytes_downloaded,
+                status=DownloadStatus.FAILED,
+                error_message=f"{type(e).__name__}: {e}",
             )
     
     async def list_available_files_async(
@@ -1107,7 +1419,7 @@ class DataQueryClient:
         
         Args:
             group_id: Catalog data group identifier
-            keywords: Keywords to narrow aud of results
+            keywords: Keywords to narrow scope of results
             page: Optional page token for pagination
             
         Returns:
@@ -1467,6 +1779,25 @@ class DataQueryClient:
             self.logger.info("DataQuery interaction", interaction_id=interaction_id, 
                            url=str(response.url), status=response.status)
         
+        # For non-2xx responses, log the error payload (best-effort)
+        if response.status >= 400:
+            error_body = None
+            try:
+                # Try to read response body safely for logging
+                text = await response.text()
+                # Avoid logging very large payloads
+                error_body = text[:1000] if text else None
+            except Exception:
+                error_body = None
+            # Log a structured error record
+            self.logger.error(
+                "HTTP error response",
+                status=response.status,
+                url=str(getattr(response, 'url', 'unknown')),
+                interaction_id=interaction_id,
+                body=error_body,
+            )
+
         if response.status == 401:
             raise AuthenticationError("Authentication failed", 
                                     details={"interaction_id": interaction_id})
@@ -1582,7 +1913,6 @@ class DataQueryClient:
             # Stop auto-download later
             await manager.stop()
         """
-        from .auto_download import AutoDownloadManager
         
         manager = AutoDownloadManager(
             client=self,
@@ -1699,7 +2029,7 @@ class DataQueryClient:
         numeric_columns: Optional[List[str]] = None,
         custom_transformations: Optional[Dict[str, callable]] = None
     ) -> 'pd.DataFrame':
-        """Internal method to convert data to DataFrame."""
+        """Internal method to convert data to DataFrame with memory optimization."""
         try:
             import pandas as pd
         except ImportError:
@@ -1723,21 +2053,37 @@ class DataQueryClient:
                 # Primitive data type
                 return pd.DataFrame({'value': [data]})
         
-        # Convert list of objects to DataFrame
-        records = []
+        # Memory optimization: process in chunks for large datasets
+        chunk_size = 1000  # Process 1000 records at a time
+        all_records = []
         
-        for item in data:
-            record = self._extract_object_data(
-                item, flatten_nested, include_metadata
-            )
-            if record:
-                records.append(record)
+        for i in range(0, len(data), chunk_size):
+            chunk = data[i:i + chunk_size]
+            chunk_records = []
+            
+            for item in chunk:
+                record = self._extract_object_data(
+                    item, flatten_nested, include_metadata
+                )
+                if record:
+                    chunk_records.append(record)
+            
+            if chunk_records:
+                all_records.extend(chunk_records)
+            
+            # Force garbage collection for large datasets
+            if len(data) > 5000:
+                import gc
+                gc.collect()
         
-        if not records:
+        if not all_records:
             return pd.DataFrame()
         
-        # Create DataFrame
-        df = pd.DataFrame(records)
+        # Create DataFrame with memory optimization
+        df = pd.DataFrame(all_records)
+        
+        # Clear the records list to free memory
+        all_records.clear()
         
         # Apply data type conversions
         df = self._apply_data_transformations(
@@ -2032,7 +2378,7 @@ class DataQueryClient:
         self,
         file_group_id: str,
         file_datetime: str
-    ) -> AvailabilityResponse:
+    ) -> AvailabilityInfo:
         """Synchronous wrapper using an event-loop aware runner."""
         return self._run_sync(self.check_availability_async(file_group_id, file_datetime))
     

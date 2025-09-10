@@ -81,10 +81,10 @@ Desktop.ini
 # Spring Boot
 *.pid
 *.pid.lock
-
+__pycache__/
 # Application specific
 logs/
-.env
+bkp.env
 .env.*
 !.env.template
 application-local.yml

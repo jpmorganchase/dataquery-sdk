@@ -252,7 +252,7 @@ async def test_files_and_availability(monkeypatch):
         return resp
     monkeypatch.setattr(client, "_make_authenticated_request", req_avail)
     ar = await client.check_availability_async("F1", "20240101")
-    assert len(ar.available_files) == 1
+    assert getattr(ar, 'is_available', False) is True
 
     # list_available_files_async
     async def req_avail_list(method, url, **kwargs):

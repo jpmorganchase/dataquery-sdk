@@ -211,7 +211,7 @@ def troubleshooting_guide():
 
 def main():
     """Run all examples."""
-    print("🚀 PyDataQuery SDK - Health Check Example")
+    print("🚀 dataquery-sdk - Health Check Example")
     print("=" * 60)
     
     # Run async example

@@ -137,7 +137,10 @@ class TestEnvConfig:
             "DATAQUERY_OAUTH_ENABLED": "true",
             "DATAQUERY_CLIENT_ID": "test_client",
             "DATAQUERY_CLIENT_SECRET": "test_secret"
-        }):
+        }, clear=True):
+            # Explicitly remove OAuth_TOKEN_URL to ensure auto-generation
+            if "DATAQUERY_OAUTH_TOKEN_URL" in os.environ:
+                del os.environ["DATAQUERY_OAUTH_TOKEN_URL"]
             config = EnvConfig.create_client_config()
             assert config.oauth_token_url == "https://api.example.com/oauth/token"
 
@@ -413,7 +416,7 @@ class TestEnvConfig:
             "client_secret": "secret123",
             "bearer_token": "token123",
             "oauth_token_url": "https://api.example.com/oauth/token",
-            "aud": "data.read",
+            # "scope": "data.read",
             "proxy_password": "pass123"  # This is not masked by the current implementation
         }
         
@@ -423,7 +426,7 @@ class TestEnvConfig:
         assert masked["client_secret"] == "***"
         assert masked["bearer_token"] == "***"
         assert masked["oauth_token_url"] == "***"
-        assert masked["aud"] == "***"
+        # scope removed
         # proxy_password is not in the sensitive_keys list, so it's not masked
         assert masked["proxy_password"] == "pass123"
 

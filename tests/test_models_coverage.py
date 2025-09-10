@@ -256,8 +256,8 @@ class TestRegressionCases:
         """Test configuration defaults."""
         config = ClientConfig(base_url="https://api.example.com")
         
-        # Test default values are set correctly
-        assert config.timeout == 30
+        # Test default values are set correctly (timeout updated to 600)
+        assert config.timeout == 600
         assert config.max_retries == 3
         assert config.retry_delay == 1
         assert config.oauth_enabled is True  # Current default
