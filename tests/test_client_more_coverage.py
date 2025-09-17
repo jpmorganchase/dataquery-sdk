@@ -114,7 +114,7 @@ async def test_download_file_partial_range_request(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_download_file_parallel_async_splits_parts(tmp_path, monkeypatch):
+async def test_download_file_async_splits_parts(tmp_path, monkeypatch):
     client = _make_client(tmp_path)
 
     # First probe: content-range reveals total size 10, with a filename
@@ -163,7 +163,7 @@ async def test_download_file_parallel_async_splits_parts(tmp_path, monkeypatch):
     monkeypatch.setattr(client, "_make_authenticated_request", fake_req)
 
     # Perform parallel download: expect a 10-byte file assembled
-    result = await client.download_file_parallel_async(
+    result = await client.download_file_async(
         file_group_id="FG1",
         options=DownloadOptions(destination_path=str(tmp_path), overwrite_existing=True),
         num_parts=5,
@@ -179,7 +179,7 @@ async def test_download_file_parallel_async_splits_parts(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_download_file_parallel_async_small_file_falls_back(tmp_path, monkeypatch):
+async def test_download_file_async_small_file_falls_back(tmp_path, monkeypatch):
     client = _make_client(tmp_path)
 
     # Small file: 6 bytes total
@@ -206,7 +206,7 @@ async def test_download_file_parallel_async_small_file_falls_back(tmp_path, monk
 
     monkeypatch.setattr(client, "_make_authenticated_request", fake_req)
 
-    result = await client.download_file_parallel_async(
+    result = await client.download_file_async(
         file_group_id="FGS",
         options=DownloadOptions(destination_path=str(tmp_path), overwrite_existing=True),
         num_parts=5,

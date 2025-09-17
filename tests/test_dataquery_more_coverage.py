@@ -6,7 +6,7 @@ from dataquery.dataquery import DataQuery
 
 
 @pytest.mark.asyncio
-async def test_run_group_download_parallel_async_filters_availability(monkeypatch):
+async def test_run_group_download_async_filters_availability(monkeypatch):
     """Ensure only entries with is-available True are queued for download."""
     # Provide minimal valid client config via env bypass using patch
     with patch('dataquery.dataquery.EnvConfig.validate_config'):
@@ -54,26 +54,12 @@ async def test_run_group_download_parallel_async_filters_availability(monkeypatc
                 'error_message': None
             })()
             
-            mock_client.download_file_async = AsyncMock(return_value=mock_download_result)
-            
-            # Mock HTTP request to trigger fallback to download_file_async
-            # Return a response without content-range header to trigger fallback
-            mock_response = AsyncMock()
-            mock_response.headers = {
-                'content-length': '1024',
-                'content-disposition': 'attachment; filename="file.bin"'
-                # No content-range header to trigger fallback
-            }
-            
-            mock_context_manager = AsyncMock()
-            mock_context_manager.__aenter__.return_value = mock_response
-            mock_client._enter_request_cm = AsyncMock(return_value=mock_context_manager)
-            mock_client._handle_response = AsyncMock(return_value=None)
-            mock_client._build_files_api_url.return_value = "https://api.example.com/group/file/download"
-            
             # Build a real DataQuery but with client mocked
             async with DataQuery() as dq:
-                report = await dq.run_group_download_parallel_async(
+                # Mock the internal method that group download actually calls
+                dq._download_file_parallel_flattened = AsyncMock(return_value=mock_download_result)
+                
+                report = await dq.run_group_download_async(
                     group_id="G",
                     start_date="20240101",
                     end_date="20240131",
@@ -87,39 +73,4 @@ async def test_run_group_download_parallel_async_filters_availability(monkeypatc
         assert report["failed_downloads"] == 0
         assert report["success_rate"] == 100.0
 
-
-@pytest.mark.asyncio
-async def test_run_group_download_async_filters_availability(monkeypatch):
-    with patch('dataquery.dataquery.EnvConfig.validate_config'):
-        with patch('dataquery.dataquery.DataQueryClient') as mock_client_cls:
-            mock_client = mock_client_cls.return_value
-            mock_client.connect = AsyncMock(return_value=None)
-            mock_client.close = AsyncMock(return_value=None)
-            available = [
-                {"file_group_id": "x", "file_datetime": "20240101", "is_available": True},
-                {"file_group_id": "y", "file_datetime": "20240102", "is-available": False},
-            ]
-            mock_client.list_available_files_async = AsyncMock(return_value=available)
-
-            async def ok_dl(file_group_id, *args, **kwargs):  # noqa: ARG001
-                status_obj = type("S", (), {"value": "completed"})()
-                class R:
-                    pass
-                r = R()
-                r.status = status_obj
-                r.file_group_id = file_group_id
-                return r
-
-            mock_client.download_file_async = ok_dl
-
-            async with DataQuery() as dq:
-                report = await dq.run_group_download_async(
-                    group_id="G",
-                    start_date="20240101",
-                    end_date="20240131",
-                )
-
-        assert report["total_files"] == 1
-        assert report["successful_downloads"] == 1
-        assert report["failed_downloads"] == 0
 

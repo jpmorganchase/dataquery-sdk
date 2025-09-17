@@ -33,6 +33,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "pandas>=2.0.0",
     "build>=1.3.0",
+    "pytest>=8.4.2",
 ]
 dynamic = ["version"]
 keywords = [
@@ -67,9 +68,10 @@ dev = [
     "pip-audit>=2.7.0",
 ]
 docs = [
-    "sphinx>=7.0.0",
-    "sphinx-rtd-theme>=1.3.0",
-    "sphinx-autodoc-typehints>=1.24.0",
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.0.0",
+    "mkdocstrings[python]>=0.24.0",
+    "mike>=1.1.0",
 ]
 pandas = [
     "pandas>=2.0.0",
@@ -83,9 +85,10 @@ all = [
     "mypy>=1.5.0",
     "isort>=5.12.0",
     "pre-commit>=3.0.0",
-    "sphinx>=7.0.0",
-    "sphinx-rtd-theme>=1.3.0",
-    "sphinx-autodoc-typehints>=1.24.0",
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.0.0",
+    "mkdocstrings[python]>=0.24.0",
+    "mike>=1.1.0",
     "pandas>=2.0.0",
     "pip-audit>=2.7.0",
 ]

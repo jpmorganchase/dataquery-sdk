@@ -31,7 +31,7 @@ class EnvConfig:
             'FILES_CONTEXT_PATH': '',
         
         # OAuth Configuration
-        'OAUTH_ENABLED': 'false',
+        'OAUTH_ENABLED': 'true',
         'OAUTH_TOKEN_URL': None,
         'CLIENT_ID': None,
         'CLIENT_SECRET': None,
@@ -73,7 +73,7 @@ class EnvConfig:
         'OVERWRITE_EXISTING': 'false',
         
         # Batch Download Configuration
-        'MAX_CONCURRENT_DOWNLOADS': '3',
+        'MAX_CONCURRENT_DOWNLOADS': '5',
         'BATCH_SIZE': '10',
         'RETRY_FAILED': 'true',
         'MAX_RETRY_ATTEMPTS': '2',
@@ -170,8 +170,13 @@ class EnvConfig:
     
     @classmethod
     def get_env_var(cls, key: str, default: Optional[str] = None) -> Optional[str]:
-        """Get environment variable with prefix."""
+        """Get environment variable with prefix, using DEFAULTS if no default provided."""
         env_key = f"{cls.PREFIX}{key}"
+        
+        # Use default from DEFAULTS if no default provided
+        if default is None:
+            default = cls.DEFAULTS.get(key)
+        
         value = os.getenv(env_key, default)
         
         # Handle empty strings as None
@@ -181,16 +186,20 @@ class EnvConfig:
         return value
     
     @classmethod
-    def get_bool(cls, key: str, default: str = "false") -> bool:
+    def get_bool(cls, key: str, default: Optional[str] = None) -> bool:
         """Get boolean environment variable."""
+        if default is None:
+            default = cls.DEFAULTS.get(key, "false")
         value = cls.get_env_var(key, default)
         if value is None:
             return False
         return value.lower() in ("true", "1", "yes", "on")
     
     @classmethod
-    def get_int(cls, key: str, default: str = "0") -> int:
+    def get_int(cls, key: str, default: Optional[str] = None) -> int:
         """Get integer environment variable."""
+        if default is None:
+            default = cls.DEFAULTS.get(key, "0")
         value = cls.get_env_var(key, default)
         if value is None:
             return 0
@@ -200,8 +209,10 @@ class EnvConfig:
             raise ConfigurationError(f"Invalid integer value for {cls.PREFIX}{key}: {value}")
     
     @classmethod
-    def get_float(cls, key: str, default: str = "0.0") -> float:
+    def get_float(cls, key: str, default: Optional[str] = None) -> float:
         """Get float environment variable."""
+        if default is None:
+            default = cls.DEFAULTS.get(key, "0.0")
         value = cls.get_env_var(key, default)
         if value is None:
             return 0.0
@@ -217,6 +228,22 @@ class EnvConfig:
         if value is None:
             return Path(".")
         return Path(value)
+    
+    @classmethod
+    def create_client_config_with_defaults(cls, base_url: str) -> ClientConfig:
+        """
+        Create ClientConfig with just base_url and all other defaults.
+        
+        Args:
+            base_url: Base URL of the DataQuery API
+            
+        Returns:
+            ClientConfig instance with defaults
+        """
+        return ClientConfig(
+            base_url=base_url,
+            # All other fields will use their default values from the model
+        )
     
     @classmethod
     def create_client_config(cls, config_data: Optional[Dict[str, Any]] = None, env_file: Optional[Path] = None) -> ClientConfig:
@@ -252,6 +279,7 @@ class EnvConfig:
                 # API configuration
                 base_url=base_url,
                 context_path=cls.get_env_var("CONTEXT_PATH"),
+                api_version=cls.get_env_var("API_VERSION"),
                 files_base_url=cls.get_env_var("FILES_BASE_URL"),
                 files_context_path=cls.get_env_var("FILES_CONTEXT_PATH"),
                 
@@ -262,24 +290,24 @@ class EnvConfig:
                 client_secret=cls.get_env_var("CLIENT_SECRET"),
                 # scope removed
                 aud=cls.get_env_var("OAUTH_AUD"),
-                grant_type=cls.get_env_var("GRANT_TYPE") or "client_credentials",
+                grant_type=cls.get_env_var("GRANT_TYPE"),
                 
                 # Bearer token configuration
                 bearer_token=cls.get_env_var("BEARER_TOKEN"),
-                token_refresh_threshold=cls.get_int("TOKEN_REFRESH_THRESHOLD", "300"),
+                token_refresh_threshold=cls.get_int("TOKEN_REFRESH_THRESHOLD"),
                 
                 # HTTP configuration
-                timeout=cls.get_float("TIMEOUT", "600.0"),
-                max_retries=cls.get_int("MAX_RETRIES", "3"),
-                retry_delay=cls.get_float("RETRY_DELAY", "1.0"),
+                timeout=cls.get_float("TIMEOUT"),
+                max_retries=cls.get_int("MAX_RETRIES"),
+                retry_delay=cls.get_float("RETRY_DELAY"),
                 
                 # Connection pooling
-                pool_connections=cls.get_int("POOL_CONNECTIONS", "10"),
-                pool_maxsize=cls.get_int("POOL_MAXSIZE", "20"),
+                pool_connections=cls.get_int("POOL_CONNECTIONS"),
+                pool_maxsize=cls.get_int("POOL_MAXSIZE"),
                 
                 # Rate limiting
-                requests_per_minute=cls.get_int("REQUESTS_PER_MINUTE", "100"),
-                burst_capacity=cls.get_int("BURST_CAPACITY", "20"),
+                requests_per_minute=cls.get_int("REQUESTS_PER_MINUTE"),
+                burst_capacity=cls.get_int("BURST_CAPACITY"),
                 
                 # Proxy configuration
                 proxy_enabled=cls.get_bool("PROXY_ENABLED"),
@@ -289,13 +317,44 @@ class EnvConfig:
                 proxy_verify_ssl=cls.get_bool("PROXY_VERIFY_SSL"),
                 
                 # Logging
-                log_level=cls.get_env_var("LOG_LEVEL") or "INFO",
+                log_level=cls.get_env_var("LOG_LEVEL"),
                 enable_debug_logging=cls.get_bool("ENABLE_DEBUG_LOGGING"),
                 
                 # Download configuration
-                download_dir=cls.get_env_var("DOWNLOAD_DIR") or "./downloads",
+                download_dir=cls.get_env_var("DOWNLOAD_DIR"),
                 create_directories=cls.get_bool("CREATE_DIRECTORIES"),
                 overwrite_existing=cls.get_bool("OVERWRITE_EXISTING"),
+                
+                # Batch Download Configuration
+                max_concurrent_downloads=cls.get_int("MAX_CONCURRENT_DOWNLOADS"),
+                batch_size=cls.get_int("BATCH_SIZE"),
+                retry_failed=cls.get_bool("RETRY_FAILED"),
+                max_retry_attempts=cls.get_int("MAX_RETRY_ATTEMPTS"),
+                create_date_folders=cls.get_bool("CREATE_DATE_FOLDERS"),
+                preserve_path_structure=cls.get_bool("PRESERVE_PATH_STRUCTURE"),
+                flatten_structure=cls.get_bool("FLATTEN_STRUCTURE"),
+                show_batch_progress=cls.get_bool("SHOW_BATCH_PROGRESS"),
+                show_individual_progress=cls.get_bool("SHOW_INDIVIDUAL_PROGRESS"),
+                continue_on_error=cls.get_bool("CONTINUE_ON_ERROR"),
+                log_errors=cls.get_bool("LOG_ERRORS"),
+                save_error_log=cls.get_bool("SAVE_ERROR_LOG"),
+                use_async_downloads=cls.get_bool("USE_ASYNC_DOWNLOADS"),
+                chunk_size=cls.get_int("CHUNK_SIZE"),
+                
+                # Download Options
+                enable_range_requests=cls.get_bool("ENABLE_RANGE_REQUESTS"),
+                show_progress=cls.get_bool("SHOW_PROGRESS"),
+                
+                # Workflow Configuration
+                workflow_dir=cls.get_env_var("WORKFLOW_DIR"),
+                groups_dir=cls.get_env_var("GROUPS_DIR"),
+                availability_dir=cls.get_env_var("AVAILABILITY_DIR"),
+                default_dir=cls.get_env_var("DEFAULT_DIR"),
+                
+                # Security
+                mask_secrets=cls.get_bool("MASK_SECRETS"),
+                token_storage_enabled=cls.get_bool("TOKEN_STORAGE_ENABLED"),
+                token_storage_dir=cls.get_env_var("TOKEN_STORAGE_DIR"),
             )
         else:
             # Use provided config data

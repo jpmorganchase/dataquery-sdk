@@ -1,0 +1,145 @@
+# Publish package on main branch if it's tagged with 'v*'
+
+name: Release Workflow
+
+# Controls when the action will run.
+on:
+  # Triggers the workflow on push events but only for the master branch
+  push:
+    tags:
+      - 'v*'
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_HTTP_TIMEOUT: 300
+  PIP_DISABLE_PIP_VERSION_CHECK: 1
+  DOCS_PY_VERSION: 3.13
+
+
+jobs:
+  check-build:
+    runs-on: ubuntu-latest
+    outputs:
+      build-successful: ${{ steps.check-build-success.outputs.successful }}
+      run_id: ${{ steps.check-build-success.outputs.run_id }}
+
+    steps:
+      - name: Check latest build status
+        id: check-build-success
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const tagSha = context.sha;
+            console.log('current run sha = ' + tagSha)
+            dev_workflow = 'dev.yml'
+            const runs = await github.rest.actions.listWorkflowRuns({
+              owner,
+              repo,
+              workflow_id: dev_workflow,
+              status: 'success',
+              head_sha: tagSha
+            });
+
+            const successfulRun = runs.data.workflow_runs.find(run => run.head_sha === tagSha);
+            if (successfulRun) {
+              core.setOutput('successful', 'true');
+              core.setOutput('run_id', successfulRun.id);
+              console.log('Found Successful build run #' + successfulRun.run_number + ', run_id=' + successfulRun.id + ', it was started at ' + successfulRun.created_at)
+
+            } else {
+              core.setOutput('successful', 'false');
+              core.setFailed('No successful build for this commit/tag');
+            }
+
+  publish:
+    needs: check-build
+    if: ${{ needs.check-build.outputs.build-successful == 'true' }} 
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Get version from tag
+      id: tag_name
+      run: |
+        echo ::set-output name=current_version::${GITHUB_REF#refs/tags/v}
+      shell: bash
+
+    # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+    - name: Checkout main repo
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Get Changelog Entry
+      id: changelog_reader
+      uses: mindsers/changelog-reader-action@v2
+      with:
+        version: ${{ steps.tag_name.outputs.current_version }}
+        path: CHANGELOG.md
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.DOCS_PY_VERSION }}
+
+    - name: Set up uv
+      run: pip install uv
+
+    - name: Sync dependencies using uv
+      run: |
+        uv sync -p ${{ env.DOCS_PY_VERSION }} --all-extras
+
+    - name: Setup main repo deploy git user
+      run: |
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+
+    # Build docs but only alias latest for non-dev releases
+    - name: build documentation
+      run: |
+        git fetch origin dataquery_release --depth=1
+        if [[ "${{ steps.tag_name.outputs.current_version }}" != *.dev* ]]; then
+          # Commands for regular release
+            uv run mike deploy --branch dataquery_release --deploy-prefix docs --push --update-aliases ${{ steps.tag_name.outputs.current_version }} latest
+            uv run mike set-default --branch dataquery_release --deploy-prefix docs --push latest
+          else
+          # Commands for pre-release
+            uv run mike deploy --branch dataquery_release --deploy-prefix docs --push ${{ steps.tag_name.outputs.current_version }}
+        fi
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - uses: actions/download-artifact@v4
+      with:
+        pattern: artifacts*
+        path: dist/
+        merge-multiple: true
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        repository: ${{ github.repository }}
+        run-id: ${{ needs.check-build.outputs.run_id }}
+
+
+    - name: create github release
+      id: create_release
+      uses: softprops/action-gh-release@v2
+      with:
+        body: ${{ steps.changelog_reader.outputs.changes }}
+        files: dist/*
+        draft: ${{ contains(steps.tag_name.outputs.current_version, '.dev') }}
+        prerelease: ${{ contains(steps.tag_name.outputs.current_version, '.dev') }}
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: publish to PyPI
+      env:
+        TWINE_USERNAME: __token__
+        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+      run: uv run twine upload dist/*

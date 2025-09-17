@@ -79,28 +79,29 @@ async def main() -> None:
             resp = await dq.get_instrument_time_series_async(
                 instruments=instrument_ids,
                 attributes=attributes_list,
-                data="ALL",
+                data="REFERENCE_DATA",
                 format="JSON",
                 start_date=start_date,
                 end_date=end_date,
                 calendar=args.calendar,
                 frequency=args.frequency,
                 conversion=args.conversion,
-                nan_treatment=args.nan_treatment
-
+                nan_treatment=args.nan_treatment,
+                page=args.page,
             )
 
-        # Use attribute access for TimeSeriesResponse
-        for instrument in getattr(resp, "instruments", []):
-            for attribute in getattr(instrument, "attributes", []):
-                time_series = getattr(attribute, "time_series", [])
-                times = [point[0] for point in time_series]
-                print(f"Times for attribute {getattr(attribute, 'attribute_id', None)}: {times}")
+            series = getattr(resp, "series", []) or []
+            print(f"Series: {len(series)}")
+            for i, s in enumerate(series[: args.show], 1):
+                instrument = s.get("instrument", "")
+                attribute = s.get("attribute", "")
+                points = s.get("data", [])
+                print(f"{i}. {instrument} - {attribute} (points: {len(points)})")
 
-        if hasattr(resp, "pagination") and resp.pagination:
-            next_page = resp.pagination.get("next_page")
-            if next_page:
-                print(f"Next page token: {next_page}")
+            if hasattr(resp, "pagination") and resp.pagination:
+                next_page = resp.pagination.get("next_page")
+                if next_page:
+                    print(f"Next page token: {next_page}")
 
     except DataQueryError as e:
         print(f"Error: {e}")

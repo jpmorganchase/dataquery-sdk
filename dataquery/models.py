@@ -32,13 +32,14 @@ class ClientConfig(BaseModel):
     
     # API configuration
     base_url: str = Field(..., description="Base URL of the DATAQUERY API")
-    context_path: Optional[str] = Field(None, description="API context path (e.g., '/api/v1')")
+    context_path: Optional[str] = Field(default="", description="API context path (e.g., '/api/v1')")
+    api_version: str = Field(default="2.0.0", description="API version")
     # Optional separate host for file endpoints
     files_base_url: Optional[str] = Field(
         default=None, description="Optional separate base URL for file endpoints"
     )
     files_context_path: Optional[str] = Field(
-        default=None, description="Optional context path for the files host"
+        default="", description="Optional context path for the files host"
     )
     
     # OAuth configuration
@@ -47,7 +48,7 @@ class ClientConfig(BaseModel):
     client_id: Optional[str] = Field(default=None, description="OAuth client ID")
     client_secret: Optional[str] = Field(default=None, description="OAuth client secret")
     # scope removed
-    aud: Optional[str] = Field(default=None, description="OAuth audience (aud)")
+    aud: Optional[str] = Field(default="", description="OAuth audience (aud)")
     grant_type: str = Field(default="client_credentials", description="OAuth grant type")
     
     # Bearer token configuration
@@ -55,7 +56,7 @@ class ClientConfig(BaseModel):
     token_refresh_threshold: int = Field(default=300, description="Seconds before expiry to refresh token")
     
     # HTTP configuration
-    timeout: float = Field(default=600.0, description="Default request timeout in seconds")
+    timeout: float = Field(default=6000.0, description="Default request timeout in seconds")
     max_retries: int = Field(default=3, description="Maximum retry attempts")
     retry_delay: float = Field(default=1.0, description="Delay between retries in seconds")
     
@@ -64,14 +65,14 @@ class ClientConfig(BaseModel):
     pool_maxsize: int = Field(default=20, description="Maximum connections per pool")
     
     # Rate limiting
-    requests_per_minute: int = Field(default=300, description="Requests per minute limit (5 requests per second)")
-    burst_capacity: int = Field(default=5, description="Burst capacity for rate limiting (5 requests)")
+    requests_per_minute: int = Field(default=100, description="Requests per minute limit")
+    burst_capacity: int = Field(default=20, description="Burst capacity for rate limiting")
     
     # Proxy configuration
     proxy_enabled: bool = Field(default=False, description="Enable proxy support")
-    proxy_url: Optional[str] = Field(default=None, description="Proxy URL (e.g., http://proxy:8080, socks5://proxy:1080)")
-    proxy_username: Optional[str] = Field(default=None, description="Proxy username for authentication")
-    proxy_password: Optional[str] = Field(default=None, description="Proxy password for authentication")
+    proxy_url: Optional[str] = Field(default="", description="Proxy URL (e.g., http://proxy:8080, socks5://proxy:1080)")
+    proxy_username: Optional[str] = Field(default="", description="Proxy username for authentication")
+    proxy_password: Optional[str] = Field(default="", description="Proxy password for authentication")
     proxy_verify_ssl: bool = Field(default=True, description="Verify SSL certificates for proxy connections")
     
     # Logging
@@ -83,6 +84,37 @@ class ClientConfig(BaseModel):
     create_directories: bool = Field(default=True, description="Create parent directories if they don't exist")
     overwrite_existing: bool = Field(default=False, description="Overwrite existing files")
     token_storage_dir: Optional[str] = Field(default=None, description="Optional directory to store OAuth tokens; defaults to '<download_dir>/.tokens'")
+    
+    # Batch Download Configuration
+    max_concurrent_downloads: int = Field(default=5, description="Maximum concurrent downloads")
+    batch_size: int = Field(default=10, description="Batch size for operations")
+    retry_failed: bool = Field(default=True, description="Retry failed downloads")
+    max_retry_attempts: int = Field(default=2, description="Maximum retry attempts for failed downloads")
+    create_date_folders: bool = Field(default=True, description="Create date-based folders")
+    preserve_path_structure: bool = Field(default=True, description="Preserve original path structure")
+    flatten_structure: bool = Field(default=False, description="Flatten directory structure")
+    show_batch_progress: bool = Field(default=True, description="Show batch progress")
+    show_individual_progress: bool = Field(default=True, description="Show individual file progress")
+    continue_on_error: bool = Field(default=True, description="Continue processing on errors")
+    log_errors: bool = Field(default=True, description="Log errors")
+    save_error_log: bool = Field(default=True, description="Save error log to file")
+    use_async_downloads: bool = Field(default=True, description="Use async downloads")
+    chunk_size: int = Field(default=8192, description="Download chunk size in bytes")
+    
+    # Download Options
+    enable_range_requests: bool = Field(default=True, description="Enable HTTP range requests")
+    show_progress: bool = Field(default=True, description="Show download progress")
+    
+    # Workflow Configuration
+    workflow_dir: str = Field(default="workflow", description="Workflow files subdirectory")
+    groups_dir: str = Field(default="groups", description="Groups files subdirectory")
+    availability_dir: str = Field(default="availability", description="Availability files subdirectory")
+    default_dir: str = Field(default="files", description="Default files subdirectory")
+    
+    # Security
+    mask_secrets: bool = Field(default=True, description="Mask secrets in logs")
+    token_storage_enabled: bool = Field(default=False, description="Enable token storage")
+    token_storage_dir: str = Field(default=".tokens", description="Token storage directory")
     
     model_config = ConfigDict(extra="allow", populate_by_name=True)  # Allow extra fields from API and populate by both alias and name
     

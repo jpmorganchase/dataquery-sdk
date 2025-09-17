@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Group download capabilities with intelligent rate limiting
 - Command-line interface for batch downloads
 - Comprehensive test suite with coverage reporting
+- Full documentation with MkDocs
+- GitHub Actions CI/CD workflows
 
 ### Changed
 - Refactored download methods to use parallel functionality by default
@@ -27,3 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Initial release
+- Core DataQuery and DataQueryClient classes
+- Parallel download functionality
+- Group download capabilities
+- Command-line interface
+- Comprehensive test suite
+- Full type hints and documentation

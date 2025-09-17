@@ -39,7 +39,7 @@ async def main() -> None:
                     return
                 group_id = groups[0].group_id
 
-            resp = await dq.list_instruments_async(group_id=group_id)
+            resp = await dq.list_instruments_async(group_id=group_id, limit=args.limit, offset=args.offset)
 
             items = getattr(resp, "items", 0) or 0
             instruments = getattr(resp, "instruments", []) or []

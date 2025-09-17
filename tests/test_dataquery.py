@@ -1786,8 +1786,8 @@ class TestDataQueryWorkflowMethods:
                 assert result["total_files"] == 2
 
     @pytest.mark.asyncio
-    async def test_run_group_download_parallel_async(self):
-        """Test run_group_download_parallel_async method."""
+    async def test_run_group_download_async(self):
+        """Test run_group_download_async method."""
         config = ClientConfig(
             base_url="https://api.example.com",
             oauth_enabled=False,
@@ -1840,7 +1840,7 @@ class TestDataQueryWorkflowMethods:
                 dataquery = DataQuery(config)
                 dataquery._client = mock_client
                 
-                result = await dataquery.run_group_download_parallel_async(
+                result = await dataquery.run_group_download_async(
                     group_id="group1",
                     start_date="20240101",
                     end_date="20240131",
@@ -1859,8 +1859,8 @@ class TestDataQueryWorkflowMethods:
                 # Ensure the client download method was used
                 assert mock_client.download_file_async.await_count >= 1
 
-    def test_run_group_download_parallel_sync(self):
-        """Test run_group_download_parallel sync wrapper."""
+    def test_run_group_download_sync(self):
+        """Test run_group_download sync wrapper."""
         config = ClientConfig(
             base_url="https://api.example.com",
             oauth_enabled=False,
@@ -1883,7 +1883,7 @@ class TestDataQueryWorkflowMethods:
             
             with patch.object(dataquery, '_run_async') as mock_run_async:
                 mock_run_async.return_value = expected
-                result = dataquery.run_group_download_parallel(
+                result = dataquery.run_group_download(
                     group_id="group1",
                     start_date="20240101",
                     end_date="20240131",

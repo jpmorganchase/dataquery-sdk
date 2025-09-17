@@ -932,10 +932,237 @@ class DataQueryClient:
         file_group_id: str,
         file_datetime: Optional[str] = None,
         options: Optional[DownloadOptions] = None,
+        num_parts: int = 5,
         progress_callback: Optional[Callable] = None
     ) -> DownloadResult:
         """
-        Download a specific file.
+        Download a specific file using parallel HTTP range requests.
+        
+        Args:
+            file_group_id: File ID to download
+            file_datetime: Optional datetime of the file (YYYYMMDD, YYYYMMDDTHHMM, or YYYYMMDDTHHMMSS)
+            options: Download options
+            num_parts: Number of parallel parts to split the file into (default 5)
+            progress_callback: Optional progress callback function
+        
+        Returns:
+            DownloadResult with download information
+        """
+        if file_datetime:
+            validate_file_datetime(file_datetime)
+        if options is None:
+            options = DownloadOptions()
+        if num_parts is None or num_parts <= 0:
+            num_parts = 5
+        
+        # Build base params
+        params = {
+            "file-group-id": file_group_id
+        }
+        if file_datetime:
+            params["file-datetime"] = file_datetime
+        
+        # Determine destination directory like single download method
+        if options.destination_path:
+            dest_path = Path(options.destination_path)
+            if dest_path.suffix:
+                destination_dir = dest_path.parent
+            else:
+                destination_dir = dest_path
+        else:
+            destination_dir = Path(self.config.download_dir)
+        
+        if options.create_directories:
+            destination_dir.mkdir(parents=True, exist_ok=True)
+        
+        start_time = time.time()
+        bytes_downloaded = 0
+        destination: Optional[Path] = None
+        temp_destination: Optional[Path] = None
+        total_bytes: int = 0
+        shared_fh = None
+        
+        try:
+            url = self._build_files_api_url('group/file/download')
+            
+            # Probe size with a 1-byte range request
+            probe_headers = {"Range": "bytes=0-0"}
+            async with (await self._enter_request_cm('GET', url, params=params, headers=probe_headers)) as probe_resp:
+                await self._handle_response(probe_resp)
+                content_range = probe_resp.headers.get('content-range') or probe_resp.headers.get('Content-Range')
+                if content_range and '/' in content_range:
+                    try:
+                        total_bytes = int(content_range.split('/')[-1])
+                    except Exception:
+                        total_bytes = int(probe_resp.headers.get('content-length', '0'))
+                else:
+                    # Fallback to single-stream download if range not supported
+                    return await self._download_file_single_stream(
+                        file_group_id=file_group_id,
+                        file_datetime=file_datetime,
+                        options=options,
+                        progress_callback=progress_callback,
+                    )
+
+                # If file is small (<10MB), prefer a single-stream download
+                try:
+                    ten_mb = 10 * 1024 * 1024
+                    if total_bytes and total_bytes < ten_mb:
+                        return await self._download_file_single_stream(
+                            file_group_id=file_group_id,
+                            file_datetime=file_datetime,
+                            options=options,
+                            progress_callback=progress_callback,
+                        )
+                except Exception:
+                    pass
+                # Determine filename from headers if available
+                filename = get_filename_from_response(probe_resp, file_group_id, file_datetime)
+                destination = destination_dir / filename
+                
+                if destination.exists() and not options.overwrite_existing:
+                    raise FileExistsError(f"File already exists: {destination}")
+            
+            # Prepare temp file with full size for random access writes
+            if not isinstance(destination, Path):
+                raise ValueError(f"Invalid destination path: {destination}")
+            temp_destination = destination.with_suffix(destination.suffix + '.part')
+            with open(temp_destination, 'wb') as f:
+                f.truncate(total_bytes)
+            
+            # Compute ranges
+            part_size = total_bytes // num_parts
+            ranges = []
+            start = 0
+            for i in range(num_parts):
+                end = (start + part_size - 1) if i < num_parts - 1 else (total_bytes - 1)
+                if start > end:
+                    break
+                ranges.append((start, end))
+                start = end + 1
+            
+            progress = DownloadProgress(
+                file_group_id=file_group_id,
+                total_bytes=total_bytes,
+                start_time=datetime.now()
+            )
+            
+            bytes_lock = asyncio.Lock()
+            file_lock = asyncio.Lock()
+            # Open a single shared handle for all range writers
+            shared_fh = open(temp_destination, 'r+b')
+            
+            # Get the current event loop
+            loop = asyncio.get_running_loop()
+            
+            async def download_range(start_byte: int, end_byte: int):
+                nonlocal bytes_downloaded
+                headers = {"Range": f"bytes={start_byte}-{end_byte}"}
+                # each part request
+                async with (await self._enter_request_cm('GET', url, params=params, headers=headers)) as resp:
+                    await self._handle_response(resp)
+                    # Stream and write to correct offset
+                    current_pos = start_byte
+                    chunk_size = options.chunk_size or 8192
+                    async for chunk in resp.content.iter_chunked(chunk_size):
+                        async with file_lock:
+                            await loop.run_in_executor(None, shared_fh.seek, current_pos)
+                            await loop.run_in_executor(None, shared_fh.write, chunk)
+                        current_pos += len(chunk)
+                        async with bytes_lock:
+                            bytes_downloaded += len(chunk)
+                            progress.update_progress(bytes_downloaded)
+                            if progress_callback:
+                                progress_callback(progress)
+                            elif options.show_progress:
+                                self.logger.info(
+                                    "Download progress",
+                                    file=file_group_id,
+                                    percentage=f"{progress.percentage:.1f}%",
+                                    downloaded=format_file_size(bytes_downloaded),
+                                )
+            
+            # Run all parts concurrently
+            await asyncio.gather(*(download_range(s, e) for s, e in ranges))
+            
+            # Ensure all data is flushed and handle is closed before rename
+            try:
+                async with file_lock:
+                    shared_fh.flush()
+            finally:
+                try:
+                    shared_fh.close()
+                except Exception:
+                    pass
+            # Rename temp to final
+            temp_destination.replace(destination)
+            
+            download_time = time.time() - start_time
+            return DownloadResult(
+                file_group_id=file_group_id,
+                group_id="",
+                local_path=destination,
+                file_size=total_bytes,
+                download_time=download_time,
+                bytes_downloaded=bytes_downloaded,
+                status=DownloadStatus.COMPLETED,
+                error_message=None,
+            )
+        except Exception as e:
+            try:
+                # Attempt salvage: if temp file exists and appears complete, finalize it
+                if temp_destination and temp_destination.exists():
+                    try:
+                        # Ensure any open handle is closed
+                        if shared_fh:
+                            try:
+                                shared_fh.flush()
+                            except Exception:
+                                pass
+                            try:
+                                shared_fh.close()
+                            except Exception:
+                                pass
+                        if total_bytes and temp_destination.stat().st_size >= total_bytes:
+                            if destination is None:
+                                destination = temp_destination.with_suffix("")
+                            temp_destination.replace(destination)
+                            return DownloadResult(
+                                file_group_id=file_group_id,
+                                group_id="",
+                                local_path=destination,
+                                file_size=total_bytes,
+                                download_time=time.time() - start_time,
+                                bytes_downloaded=max(bytes_downloaded, total_bytes),
+                                status=DownloadStatus.COMPLETED,
+                                error_message=None,
+                            )
+                        else:
+                            temp_destination.unlink()
+                    except Exception:
+                        temp_destination.unlink()
+            except Exception:
+                pass
+            return DownloadResult(
+                file_group_id=file_group_id,
+                group_id="",
+                local_path=destination or (Path(self.config.download_dir) / f"{file_group_id}.tmp"),
+                file_size=0,
+                download_time=time.time() - start_time,
+                bytes_downloaded=bytes_downloaded,
+                status=DownloadStatus.FAILED,
+                error_message=f"{type(e).__name__}: {e}",
+            )
+    
+    async def _download_file_single_stream(
+        self,
+        file_group_id: str,
+        file_datetime: Optional[str] = None,
+        options: Optional[DownloadOptions] = None,
+        progress_callback: Optional[Callable] = None
+    ) -> DownloadResult:
+        """
+        Download a specific file using single-stream (non-parallel) method.
         
         Args:
             file_group_id: File ID to download
@@ -945,8 +1172,6 @@ class DataQueryClient:
             
         Returns:
             DownloadResult with download information
-        Raises:
-            ValueError: If file_datetime format is invalid
         """
         if file_datetime:
             validate_file_datetime(file_datetime)
@@ -1092,233 +1317,6 @@ class DataQueryClient:
                 bytes_downloaded=bytes_downloaded,
                 status=DownloadStatus.FAILED,
                 error_message=f"{type(e).__name__}: {e}"
-            )
-    
-    async def download_file_parallel_async(
-        self,
-        file_group_id: str,
-        file_datetime: Optional[str] = None,
-        options: Optional[DownloadOptions] = None,
-        num_parts: int = 10,
-        progress_callback: Optional[Callable] = None
-    ) -> DownloadResult:
-        """
-        Download a specific file using parallel HTTP range requests.
-        
-        Args:
-            file_group_id: File ID to download
-            file_datetime: Optional datetime of the file (YYYYMMDD, YYYYMMDDTHHMM, or YYYYMMDDTHHMMSS)
-            options: Download options
-            num_parts: Number of parallel parts to split the file into (default 5)
-            progress_callback: Optional progress callback function
-        
-        Returns:
-            DownloadResult with download information
-        """
-        if file_datetime:
-            validate_file_datetime(file_datetime)
-        if options is None:
-            options = DownloadOptions()
-        if num_parts <= 0:
-            num_parts = 5
-        
-        # Build base params
-        params = {
-            "file-group-id": file_group_id
-        }
-        if file_datetime:
-            params["file-datetime"] = file_datetime
-        
-        # Determine destination directory like single download method
-        if options.destination_path:
-            dest_path = Path(options.destination_path)
-            if dest_path.suffix:
-                destination_dir = dest_path.parent
-            else:
-                destination_dir = dest_path
-        else:
-            destination_dir = Path(self.config.download_dir)
-        
-        if options.create_directories:
-            destination_dir.mkdir(parents=True, exist_ok=True)
-        
-        start_time = time.time()
-        bytes_downloaded = 0
-        destination: Optional[Path] = None
-        temp_destination: Optional[Path] = None
-        total_bytes: int = 0
-        shared_fh = None
-        
-        try:
-            url = self._build_files_api_url('group/file/download')
-            
-            # Probe size with a 1-byte range request
-            probe_headers = {"Range": "bytes=0-0"}
-            async with (await self._enter_request_cm('GET', url, params=params, headers=probe_headers)) as probe_resp:
-                await self._handle_response(probe_resp)
-                content_range = probe_resp.headers.get('content-range') or probe_resp.headers.get('Content-Range')
-                if content_range and '/' in content_range:
-                    try:
-                        total_bytes = int(content_range.split('/')[-1])
-                    except Exception:
-                        total_bytes = int(probe_resp.headers.get('content-length', '0'))
-                else:
-                    # Fallback to single-stream download if range not supported
-                    return await self.download_file_async(
-                        file_group_id=file_group_id,
-                        file_datetime=file_datetime,
-                        options=options,
-                        progress_callback=progress_callback,
-                    )
-
-                # If file is small (<10MB), prefer a single-stream download
-                try:
-                    ten_mb = 10 * 1024 * 1024
-                    if total_bytes and total_bytes < ten_mb:
-                        return await self.download_file_async(
-                            file_group_id=file_group_id,
-                            file_datetime=file_datetime,
-                            options=options,
-                            progress_callback=progress_callback,
-                        )
-                except Exception:
-                    pass
-                # Determine filename from headers if available
-                filename = get_filename_from_response(probe_resp, file_group_id, file_datetime)
-                destination = destination_dir / filename
-                
-                if destination.exists() and not options.overwrite_existing:
-                    raise FileExistsError(f"File already exists: {destination}")
-            
-            # Prepare temp file with full size for random access writes
-            if not isinstance(destination, Path):
-                raise ValueError(f"Invalid destination path: {destination}")
-            temp_destination = destination.with_suffix(destination.suffix + '.part')
-            with open(temp_destination, 'wb') as f:
-                f.truncate(total_bytes)
-            
-            # Compute ranges
-            part_size = total_bytes // num_parts
-            ranges = []
-            start = 0
-            for i in range(num_parts):
-                end = (start + part_size - 1) if i < num_parts - 1 else (total_bytes - 1)
-                if start > end:
-                    break
-                ranges.append((start, end))
-                start = end + 1
-            
-            progress = DownloadProgress(
-                file_group_id=file_group_id,
-                total_bytes=total_bytes,
-                start_time=datetime.now()
-            )
-            
-            bytes_lock = asyncio.Lock()
-            file_lock = asyncio.Lock()
-            # Open a single shared handle for all range writers
-            shared_fh = open(temp_destination, 'r+b')
-            
-            # Get the current event loop
-            loop = asyncio.get_running_loop()
-            
-            async def download_range(start_byte: int, end_byte: int):
-                nonlocal bytes_downloaded
-                headers = {"Range": f"bytes={start_byte}-{end_byte}"}
-                # each part request
-                async with (await self._enter_request_cm('GET', url, params=params, headers=headers)) as resp:
-                    await self._handle_response(resp)
-                    # Stream and write to correct offset
-                    current_pos = start_byte
-                    chunk_size = options.chunk_size or 8192
-                    async for chunk in resp.content.iter_chunked(chunk_size):
-                        async with file_lock:
-                            await loop.run_in_executor(None, shared_fh.seek, current_pos)
-                            await loop.run_in_executor(None, shared_fh.write, chunk)
-                        current_pos += len(chunk)
-                        async with bytes_lock:
-                            bytes_downloaded += len(chunk)
-                            progress.update_progress(bytes_downloaded)
-                            if progress_callback:
-                                progress_callback(progress)
-                            elif options.show_progress:
-                                self.logger.info(
-                                    "Download progress",
-                                    file=file_group_id,
-                                    percentage=f"{progress.percentage:.1f}%",
-                                    downloaded=format_file_size(bytes_downloaded),
-                                )
-            
-            # Run all parts concurrently
-            await asyncio.gather(*(download_range(s, e) for s, e in ranges))
-            
-            # Ensure all data is flushed and handle is closed before rename
-            try:
-                async with file_lock:
-                    shared_fh.flush()
-            finally:
-                try:
-                    shared_fh.close()
-                except Exception:
-                    pass
-            # Rename temp to final
-            temp_destination.replace(destination)
-            
-            download_time = time.time() - start_time
-            return DownloadResult(
-                file_group_id=file_group_id,
-                group_id="",
-                local_path=destination,
-                file_size=total_bytes,
-                download_time=download_time,
-                bytes_downloaded=bytes_downloaded,
-                status=DownloadStatus.COMPLETED,
-                error_message=None,
-            )
-        except Exception as e:
-            try:
-                # Attempt salvage: if temp file exists and appears complete, finalize it
-                if temp_destination and temp_destination.exists():
-                    try:
-                        # Ensure any open handle is closed
-                        if shared_fh:
-                            try:
-                                shared_fh.flush()
-                            except Exception:
-                                pass
-                            try:
-                                shared_fh.close()
-                            except Exception:
-                                pass
-                        if total_bytes and temp_destination.stat().st_size >= total_bytes:
-                            if destination is None:
-                                destination = temp_destination.with_suffix("")
-                            temp_destination.replace(destination)
-                            return DownloadResult(
-                                file_group_id=file_group_id,
-                                group_id="",
-                                local_path=destination,
-                                file_size=total_bytes,
-                                download_time=time.time() - start_time,
-                                bytes_downloaded=max(bytes_downloaded, total_bytes),
-                                status=DownloadStatus.COMPLETED,
-                                error_message=None,
-                            )
-                        else:
-                            temp_destination.unlink()
-                    except Exception:
-                        temp_destination.unlink()
-            except Exception:
-                pass
-            return DownloadResult(
-                file_group_id=file_group_id,
-                group_id="",
-                local_path=destination or (Path(self.config.download_dir) / f"{file_group_id}.tmp"),
-                file_size=0,
-                download_time=time.time() - start_time,
-                bytes_downloaded=bytes_downloaded,
-                status=DownloadStatus.FAILED,
-                error_message=f"{type(e).__name__}: {e}",
             )
     
     async def list_available_files_async(

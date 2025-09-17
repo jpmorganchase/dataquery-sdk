@@ -90,32 +90,7 @@ class ConfigManager:
         """Get default configuration for examples."""
         return ClientConfig(
             base_url="https://api.dataquery.com",
-            context_path=None,
-            oauth_enabled=False,
-            oauth_token_url=None,
-            client_id=None,
-            client_secret=None,
-            # scope removed,
-            grant_type="client_credentials",
-            bearer_token=None,
-            token_refresh_threshold=300,
-            timeout=600.0,
-            max_retries=3,
-            retry_delay=1.0,
-            pool_connections=10,
-            pool_maxsize=20,
-            requests_per_minute=100,
-            burst_capacity=20,
-            proxy_enabled=False,
-            proxy_url=None,
-            proxy_username=None,
-            proxy_password=None,
-            proxy_verify_ssl=True,
-            log_level="INFO",
-            enable_debug_logging=False,
-            download_dir="./downloads",
-            create_directories=True,
-            overwrite_existing=False
+            # All other fields will use their default values from the model
         )
 
 
@@ -382,10 +357,11 @@ class DataQuery:
         file_datetime: Optional[str] = None,
         destination_path: Optional[Path] = None,
         options: Optional[DownloadOptions] = None,
+        num_parts: int = 5,
         progress_callback: Optional[Callable] = None
     ) -> DownloadResult:
         """
-        Download a specific file.
+        Download a specific file using parallel HTTP range requests.
         
         Args:
             file_group_id: File ID to download
@@ -394,6 +370,7 @@ class DataQuery:
                              from the Content-Disposition header in the response. If not provided, 
                              uses the default download directory from configuration.
             options: Download options
+            num_parts: Number of parallel parts to split the file into (default 5)
             progress_callback: Optional progress callback function
             
         Returns:
@@ -420,7 +397,7 @@ class DataQuery:
         
         assert self._client is not None
         return await self._client.download_file_async(
-            file_group_id, file_datetime, options, progress_callback
+            file_group_id, file_datetime, options, num_parts, progress_callback
         )
     
     async def list_available_files_async(
@@ -690,7 +667,7 @@ class DataQuery:
     
     # Workflow Methods
     
-    async def run_groups_async(self, max_concurrent: int = 3) -> Dict[str, Any]:
+    async def run_groups_async(self, max_concurrent: int = 5) -> Dict[str, Any]:
         """Run complete operation for listing all groups."""
         logger.info("=== Starting Groups Operation ===")
         
@@ -725,7 +702,7 @@ class DataQuery:
     async def run_group_files_async(
         self,
         group_id: str,
-        max_concurrent: int = 3
+        max_concurrent: int = 5
     ) -> Dict[str, Any]:
         """Run complete operation for a specific group."""
         logger.info("=== Starting Group Files Operation ===", group_id=group_id)
@@ -868,125 +845,8 @@ class DataQuery:
         start_date: str,
         end_date: str,
         destination_dir: Path = Path("./downloads"),
-        max_concurrent: int = 3,
-        progress_callback: Optional[Callable] = None
-    ) -> dict:
-        """
-        Download all files in a group for a date range.
-        
-        Args:
-            group_id: Group ID to download files from
-            start_date: Start date in YYYYMMDD format
-            end_date: End date in YYYYMMDD format
-            destination_dir: Destination directory for downloads
-            max_concurrent: Maximum concurrent downloads
-            progress_callback: Optional progress callback function for individual downloads
-            
-        Returns:
-            Dictionary with download results and statistics
-        """
-        logger.info("=== Starting Group Download for Date Range Operation ===", 
-                   group_id=group_id, start_date=start_date, end_date=end_date)
-        
-        try:
-            # Step 1: Get available files for the date range
-            logger.info("Step 1: Getting Available Files for Date Range")
-            available_files = await self.list_available_files_async(
-                group_id=group_id,
-                start_date=start_date,
-                end_date=end_date
-            )
-            # Filter only entries explicitly marked available
-            try:
-                filtered_files = [
-                    f for f in (available_files or [])
-                    if (f.get('is-available') is True) or (f.get('is_available') is True)
-                ]
-            except Exception:
-                filtered_files = []
-            
-            if not filtered_files:
-                logger.warning("No available files found for date range", 
-                             group_id=group_id, start_date=start_date, end_date=end_date)
-                return {"error": "No available files found for date range"}
-            
-            logger.info("Found available files", count=len(filtered_files))
-            
-            # Step 2: Download all available files
-            logger.info("Step 2: Downloading Available Files")
-            results = []
-            semaphore = asyncio.Semaphore(max_concurrent)
-            dest_dir = destination_dir / group_id
-            dest_dir.mkdir(parents=True, exist_ok=True)
-
-            async def download_available_file(file_info):
-                async with semaphore:
-                    file_group_id = file_info.get('file-group-id', file_info.get('file_group_id'))
-                    file_datetime = file_info.get('file-datetime', file_info.get('file_datetime'))
-                    
-                    if not file_group_id:
-                        logger.error("File info missing file-group-id", file_info=file_info)
-                        return None
-                    
-                    # Generate filename based on available info
-                    if file_datetime:
-                        filename = f"{file_group_id}_{file_datetime}"
-                    else:
-                        filename = file_group_id
-                    
-                    # Try to get file extension from file info or use default
-                    file_extension = file_info.get('extension', '.bin')
-                    if not file_extension.startswith('.'):
-                        file_extension = f".{file_extension}"
-                    
-                    dest_path = dest_dir / f"{filename}{file_extension}"
-                    
-                    try:
-                        result = await self.download_file_async(
-                            file_group_id, 
-                            file_datetime=file_datetime, 
-                            destination_path=dest_path,
-                            progress_callback=progress_callback
-                        )
-                        logger.info("Downloaded file", file_group_id=file_group_id, 
-                                   file_datetime=file_datetime, status=result.status.value)
-                        return result
-                    except Exception as e:
-                        logger.error("Download failed", file_group_id=file_group_id, 
-                                   file_datetime=file_datetime, error=str(e))
-                        return None
-
-            download_tasks = [download_available_file(f) for f in filtered_files]
-            download_results = await asyncio.gather(*download_tasks)
-            successful = [r for r in download_results if r and r.status.value == "completed"]
-            failed = [f for f, r in zip(filtered_files, download_results) if not r or r.status.value != "completed"]
-
-            report = {
-                "group_id": group_id,
-                "start_date": start_date,
-                "end_date": end_date,
-                "total_files": len(filtered_files),
-                "successful_downloads": len(successful),
-                "failed_downloads": len(failed),
-                "success_rate": (len(successful) / len(filtered_files)) * 100 if filtered_files else 0,
-                "downloaded_files": [r.file_group_id for r in successful],
-                "failed_files": [f.get('file-group-id', f.get('file_group_id', 'unknown')) for f in failed],
-            }
-            logger.info("Group download for date range operation completed!", **report)
-            return report
-        except Exception as e:
-            logger.error("Group download for date range operation failed", 
-                       group_id=group_id, start_date=start_date, end_date=end_date, error=str(e))
-            raise
-    
-    async def run_group_download_parallel_async(
-        self,
-        group_id: str,
-        start_date: str,
-        end_date: str,
-        destination_dir: Path = Path("./downloads"),
-        max_concurrent: int = 7,
-        num_parts: int = 3,
+        max_concurrent: int = 5,
+        num_parts: int = 5,
         progress_callback: Optional[Callable] = None,
         delay_between_downloads: float = 1.0
     ) -> dict:
@@ -1003,7 +863,7 @@ class DataQuery:
             end_date: End date in YYYYMMDD format
             destination_dir: Destination directory for downloads
             max_concurrent: Maximum concurrent files (multiplied by num_parts for total concurrency)
-            num_parts: Number of HTTP range parts per file (default 10)
+            num_parts: Number of HTTP range parts per file (default 5)
             progress_callback: Optional progress callback for individual parts aggregation
             delay_between_downloads: Delay in seconds between starting each file download (default 1.0)
         
@@ -1263,7 +1123,7 @@ class DataQuery:
             if file_datetime:
                 validate_file_datetime(file_datetime)
             
-            if num_parts <= 0:
+            if num_parts is None or num_parts <= 0:
                 num_parts = 5
             
             # Build params for API call
@@ -2101,14 +1961,14 @@ class DataQuery:
         """
         return self._run_async(self.get_grid_data_async(expr, grid_id, date))
     
-    def run_groups(self, max_concurrent: int = 3) -> Dict[str, Any]:
+    def run_groups(self, max_concurrent: int = 5) -> Dict[str, Any]:
         """Synchronous wrapper for run_groups_async."""
         return self._run_async(self.run_groups_async(max_concurrent))
     
     def run_group_files(
         self,
         group_id: str,
-        max_concurrent: int = 3
+        max_concurrent: int = 5
     ) -> Dict[str, Any]:
         """Synchronous wrapper for run_group_files_async."""
         return self._run_async(self.run_group_files_async(group_id, max_concurrent))
@@ -2139,7 +1999,7 @@ class DataQuery:
         start_date: str,
         end_date: str,
         destination_dir: Path = Path("./downloads"),
-        max_concurrent: int = 3,
+        max_concurrent: int = 5,
         progress_callback: Optional[Callable] = None
     ) -> dict:
         """
@@ -2160,19 +2020,19 @@ class DataQuery:
             group_id, start_date, end_date, destination_dir, max_concurrent, progress_callback
         ))
     
-    def run_group_download_parallel(
+    def run_group_download(
         self,
         group_id: str,
         start_date: str,
         end_date: str,
         destination_dir: Path = Path("./downloads"),
-        max_concurrent: int = 3,
+        max_concurrent: int = 5,
         num_parts: int = 5,
         progress_callback: Optional[Callable] = None,
         delay_between_downloads: float = 1.0
     ) -> dict:
-        """Synchronous wrapper for run_group_download_parallel_async."""
-        return self._run_async(self.run_group_download_parallel_async(
+        """Synchronous wrapper for run_group_download_async."""
+        return self._run_async(self.run_group_download_async(
             group_id, start_date, end_date, destination_dir, max_concurrent, num_parts, progress_callback, delay_between_downloads
         ))
 
@@ -2259,7 +2119,7 @@ class DataQuery:
         start_date: str,
         end_date: str,
         destination_dir: Path = Path("./downloads"),
-        max_concurrent: int = 3
+        max_concurrent: int = 5
     ) -> dict:
         """Synchronous wrapper for run_group_download with _sync suffix."""
         return asyncio.run(self.run_group_download_async(group_id, start_date, end_date, destination_dir, max_concurrent))

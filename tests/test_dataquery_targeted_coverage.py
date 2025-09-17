@@ -109,6 +109,27 @@ async def test_run_availability_async_report():
 
 
 @pytest.mark.asyncio
+async def test_run_download_async_report_from_result():
+    dq = DataQuery(config_or_env_file=ClientConfig(
+        base_url="https://api.example.com",
+        oauth_enabled=False,
+        bearer_token="t"
+    ))
+    result = DownloadResult(
+        file_group_id="fg",
+        local_path=Path("/tmp/x"),
+        file_size=1024 * 1024,
+        download_time=1.0,
+        status=DownloadStatus.COMPLETED,
+    )
+    with patch.object(dq, 'download_file_async', new=AsyncMock(return_value=result)):
+        report = await dq.run_download_async("fg", "20240101")
+        assert report["download_successful"] is True
+        assert report["local_path"].endswith("/tmp/x")
+        assert report["file_size"] == result.file_size
+
+
+@pytest.mark.asyncio
 async def test_run_group_download_async_no_available_files():
     dq = DataQuery(config_or_env_file=ClientConfig(
         base_url="https://api.example.com",
