@@ -178,9 +178,6 @@ def cmd_config_show(args: argparse.Namespace) -> int:
 
 def cmd_config_validate(args: argparse.Namespace) -> int:
     from dataquery.config import (
-        ClientConfig as _Cfg,  # not used but keeps import path stable if needed
-    )
-    from dataquery.config import (
         EnvConfig,
     )
 

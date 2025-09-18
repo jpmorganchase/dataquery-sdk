@@ -130,7 +130,7 @@ Required Environment Variables:
                 print("\n✅ Completed")
 
             # Display timing information
-            print(f"\n⏱️  Timing Information:")
+            print("\n⏱️  Timing Information:")
             print(f"   Total time: {report.get('total_time_formatted', 'N/A')}")
             print(f"   Total time (seconds): {report.get('total_time_seconds', 'N/A')}")
             if report.get("total_time_minutes", 0) >= 1:
@@ -145,7 +145,7 @@ Required Environment Variables:
             except Exception:
                 pass
 
-            print(f"\n📁 Download Summary:")
+            print("\n📁 Download Summary:")
             print(f"   Group: {report.get('group_id')}")
             print(f"   Range: {report.get('start_date')} to {report.get('end_date')}")
             print(f"   Total files: {report.get('total_files')}")
@@ -155,7 +155,7 @@ Required Environment Variables:
 
             # Display concurrency and timing details (only if not an error case)
             if not report.get("error"):
-                print(f"\n🚀 Performance Details:")
+                print("\n🚀 Performance Details:")
                 print(f"   Max concurrent files: {report.get('max_concurrent')}")
                 print(f"   Parts per file: {report.get('num_parts')}")
                 print(
@@ -178,7 +178,7 @@ Required Environment Variables:
             # Display per-file timing information
             per_file_timing = report.get("per_file_timing", {})
             if per_file_timing and per_file_timing.get("file_times"):
-                print(f"\n⏱️  Per-File Timing Details:")
+                print("\n⏱️  Per-File Timing Details:")
                 print(
                     f"   Total download time: {per_file_timing.get('total_download_time_formatted', 'N/A')}"
                 )
@@ -192,7 +192,7 @@ Required Environment Variables:
                     f"   Slowest file: {per_file_timing.get('max_file_time_seconds', 0):.2f}s"
                 )
 
-                print(f"\n📁 Individual File Times:")
+                print("\n📁 Individual File Times:")
                 file_times = per_file_timing.get("file_times", [])
                 for i, file_info in enumerate(
                     file_times[:10], 1

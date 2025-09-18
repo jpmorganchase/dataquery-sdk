@@ -14,7 +14,7 @@ from typing import Any, Callable, Dict, List, Optional, Union
 import structlog
 from dotenv import load_dotenv
 
-from .client import DataQueryClient, format_duration, format_file_size
+from .client import DataQueryClient
 from .config import EnvConfig
 from .exceptions import ConfigurationError
 from .models import (
@@ -31,7 +31,6 @@ from .models import (
     InstrumentsResponse,
     TimeSeriesResponse,
 )
-from .utils import ensure_directory
 
 # Load environment variables from .env file
 load_dotenv()
@@ -2263,31 +2262,6 @@ class DataQuery:
                 destination_dir,
                 max_concurrent,
                 progress_callback,
-            )
-        )
-
-    def run_group_download(
-        self,
-        group_id: str,
-        start_date: str,
-        end_date: str,
-        destination_dir: Path = Path("./downloads"),
-        max_concurrent: int = 5,
-        num_parts: int = 5,
-        progress_callback: Optional[Callable] = None,
-        delay_between_downloads: float = 1.0,
-    ) -> dict:
-        """Synchronous wrapper for run_group_download_async."""
-        return self._run_async(
-            self.run_group_download_async(
-                group_id,
-                start_date,
-                end_date,
-                destination_dir,
-                max_concurrent,
-                num_parts,
-                progress_callback,
-                delay_between_downloads,
             )
         )
 

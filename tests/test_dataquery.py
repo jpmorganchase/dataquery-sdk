@@ -1,9 +1,8 @@
 import asyncio
 import os
 import tempfile
-from datetime import datetime
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, mock_open, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -17,15 +16,12 @@ from dataquery.dataquery import (
     get_download_paths,
     setup_logging,
 )
-from dataquery.exceptions import ConfigurationError
 from dataquery.models import (
     Attribute,
     AttributesResponse,
     AvailabilityInfo,
     ClientConfig,
-    DateRange,
     DownloadOptions,
-    DownloadProgress,
     DownloadResult,
     DownloadStatus,
     FileInfo,

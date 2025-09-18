@@ -4,16 +4,15 @@ Authentication module for the DATAQUERY SDK.
 Provides OAuth token management and Bearer token authentication.
 """
 
-import asyncio
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 import aiohttp
 import structlog
 
-from .exceptions import AuthenticationError, ConfigurationError, DataQueryError
+from .exceptions import AuthenticationError, ConfigurationError
 from .models import ClientConfig, OAuthToken, TokenRequest, TokenResponse
 
 logger = structlog.get_logger(__name__)

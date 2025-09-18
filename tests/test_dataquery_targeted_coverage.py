@@ -1,5 +1,4 @@
 import asyncio
-from pathlib import Path
 from typing import List
 from unittest.mock import AsyncMock, patch
 
@@ -10,8 +9,6 @@ from dataquery.exceptions import ConfigurationError
 from dataquery.models import (
     AvailabilityInfo,
     ClientConfig,
-    DownloadResult,
-    DownloadStatus,
     FileInfo,
     Group,
 )

@@ -1,17 +1,14 @@
 """Tests for authentication module."""
 
 import json
-import os
-import tempfile
 from datetime import datetime, timedelta
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pytest
 
 from dataquery.auth import OAuthManager, TokenManager
 from dataquery.exceptions import AuthenticationError, ConfigurationError
-from dataquery.models import ClientConfig, OAuthToken, TokenResponse
+from dataquery.models import ClientConfig
 
 
 class TestOAuthManager:

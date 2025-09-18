@@ -6,15 +6,11 @@ monitors data groups and downloads new files when they become available.
 """
 
 import asyncio
-import inspect
 import logging
-import os
-import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set
 
-from .exceptions import DataQueryError, NetworkError, NotFoundError
 from .models import DownloadOptions, DownloadProgress
 
 

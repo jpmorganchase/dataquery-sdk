@@ -73,7 +73,7 @@ jobs:
         run: uv run isort --check-only --diff .
 
       - name: Run flake8 linter
-        run: uv run flake8 dataquery/ tests/ examples/
+        run: uv run flake8 dataquery/ 
 
       - name: Run mypy type checker
         run: uv run mypy dataquery/

@@ -4,8 +4,6 @@ Targeted tests to improve rate_limiter.py coverage.
 
 import asyncio
 import time
-from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 

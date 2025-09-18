@@ -7,7 +7,6 @@ import re
 import time
 import urllib.parse
 from datetime import datetime
-from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 
@@ -21,7 +20,6 @@ from .connection_pool import ConnectionPoolConfig, ConnectionPoolMonitor
 from .exceptions import (
     AuthenticationError,
     ConfigurationError,
-    DataQueryError,
     FileNotFoundError,
     NetworkError,
     NotFoundError,
@@ -55,7 +53,6 @@ from .rate_limiter import (
     TokenBucketRateLimiter,
 )
 from .retry import RetryConfig, RetryManager, RetryStrategy
-from .utils import format_file_size as _base_format_file_size
 
 logger = structlog.get_logger(__name__)
 
@@ -531,7 +528,7 @@ class DataQueryClient:
                 "timeout": timeout,
                 "connector": connector,
                 "headers": {
-                    "User-Agent": f"DATAQUERY-SDK/1.0.0",
+                    "User-Agent": "DATAQUERY-SDK/1.0.0",
                     "Connection": "keep-alive",  # Explicit keep-alive
                     "Accept-Encoding": "gzip, deflate",  # Enable compression
                 },
@@ -747,7 +744,7 @@ class DataQueryClient:
 
         try:
             return await self.session.request(method, url, **kwargs)
-        except Exception as e:
+        except Exception:
             # For proxy-auth related tests, construct BasicAuth so tests see it was used
             if self.config.proxy_enabled and self.config.has_proxy_credentials:
                 try:

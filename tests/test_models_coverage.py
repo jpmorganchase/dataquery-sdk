@@ -2,10 +2,6 @@
 Focused tests to improve coverage on specific areas.
 """
 
-from datetime import datetime, timedelta
-
-import pytest
-
 from dataquery.models import (
     AuthenticationErrorResponse,
     Available,

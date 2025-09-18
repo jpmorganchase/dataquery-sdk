@@ -45,7 +45,7 @@ async def async_example():
                 expr=expression, grid_id=None, date=end_date.strftime("%Y%m%d")
             )
 
-            print(f"✅ Retrieved grid data successfully")
+            print("✅ Retrieved grid data successfully")
             print(f"📊 Response type: {type(grid_response)}")
 
             # Display grid data information
@@ -63,7 +63,7 @@ async def async_example():
             # Check for pagination
             if hasattr(grid_response, "pagination") and grid_response.pagination:
                 pagination = grid_response.pagination
-                print(f"\n📄 Pagination:")
+                print("\n📄 Pagination:")
                 print(f"   Has more data: {pagination.get('has_next', False)}")
                 print(f"   Next page: {pagination.get('next_page', 'None')}")
 
@@ -101,7 +101,7 @@ def sync_example():
         grid_response = dq.get_grid_data(expr=None, grid_id=grid_id, date="20240630")
 
         if hasattr(grid_response, "series") and grid_response.series:
-            print(f"✅ Retrieved grid data successfully")
+            print("✅ Retrieved grid data successfully")
             print(f"📋 Series count: {len(grid_response.series)}")
             first = grid_response.series[0]
             print(f"   First series expr: {first.expr}")
@@ -181,18 +181,18 @@ def comparison_example():
                     print(f"   📊 {column_count} columns, {row_count} rows")
                 else:
                     results[name] = {"success": False, "error": "No data returned"}
-                    print(f"   ℹ️  No data returned")
+                    print("   ℹ️  No data returned")
 
             except Exception as e:
                 results[name] = {"success": False, "error": str(e)}
                 print(f"   ❌ Error: {e}")
 
         # Compare results
-        print(f"\n📊 Comparison Results:")
+        print("\n📊 Comparison Results:")
         for name, result in results.items():
             print(f"\n   {name}:")
             if result["success"]:
-                print(f"      ✅ Successful")
+                print("      ✅ Successful")
                 print(f"      ⏱️  Response time: {result['response_time']:.2f}s")
                 print(
                     f"      📊 Data: {result['columns']} cols × {result['rows']} rows"

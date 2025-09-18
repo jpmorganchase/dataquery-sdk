@@ -5,7 +5,6 @@ Lean example: interactively check file availability for a given file_group_id an
 
 import asyncio
 import sys
-from datetime import datetime, timedelta
 from pathlib import Path
 
 # Add parent directory to path for imports

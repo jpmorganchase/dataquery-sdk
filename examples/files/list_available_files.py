@@ -143,7 +143,7 @@ def date_range_analysis_example():
                 print(f"   ❌ Error: {e}")
 
         # Compare results
-        print(f"\n📊 Date Range Comparison:")
+        print("\n📊 Date Range Comparison:")
         print(
             f"{'Range':<15} {'Files':<8} {'Size (MB)':<12} {'Dates':<8} {'Avg Size':<12}"
         )

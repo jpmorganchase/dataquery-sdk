@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 from dataquery.dataquery import DataQuery
 from dataquery.models import ClientConfig
