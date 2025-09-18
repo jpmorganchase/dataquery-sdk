@@ -11,8 +11,8 @@ Usage:
   python examples/instruments/search_instruments.py [--group-id <id>] [--keyword market] [--show 10]
 """
 
-import asyncio
 import argparse
+import asyncio
 import sys
 from pathlib import Path
 
@@ -25,9 +25,15 @@ from dataquery.exceptions import DataQueryError
 
 async def main() -> None:
     parser = argparse.ArgumentParser(description="Search instruments (lean)")
-    parser.add_argument("--group-id", help="Group ID. If omitted, uses the first available group")
-    parser.add_argument("--keyword", default="market", help="Search keyword (default: market)")
-    parser.add_argument("--show", type=int, default=10, help="How many results to print (default: 10)")
+    parser.add_argument(
+        "--group-id", help="Group ID. If omitted, uses the first available group"
+    )
+    parser.add_argument(
+        "--keyword", default="market", help="Search keyword (default: market)"
+    )
+    parser.add_argument(
+        "--show", type=int, default=10, help="How many results to print (default: 10)"
+    )
     args = parser.parse_args()
 
     try:
@@ -40,7 +46,9 @@ async def main() -> None:
                     return
                 group_id = groups[0].group_id
 
-            resp = await dq.search_instruments_async(group_id=group_id, keywords=args.keyword)
+            resp = await dq.search_instruments_async(
+                group_id=group_id, keywords=args.keyword
+            )
 
             instruments = getattr(resp, "instruments", []) or []
             print(f"Found: {len(instruments)} instruments for '{args.keyword}'")

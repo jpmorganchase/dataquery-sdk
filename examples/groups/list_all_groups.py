@@ -9,8 +9,8 @@ Usage:
   python examples/groups/list_all_groups.py [--limit 100]
 """
 
-import asyncio
 import argparse
+import asyncio
 import sys
 from pathlib import Path
 
@@ -22,7 +22,9 @@ from dataquery import DataQuery
 
 async def main():
     parser = argparse.ArgumentParser(description="List all groups (lean)")
-    parser.add_argument("--limit", type=int, default=None, help="Max groups to fetch (default: all)")
+    parser.add_argument(
+        "--limit", type=int, default=None, help="Max groups to fetch (default: all)"
+    )
     args = parser.parse_args()
 
     try:
@@ -33,7 +35,9 @@ async def main():
                 groups = await dq.list_groups_async()
             print(f"Total groups: {len(groups)}")
             for i, g in enumerate(groups[:20], 1):
-                print(f"{i}. {getattr(g, 'group_id', '')} | {getattr(g, 'group_name', '')}")
+                print(
+                    f"{i}. {getattr(g, 'group_id', '')} | {getattr(g, 'group_name', '')}"
+                )
             if len(groups) > 20:
                 print(f"... and {len(groups)-20} more")
     except Exception as e:

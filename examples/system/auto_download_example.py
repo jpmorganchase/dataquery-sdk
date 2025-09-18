@@ -11,17 +11,17 @@ Press Ctrl+C to stop.
 """
 
 import asyncio
-import sys
-from pathlib import Path
-from datetime import datetime
 import signal
+import sys
+from datetime import datetime
+from pathlib import Path
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dataquery import DataQuery
-from dataquery.models import DownloadProgress
 from dataquery.exceptions import AuthenticationError
+from dataquery.models import DownloadProgress
 
 
 async def main():
@@ -36,18 +36,22 @@ async def main():
         if not group_id:
             print("❌ Group ID is required")
             return
-        destination = input("Destination directory [./downloads]: ").strip() or "./downloads"
+        destination = (
+            input("Destination directory [./downloads]: ").strip() or "./downloads"
+        )
         try:
             interval = int(input("Check interval in minutes [30]: ").strip() or "30")
         except ValueError:
             print("❌ Invalid interval; must be an integer")
             return
         only_today_raw = input("Check only today? (Y/n) [Y]: ").strip().lower()
-        check_current_date_only = (only_today_raw in ("", "y", "yes"))
+        check_current_date_only = only_today_raw in ("", "y", "yes")
 
         # Run watcher
         async with DataQuery() as dq:
-            print(f"👀 Watching group '{group_id}' every {interval} min; saving to: {destination}")
+            print(
+                f"👀 Watching group '{group_id}' every {interval} min; saving to: {destination}"
+            )
             manager = await dq.start_auto_download_async(
                 group_id=group_id,
                 destination_dir=destination,
@@ -61,7 +65,9 @@ async def main():
                 print("\n⚠️  Stopping watcher...")
                 await manager.stop()
                 stats = manager.get_stats()
-                print(f"✅ Stopped. Files downloaded: {stats.get('files_downloaded')} | Failures: {stats.get('download_failures')}")
+                print(
+                    f"✅ Stopped. Files downloaded: {stats.get('files_downloaded')} | Failures: {stats.get('download_failures')}"
+                )
     except AuthenticationError as e:
         print(f"❌ Authentication failed: {e}")
         print("💡 Check your credentials in .env file")

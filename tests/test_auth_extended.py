@@ -1,11 +1,11 @@
 import asyncio
 import json
 from pathlib import Path
-
-import pytest
 from unittest.mock import AsyncMock, Mock, patch
 
-from dataquery.auth import TokenManager, OAuthManager
+import pytest
+
+from dataquery.auth import OAuthManager, TokenManager
 from dataquery.models import ClientConfig, OAuthToken, TokenResponse
 
 
@@ -56,10 +56,13 @@ async def test_get_new_token_success_and_save_load(tmp_path: Path, monkeypatch):
 
     class _Resp:
         status = 200
+
         async def json(self):
             return fake_response_data
+
         async def __aenter__(self):
             return self
+
         async def __aexit__(self, exc_type, exc, tb):
             return False
 
@@ -67,10 +70,13 @@ async def test_get_new_token_success_and_save_load(tmp_path: Path, monkeypatch):
         def __init__(self):
             # Return a context-manager-like object (the response) directly
             self._resp = _Resp()
+
         def post(self, *args, **kwargs):
             return self._resp
+
         async def __aenter__(self):
             return self
+
         async def __aexit__(self, exc_type, exc, tb):
             return False
 
@@ -118,5 +124,3 @@ async def test_oauth_manager_headers_and_auth_info(tmp_path: Path):
     assert om.is_authenticated() is True
     info = om.get_auth_info()
     assert isinstance(info, dict)
-
-

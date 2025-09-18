@@ -15,11 +15,11 @@ Usage:
     [--nan NA_FILL_FORWARD] [--page <token>] [--show 3]
 """
 
-import asyncio
 import argparse
+import asyncio
 import sys
-from pathlib import Path
 from datetime import datetime, timedelta
+from pathlib import Path
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -30,16 +30,38 @@ from dataquery.exceptions import DataQueryError
 
 async def main() -> None:
     parser = argparse.ArgumentParser(description="Get instrument time series (lean)")
-    parser.add_argument("--instruments", help="Comma-separated instrument IDs. If omitted, auto-detect first 2 from first group")
-    parser.add_argument("--attributes", default="CLOSE", help="Comma-separated attributes (default: CLOSE)")
+    parser.add_argument(
+        "--instruments",
+        help="Comma-separated instrument IDs. If omitted, auto-detect first 2 from first group",
+    )
+    parser.add_argument(
+        "--attributes",
+        default="CLOSE",
+        help="Comma-separated attributes (default: CLOSE)",
+    )
     parser.add_argument("--start", help="Start date YYYYMMDD (default: 60 days ago)")
     parser.add_argument("--end", help="End date YYYYMMDD (default: today)")
-    parser.add_argument("--frequency", default="FREQ_DAY", help="Frequency (default: FREQ_DAY)")
-    parser.add_argument("--calendar", default="CAL_USBANK", help="Calendar (default: CAL_USBANK)")
-    parser.add_argument("--conversion", default="CONV_LASTBUS_ABS", help="Conversion (default: CONV_LASTBUS_ABS)")
-    parser.add_argument("--nan", dest="nan_treatment", default="NA_FILL_FORWARD", help="NaN treatment (default: NA_FILL_FORWARD)")
+    parser.add_argument(
+        "--frequency", default="FREQ_DAY", help="Frequency (default: FREQ_DAY)"
+    )
+    parser.add_argument(
+        "--calendar", default="CAL_USBANK", help="Calendar (default: CAL_USBANK)"
+    )
+    parser.add_argument(
+        "--conversion",
+        default="CONV_LASTBUS_ABS",
+        help="Conversion (default: CONV_LASTBUS_ABS)",
+    )
+    parser.add_argument(
+        "--nan",
+        dest="nan_treatment",
+        default="NA_FILL_FORWARD",
+        help="NaN treatment (default: NA_FILL_FORWARD)",
+    )
     parser.add_argument("--page", help="Pagination token (optional)")
-    parser.add_argument("--show", type=int, default=3, help="How many series to print (default: 3)")
+    parser.add_argument(
+        "--show", type=int, default=3, help="How many series to print (default: 3)"
+    )
     args = parser.parse_args()
 
     # Dates
@@ -66,13 +88,16 @@ async def main() -> None:
                 if not groups:
                     print("No groups available")
                     return
-                instruments_resp = await dq.list_instruments_async(groups[0].group_id, limit=2)
+                instruments_resp = await dq.list_instruments_async(
+                    groups[0].group_id, limit=2
+                )
                 instruments = getattr(instruments_resp, "instruments", []) or []
                 if not instruments:
                     print("No instruments found in the first group")
                     return
                 instrument_ids = [
-                    getattr(inst, "instrument_id", None) or inst.get("instrument_id", "")
+                    getattr(inst, "instrument_id", None)
+                    or inst.get("instrument_id", "")
                     for inst in instruments
                 ]
 

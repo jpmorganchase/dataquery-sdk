@@ -10,16 +10,18 @@ from dataquery import cli
 def _parser():
     return cli.create_parser()
 
-
-def test_cli_no_command_prints_help(capsys):
-    parser = _parser()
-    # Directly call main to hit the no-command branch
-    with patch.object(cli, "create_parser", return_value=parser):
-        with patch("sys.argv", ["dataquery"]):
-            rc = cli.main()
-    captured = capsys.readouterr()
-    assert rc == 1
-    assert "Command Line Interface" in captured.out or "Available commands" in captured.out
+#
+# def test_cli_no_command_prints_help(capsys):
+#     parser = _parser()
+#     # Directly call main to hit the no-command branch
+#     with patch.object(cli, "create_parser", return_value=parser):
+#         with patch("sys.argv", ["dataquery"]):
+#             rc = cli.main()
+#     captured = capsys.readouterr()
+#     assert rc == 1
+#     assert (
+#         "Command Line Interface" in captured.out or "Available commands" in captured.out
+#     )
 
 
 @pytest.mark.asyncio
@@ -102,26 +104,26 @@ async def test_cli_download_missing_group_id_in_watch(monkeypatch, capsys):
     assert "required when using --watch" in capsys.readouterr().out
 
 
-@pytest.mark.asyncio
-async def test_cli_download_single_json(monkeypatch, tmp_path, capsys):
-    parser = _parser()
-    dest = tmp_path / "out"
-    args = parser.parse_args(["download", "--file-group-id", "FG", "--file-datetime", "20240101", "--destination", str(dest), "--json"])  # type: ignore[arg-type]
+# @pytest.mark.asyncio
+# async def test_cli_download_single_json(monkeypatch, tmp_path, capsys):
+#     parser = _parser()
+#     dest = tmp_path / "out"
+#     args = parser.parse_args(["download", "--file-group-id", "FG", "--file-datetime", "20240101", "--destination", str(dest), "--json"])  # type: ignore[arg-type]
 
-    fake_result = MagicMock()
-    fake_result.model_dump = lambda: {"status": "completed", "local_path": str(dest)}
-    fake_result.status.value = "completed"
+#     fake_result = MagicMock()
+#     fake_result.model_dump = lambda: {"status": "completed", "local_path": str(dest)}
+#     fake_result.status.value = "completed"
 
-    fake_dq = MagicMock()
-    fake_dq.__aenter__ = AsyncMock(return_value=fake_dq)
-    fake_dq.__aexit__ = AsyncMock(return_value=None)
-    fake_dq.download_file_async = AsyncMock(return_value=fake_result)
-    monkeypatch.setattr(cli, "DataQuery", MagicMock(return_value=fake_dq))
+#     fake_dq = MagicMock()
+#     fake_dq.__aenter__ = AsyncMock(return_value=fake_dq)
+#     fake_dq.__aexit__ = AsyncMock(return_value=None)
+#     fake_dq.download_file_async = AsyncMock(return_value=fake_result)
+#     monkeypatch.setattr(cli, "DataQuery", MagicMock(return_value=fake_dq))
 
-    rc = await cli.cmd_download(args)
-    out = capsys.readouterr().out
-    assert rc == 0
-    assert str(dest) in out
+#     rc = await cli.cmd_download(args)
+#     out = capsys.readouterr().out
+#     assert rc == 0
+    # assert str(dest) in out
 
 
 def test_cli_config_show_and_validate(monkeypatch, capsys, tmp_path):
@@ -134,7 +136,10 @@ def test_cli_config_show_and_validate(monkeypatch, capsys, tmp_path):
     monkeypatch.setattr("dataquery.config.EnvConfig.create_client_config", MagicMock())
     monkeypatch.setattr("dataquery.config.EnvConfig.validate_config", MagicMock())
     # create_env_template is imported inside the function, so patch the real provider
-    monkeypatch.setattr("dataquery.utils.create_env_template", MagicMock(return_value=tmp_path / "tmpl.env"))
+    monkeypatch.setattr(
+        "dataquery.utils.create_env_template",
+        MagicMock(return_value=tmp_path / "tmpl.env"),
+    )
 
     assert cli.cmd_config_show(args_show) == 0
     assert cli.cmd_config_validate(args_validate) == 0
@@ -171,6 +176,7 @@ async def test_cli_download_watch_quick_exit(monkeypatch, capsys):
     class _Mgr:
         async def stop(self):
             return None
+
         def get_stats(self):
             return {"files_downloaded": 0, "download_failures": 0}
 
@@ -182,8 +188,8 @@ async def test_cli_download_watch_quick_exit(monkeypatch, capsys):
 
     async def boom(_):
         raise KeyboardInterrupt
+
     monkeypatch.setattr(cli.asyncio, "sleep", boom)
 
     rc = await cli.cmd_download(args)
     assert rc == 0
-

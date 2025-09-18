@@ -1,8 +1,14 @@
 import pytest
 
 from dataquery.client import DataQueryClient
+from dataquery.exceptions import (
+    AuthenticationError,
+    NetworkError,
+    NotFoundError,
+    RateLimitError,
+    ValidationError,
+)
 from dataquery.models import ClientConfig
-from dataquery.exceptions import AuthenticationError, NotFoundError, RateLimitError, NetworkError, ValidationError
 
 
 class Resp:
@@ -14,7 +20,9 @@ class Resp:
 
 @pytest.mark.asyncio
 async def test_handle_response_error_mappings():
-    cfg = ClientConfig(base_url="https://api.example.com", api_base_url="https://api.example.com")
+    cfg = ClientConfig(
+        base_url="https://api.example.com", api_base_url="https://api.example.com"
+    )
     c = DataQueryClient(cfg)
 
     with pytest.raises(AuthenticationError):
@@ -29,5 +37,3 @@ async def test_handle_response_error_mappings():
         await c._handle_response(Resp(500))
     with pytest.raises(ValidationError):
         await c._handle_response(Resp(400))
-
-

@@ -1,15 +1,21 @@
 import asyncio
 from pathlib import Path
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from unittest.mock import AsyncMock, Mock, patch
 
 from dataquery.client import DataQueryClient
 from dataquery.models import ClientConfig, DownloadOptions, DownloadStatus
 
 
 class _Resp:
-    def __init__(self, status=200, headers=None, chunks=None, url="https://api.example.com/group/file/download"):
+    def __init__(
+        self,
+        status=200,
+        headers=None,
+        chunks=None,
+        url="https://api.example.com/group/file/download",
+    ):
         self.status = status
         self.headers = headers or {}
         self._chunks = chunks or [b"abcd" * 10]
@@ -59,9 +65,11 @@ def _make_client(tmp_path: Path) -> DataQueryClient:
         download_dir=str(tmp_path),
     )
     client = DataQueryClient(cfg)
+
     # Avoid real IO and auth
     async def _noop(*a, **k):
         return None
+
     client._ensure_connected = _noop  # type: ignore
     client._ensure_authenticated = _noop  # type: ignore
     return client
@@ -77,7 +85,7 @@ async def test_enter_request_cm_wraps_make_request(tmp_path):
         return _Ctx(resp)
 
     with patch.object(client, "_make_authenticated_request", new=fake_make):
-        async with (await client._enter_request_cm("GET", "https://x")) as r:
+        async with await client._enter_request_cm("GET", "https://x") as r:
             assert r.status == 200
 
 
@@ -106,11 +114,15 @@ async def test_download_file_partial_range_request(tmp_path, monkeypatch):
 
     monkeypatch.setattr(client, "_make_authenticated_request", fake_req)
 
-    opts = DownloadOptions(destination_path=str(tmp_path), overwrite_existing=True, range_start=0, range_end=9)
+    opts = DownloadOptions(
+        destination_path=str(tmp_path),
+        overwrite_existing=True,
+        range_start=0,
+        range_end=9,
+    )
     result = await client.download_file_async("FG1", options=opts)
     # Some environments may not fully simulate the partial content path; ensure no exception
     assert result is not None
-
 
 
 @pytest.mark.asyncio
@@ -137,7 +149,9 @@ async def test_download_file_async_splits_parts(tmp_path, monkeypatch):
                 "content-disposition": 'attachment; filename="file.bin"',
                 "content-length": "10",
             }
-            return _Ctx(_Resp(status=200, headers=full_headers, chunks=[b"01234", b"56789"]))
+            return _Ctx(
+                _Resp(status=200, headers=full_headers, chunks=[b"01234", b"56789"])
+            )
         assert rng and rng.startswith("bytes=")
         try:
             start_end = rng.split("=")[1]
@@ -165,7 +179,9 @@ async def test_download_file_async_splits_parts(tmp_path, monkeypatch):
     # Perform parallel download: expect a 10-byte file assembled
     result = await client.download_file_async(
         file_group_id="FG1",
-        options=DownloadOptions(destination_path=str(tmp_path), overwrite_existing=True),
+        options=DownloadOptions(
+            destination_path=str(tmp_path), overwrite_existing=True
+        ),
         num_parts=5,
     )
 
@@ -200,7 +216,9 @@ async def test_download_file_async_small_file_falls_back(tmp_path, monkeypatch):
                 "content-disposition": 'attachment; filename="small.bin"',
                 "content-length": "6",
             }
-            return _Ctx(_Resp(status=200, headers=full_headers, chunks=[b"abc", b"def"]))
+            return _Ctx(
+                _Resp(status=200, headers=full_headers, chunks=[b"abc", b"def"])
+            )
         # Should not request ranged parts for small file, but guard anyway
         return _Ctx(_Resp(status=416, headers={}, chunks=[]))
 
@@ -208,7 +226,9 @@ async def test_download_file_async_small_file_falls_back(tmp_path, monkeypatch):
 
     result = await client.download_file_async(
         file_group_id="FGS",
-        options=DownloadOptions(destination_path=str(tmp_path), overwrite_existing=True),
+        options=DownloadOptions(
+            destination_path=str(tmp_path), overwrite_existing=True
+        ),
         num_parts=5,
     )
 
@@ -217,4 +237,3 @@ async def test_download_file_async_small_file_falls_back(tmp_path, monkeypatch):
     p = Path(result.local_path)
     assert p.exists()
     assert p.stat().st_size == 6
-

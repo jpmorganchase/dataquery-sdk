@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        python-versions: [ "3.10", "3.11", "3.12", "3.13"]
+        python-versions: ["3.9", "3.10", "3.11", "3.12", "3.13"]
     name: Tests on Python ${{ matrix.python-versions }}
     runs-on: ubuntu-latest
 
@@ -106,9 +106,7 @@ jobs:
             uv pip install "$pkg" pytest --force-reinstall
             .venv/bin/pytest -v tests/ -s
           done
-        env:
-          DATAQUERY_API_KEY: ${{ secrets.DATAQUERY_API_KEY }}
-          DATAQUERY_API_URL: ${{ secrets.DATAQUERY_API_URL }}
+          
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

@@ -1,5 +1,6 @@
 import asyncio
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 from dataquery.dataquery import DataQuery
@@ -20,16 +21,18 @@ async def main():
         print("❌ file_group_id is required")
         return
 
-    file_datetime = input("Enter file date (YYYYMMDD/THHMM/THHMMSS) [optional]: ").strip() or None
+    file_datetime = (
+        input("Enter file date (YYYYMMDD/THHMM/THHMMSS) [optional]: ").strip() or None
+    )
     dest = input("Destination directory [./downloads]: ").strip() or "./downloads"
-    overwrite = (input("Overwrite existing? (y/N) [N]: ").strip().lower() in ("y", "yes"))
+    overwrite = input("Overwrite existing? (y/N) [N]: ").strip().lower() in ("y", "yes")
 
     options = DownloadOptions(destination_path=dest, overwrite_existing=overwrite)
 
     try:
         async with DataQuery() as dq:
             # Use the client-level parallel downloader
-            result = await dq.download_file_async(
+            result = await dq._client.download_file_async(
                 file_group_id=file_group_id,
                 file_datetime=file_datetime,
                 options=options,
@@ -37,15 +40,21 @@ async def main():
             )
 
             print()  # newline after progress
-            if result and getattr(result, 'status', None) and result.status.value == "completed":
+            if (
+                result
+                and getattr(result, "status", None)
+                and result.status.value == "completed"
+            ):
                 print("✅ Download completed")
                 print(f"📁 File saved to: {result.local_path}")
                 print(f"📊 File size: {result.file_size:,} bytes")
                 print(f"⏱️  Download time: {result.download_time:.2f} seconds")
                 print(f"🚀 Speed: {result.speed_mbps:.2f} MB/s")
             else:
-                print(f"❌ Download failed: {getattr(result, 'error_message', 'unknown error')}")
-                dt = getattr(result, 'download_time', None)
+                print(
+                    f"❌ Download failed: {getattr(result, 'error_message', 'unknown error')}"
+                )
+                dt = getattr(result, "download_time", None)
                 if dt is not None:
                     print(f"⏱️  Download time: {dt:.2f} seconds")
     except Exception as e:
@@ -54,5 +63,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-

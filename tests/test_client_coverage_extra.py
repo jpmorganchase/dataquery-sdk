@@ -1,27 +1,27 @@
 import asyncio
-from types import SimpleNamespace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from dataquery.client import (
-    format_file_size,
-    format_duration,
-    parse_content_disposition,
-    get_filename_from_response,
-    validate_file_datetime,
-    validate_date_format,
-    validate_required_param,
-    validate_instruments_list,
-    validate_attributes_list,
     DataQueryClient,
+    format_duration,
+    format_file_size,
+    get_filename_from_response,
+    parse_content_disposition,
+    validate_attributes_list,
+    validate_date_format,
+    validate_file_datetime,
+    validate_instruments_list,
+    validate_required_param,
 )
 from dataquery.exceptions import (
-    ValidationError,
     AuthenticationError,
-    RateLimitError,
     NetworkError,
     NotFoundError,
+    RateLimitError,
+    ValidationError,
 )
 
 
@@ -74,7 +74,9 @@ def _make_bare_client():
     client = object.__new__(DataQueryClient)
     client.logger = StubLogger()
     client.rate_limiter = StubRateLimiter()
-    client.config = SimpleNamespace(api_base_url="https://api.example.com", base_url="https://api.example.com")
+    client.config = SimpleNamespace(
+        api_base_url="https://api.example.com", base_url="https://api.example.com"
+    )
     return client
 
 
@@ -109,7 +111,9 @@ def test_parse_content_disposition(cd, expected):
 
 def test_get_filename_from_response_variants():
     # From content-disposition
-    r1 = SimpleNamespace(headers={"content-disposition": 'attachment; filename="file.csv"'})
+    r1 = SimpleNamespace(
+        headers={"content-disposition": 'attachment; filename="file.csv"'}
+    )
     assert get_filename_from_response(r1, "fgid") == "file.csv"
 
     # From content-type mapping
@@ -219,7 +223,9 @@ async def test_handle_response_status_mappings_and_rate_limit():
 
     # 429 -> rate limit
     with pytest.raises(RateLimitError):
-        await client._handle_response(FakeResponse(status=429, headers={"Retry-After": "1"}))
+        await client._handle_response(
+            FakeResponse(status=429, headers={"Retry-After": "1"})
+        )
     assert client.rate_limiter.rate_limit_called == 1
 
     # 500
@@ -260,16 +266,20 @@ def test_dataframe_conversion_paths(monkeypatch):
         {"id": "1", "value": "10", "created_date": "2024-01-01"},
         {"id": "2", "value": "20", "created_date": "2024-01-02"},
     ]
+
     # Provide a minimal pandas stub
     class _PandasStub:
         class _Series(list):
             @property
             def dtype(self):
-                return 'object'
+                return "object"
+
             def notna(self):
                 return self
+
             def sum(self):
                 return len(self)
+
             def __truediv__(self, other):
                 return 1
 
@@ -278,25 +288,34 @@ def test_dataframe_conversion_paths(monkeypatch):
                 super().__init__()
                 self._records = records or []
                 self._columns = set(self._records[0].keys()) if self._records else set()
+
             @property
             def columns(self):
                 return list(self._columns)
+
             def __getitem__(self, key):
                 return _PandasStub._Series([r.get(key) for r in self._records])
+
             def __setitem__(self, key, value):
                 for i, r in enumerate(self._records):
                     r[key] = value[i] if isinstance(value, list) else value
                 self._columns.add(key)
+
         @staticmethod
         def to_datetime(x, errors=None):
             return x
+
         @staticmethod
         def to_numeric(x, errors=None):
             return x
-    import sys
-    sys.modules['pandas'] = _PandasStub()
 
-    df = client.to_dataframe(data, date_columns=["created_date"], numeric_columns=["value"])
+    import sys
+
+    sys.modules["pandas"] = _PandasStub()
+
+    df = client.to_dataframe(
+        data, date_columns=["created_date"], numeric_columns=["value"]
+    )
     assert set(df.columns) >= {"id", "value", "created_date"}
 
     # Object with model_dump
@@ -315,5 +334,3 @@ def test_dataframe_conversion_paths(monkeypatch):
 
     df3 = client.to_dataframe([N()])
     assert set(df3.columns) >= {"x", "y"}
-
-

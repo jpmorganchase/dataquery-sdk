@@ -5,8 +5,8 @@ Lean example: interactively check file availability for a given file_group_id an
 
 import asyncio
 import sys
-from pathlib import Path
 from datetime import datetime, timedelta
+from pathlib import Path
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -33,7 +33,7 @@ async def main():
                 print("📭 Not found")
                 return
             if availability:
-                has = bool(getattr(availability, 'is_available', False))
+                has = bool(getattr(availability, "is_available", False))
                 print("✅ Available" if has else "❌ Not available")
             else:
                 print("❌ Not available")
@@ -45,12 +45,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-
- 
-
-
- 
-
-
- 

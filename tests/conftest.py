@@ -2,24 +2,26 @@
 Pytest configuration and shared fixtures for DataQuery SDK tests.
 """
 
-import pytest
 import asyncio
-import tempfile
 import shutil
+import tempfile
 from pathlib import Path
-from unittest.mock import Mock, AsyncMock, patch
-from typing import Dict, Any, List
+from typing import Any, Dict, List
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
 
 from dataquery.client import DataQueryClient
 from dataquery.models import ClientConfig
 
-
 # Fallback async test runner if pytest-asyncio plugin is unavailable
 try:
     import pytest_asyncio  # type: ignore
+
     _HAS_PYTEST_ASYNCIO = True
 except Exception:  # pragma: no cover - environment dependent
     _HAS_PYTEST_ASYNCIO = False
+
 
 def pytest_pyfunc_call(pyfuncitem):  # noqa: D401
     """Execute async test functions without pytest-asyncio plugin.
@@ -33,6 +35,7 @@ def pytest_pyfunc_call(pyfuncitem):  # noqa: D401
     testfunction = pyfuncitem.obj
     if asyncio.iscoroutinefunction(testfunction):
         import inspect
+
         sig = inspect.signature(testfunction)
         allowed = set(sig.parameters.keys())
         kwargs = {k: v for k, v in (pyfuncitem.funcargs or {}).items() if k in allowed}
@@ -73,7 +76,7 @@ def base_client_config():
         context_path="/research/dataquery-authe/api/v2",
         client_id="test_client_id",
         client_secret="test_client_secret",
-        oauth_enabled=True
+        oauth_enabled=True,
     )
 
 
@@ -92,30 +95,30 @@ def comprehensive_mock_data():
                     "total_size": 2048000,
                     "status": "active",
                     "data_types": ["equity", "fx", "rates"],
-                    "regions": ["us", "eu", "apac"]
+                    "regions": ["us", "eu", "apac"],
                 },
                 {
                     "id": "reference_data",
-                    "name": "Reference Data", 
+                    "name": "Reference Data",
                     "description": "Static reference and master data",
                     "last_updated": "2024-01-14T18:00:00Z",
                     "file_count": 75,
                     "total_size": 512000,
                     "status": "active",
                     "data_types": ["reference"],
-                    "regions": ["global"]
+                    "regions": ["global"],
                 },
                 {
                     "id": "analytics",
                     "name": "Analytics Data",
                     "description": "Calculated analytics and risk metrics",
-                    "last_updated": "2024-01-15T09:30:00Z", 
+                    "last_updated": "2024-01-15T09:30:00Z",
                     "file_count": 120,
                     "total_size": 1024000,
                     "status": "active",
                     "data_types": ["analytics", "risk"],
-                    "regions": ["us", "eu"]
-                }
+                    "regions": ["us", "eu"],
+                },
             ],
             "pagination": {
                 "page": 1,
@@ -123,8 +126,8 @@ def comprehensive_mock_data():
                 "total": 3,
                 "total_pages": 1,
                 "has_next": False,
-                "has_previous": False
-            }
+                "has_previous": False,
+            },
         },
         "files_response": {
             "files": [
@@ -141,10 +144,10 @@ def comprehensive_mock_data():
                     "columns": ["symbol", "price", "volume", "timestamp"],
                     "row_count": 50000,
                     "data_date": "2024-01-15",
-                    "tags": ["equity", "intraday"]
+                    "tags": ["equity", "intraday"],
                 },
                 {
-                    "file_group_id": "ref_data_20240115_001", 
+                    "file_group_id": "ref_data_20240115_001",
                     "filename": "reference_data_20240115.json",
                     "file_size": 524288,  # 512KB
                     "last_modified": "2024-01-15T06:00:00Z",
@@ -155,10 +158,10 @@ def comprehensive_mock_data():
                     "schema_version": "v1.0",
                     "record_count": 10000,
                     "data_date": "2024-01-15",
-                    "tags": ["reference", "master"]
+                    "tags": ["reference", "master"],
                 },
                 {
-                    "file_group_id": "analytics_20240115_001", 
+                    "file_group_id": "analytics_20240115_001",
                     "filename": "risk_metrics_20240115.parquet",
                     "file_size": 2097152,  # 2MB
                     "last_modified": "2024-01-15T12:00:00Z",
@@ -169,15 +172,10 @@ def comprehensive_mock_data():
                     "schema_version": "v3.0",
                     "row_count": 100000,
                     "data_date": "2024-01-15",
-                    "tags": ["analytics", "risk", "var"]
-                }
+                    "tags": ["analytics", "risk", "var"],
+                },
             ],
-            "pagination": {
-                "page": 1,
-                "per_page": 50,
-                "total": 3,
-                "total_pages": 1
-            }
+            "pagination": {"page": 1, "per_page": 50, "total": 3, "total_pages": 1},
         },
         "availability_response": {
             "available": True,
@@ -190,12 +188,12 @@ def comprehensive_mock_data():
                     "last_check": "2024-01-15T10:05:00Z",
                     "expiry": "2024-01-22T10:00:00Z",
                     "download_url": "https://api-developer.jpmorgan.com/download/mkt_data_20240115",
-                    "checksum": "sha256:abc123def456"
+                    "checksum": "sha256:abc123def456",
                 }
             ],
             "message": "All requested files are available for download",
             "check_timestamp": "2024-01-15T10:05:00Z",
-            "cache_expires": "2024-01-15T10:10:00Z"
+            "cache_expires": "2024-01-15T10:10:00Z",
         },
         "instruments_response": {
             "instruments": [
@@ -214,12 +212,12 @@ def comprehensive_mock_data():
                         "ticker": "AAPL",
                         "isin": "US0378331005",
                         "cusip": "037833100",
-                        "sedol": "2046251"
-                    }
+                        "sedol": "2046251",
+                    },
                 },
                 {
                     "id": "MSFT.O",
-                    "name": "Microsoft Corporation", 
+                    "name": "Microsoft Corporation",
                     "type": "EQUITY",
                     "exchange": "NASDAQ",
                     "currency": "USD",
@@ -232,13 +230,13 @@ def comprehensive_mock_data():
                         "ticker": "MSFT",
                         "isin": "US5949181045",
                         "cusip": "594918104",
-                        "sedol": "2588173"
-                    }
+                        "sedol": "2588173",
+                    },
                 },
                 {
                     "id": "GOOGL.O",
                     "name": "Alphabet Inc Class A",
-                    "type": "EQUITY", 
+                    "type": "EQUITY",
                     "exchange": "NASDAQ",
                     "currency": "USD",
                     "country": "US",
@@ -250,16 +248,11 @@ def comprehensive_mock_data():
                         "ticker": "GOOGL",
                         "isin": "US02079K3059",
                         "cusip": "02079K305",
-                        "sedol": "BYY88Y3"
-                    }
-                }
+                        "sedol": "BYY88Y3",
+                    },
+                },
             ],
-            "pagination": {
-                "page": 1,
-                "per_page": 100,
-                "total": 3,
-                "total_pages": 1
-            }
+            "pagination": {"page": 1, "per_page": 100, "total": 3, "total_pages": 1},
         },
         "time_series_response": {
             "data": [
@@ -274,8 +267,8 @@ def comprehensive_mock_data():
                         "low": 184.11,
                         "close": 185.64,
                         "vwap": 185.22,
-                        "market_cap": 2879516800000
-                    }
+                        "market_cap": 2879516800000,
+                    },
                 },
                 {
                     "date": "2024-01-15",
@@ -288,8 +281,8 @@ def comprehensive_mock_data():
                         "low": 386.95,
                         "close": 388.47,
                         "vwap": 388.85,
-                        "market_cap": 2889547200000
-                    }
+                        "market_cap": 2889547200000,
+                    },
                 },
                 {
                     "date": "2024-01-15",
@@ -302,9 +295,9 @@ def comprehensive_mock_data():
                         "low": 151.55,
                         "close": 152.38,
                         "vwap": 152.67,
-                        "market_cap": 1903844800000
-                    }
-                }
+                        "market_cap": 1903844800000,
+                    },
+                },
             ],
             "metadata": {
                 "start_date": "2024-01-15",
@@ -314,27 +307,77 @@ def comprehensive_mock_data():
                 "conversion": "CONV_LASTBUS_ABS",
                 "data_type": "REFERENCE_DATA",
                 "instruments": ["AAPL.O", "MSFT.O", "GOOGL.O"],
-                "attributes": ["price", "volume", "open", "high", "low", "close", "vwap", "market_cap"],
+                "attributes": [
+                    "price",
+                    "volume",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "vwap",
+                    "market_cap",
+                ],
                 "total_records": 3,
                 "currency": "USD",
-                "timezone": "America/New_York"
-            }
+                "timezone": "America/New_York",
+            },
         },
         "grid_data_response": {
             "data": {
                 "rows": [
-                    ["AAPL.O", "Apple Inc", "Technology", 185.64, 52428800, 2879516800000],
-                    ["MSFT.O", "Microsoft Corporation", "Technology", 388.47, 18547200, 2889547200000],
-                    ["GOOGL.O", "Alphabet Inc Class A", "Technology", 152.38, 25847600, 1903844800000]
+                    [
+                        "AAPL.O",
+                        "Apple Inc",
+                        "Technology",
+                        185.64,
+                        52428800,
+                        2879516800000,
+                    ],
+                    [
+                        "MSFT.O",
+                        "Microsoft Corporation",
+                        "Technology",
+                        388.47,
+                        18547200,
+                        2889547200000,
+                    ],
+                    [
+                        "GOOGL.O",
+                        "Alphabet Inc Class A",
+                        "Technology",
+                        152.38,
+                        25847600,
+                        1903844800000,
+                    ],
                 ],
                 "columns": [
-                    {"name": "symbol", "type": "string", "description": "Instrument symbol"},
+                    {
+                        "name": "symbol",
+                        "type": "string",
+                        "description": "Instrument symbol",
+                    },
                     {"name": "name", "type": "string", "description": "Company name"},
-                    {"name": "sector", "type": "string", "description": "Business sector"},
-                    {"name": "price", "type": "numeric", "description": "Last traded price"},
-                    {"name": "volume", "type": "numeric", "description": "Trading volume"},
-                    {"name": "market_cap", "type": "numeric", "description": "Market capitalization"}
-                ]
+                    {
+                        "name": "sector",
+                        "type": "string",
+                        "description": "Business sector",
+                    },
+                    {
+                        "name": "price",
+                        "type": "numeric",
+                        "description": "Last traded price",
+                    },
+                    {
+                        "name": "volume",
+                        "type": "numeric",
+                        "description": "Trading volume",
+                    },
+                    {
+                        "name": "market_cap",
+                        "type": "numeric",
+                        "description": "Market capitalization",
+                    },
+                ],
             },
             "metadata": {
                 "total_rows": 3,
@@ -343,8 +386,8 @@ def comprehensive_mock_data():
                 "execution_time_ms": 145,
                 "data_source": "market_data",
                 "generated_at": "2024-01-15T10:05:30Z",
-                "cache_ttl": 300
-            }
+                "cache_ttl": 300,
+            },
         },
         "filters_response": {
             "filters": [
@@ -354,7 +397,7 @@ def comprehensive_mock_data():
                     "description": "Trading exchange",
                     "values": ["NYSE", "NASDAQ", "LSE", "TSE", "HKEX"],
                     "default": "NYSE",
-                    "required": False
+                    "required": False,
                 },
                 {
                     "name": "currency",
@@ -362,15 +405,21 @@ def comprehensive_mock_data():
                     "description": "Trading currency",
                     "values": ["USD", "EUR", "GBP", "JPY", "HKD"],
                     "default": "USD",
-                    "required": False
+                    "required": False,
                 },
                 {
                     "name": "sector",
                     "type": "string",
                     "description": "Business sector",
-                    "values": ["Technology", "Healthcare", "Financial", "Energy", "Consumer"],
+                    "values": [
+                        "Technology",
+                        "Healthcare",
+                        "Financial",
+                        "Energy",
+                        "Consumer",
+                    ],
                     "default": None,
-                    "required": False
+                    "required": False,
                 },
                 {
                     "name": "market_cap_min",
@@ -379,21 +428,21 @@ def comprehensive_mock_data():
                     "min_value": 0,
                     "max_value": 10000000000000,
                     "default": 0,
-                    "required": False
+                    "required": False,
                 },
                 {
                     "name": "active_only",
                     "type": "boolean",
                     "description": "Include only actively traded instruments",
                     "default": True,
-                    "required": False
-                }
+                    "required": False,
+                },
             ],
             "filter_combinations": [
                 ["exchange", "currency"],
                 ["sector", "market_cap_min"],
-                ["active_only"]
-            ]
+                ["active_only"],
+            ],
         },
         "attributes_response": {
             "attributes": [
@@ -405,7 +454,7 @@ def comprehensive_mock_data():
                     "unit": "currency",
                     "precision": 4,
                     "nullable": False,
-                    "category": "pricing"
+                    "category": "pricing",
                 },
                 {
                     "id": "volume",
@@ -415,7 +464,7 @@ def comprehensive_mock_data():
                     "unit": "shares",
                     "precision": 0,
                     "nullable": False,
-                    "category": "volume"
+                    "category": "volume",
                 },
                 {
                     "id": "market_cap",
@@ -425,7 +474,7 @@ def comprehensive_mock_data():
                     "unit": "currency",
                     "precision": 0,
                     "nullable": True,
-                    "category": "fundamental"
+                    "category": "fundamental",
                 },
                 {
                     "id": "pe_ratio",
@@ -435,7 +484,7 @@ def comprehensive_mock_data():
                     "unit": "ratio",
                     "precision": 2,
                     "nullable": True,
-                    "category": "fundamental"
+                    "category": "fundamental",
                 },
                 {
                     "id": "beta",
@@ -445,15 +494,18 @@ def comprehensive_mock_data():
                     "unit": "coefficient",
                     "precision": 3,
                     "nullable": True,
-                    "category": "risk"
-                }
+                    "category": "risk",
+                },
             ],
             "categories": [
                 {"name": "pricing", "description": "Price-related attributes"},
                 {"name": "volume", "description": "Volume-related attributes"},
-                {"name": "fundamental", "description": "Fundamental analysis attributes"},
-                {"name": "risk", "description": "Risk measurement attributes"}
-            ]
+                {
+                    "name": "fundamental",
+                    "description": "Fundamental analysis attributes",
+                },
+                {"name": "risk", "description": "Risk measurement attributes"},
+            ],
         },
         "error_responses": {
             "400_validation": {
@@ -462,57 +514,50 @@ def comprehensive_mock_data():
                 "details": {
                     "field": "start_date",
                     "provided": "2024-1-15",
-                    "expected": "YYYYMMDD format (e.g., 20240115)"
+                    "expected": "YYYYMMDD format (e.g., 20240115)",
                 },
-                "x-dataquery-interaction-id": "error-validation-123"
+                "x-dataquery-interaction-id": "error-validation-123",
             },
             "401_unauthorized": {
                 "code": "UNAUTHORIZED",
                 "description": "Authentication failed: invalid or expired token",
                 "details": {
                     "reason": "token_expired",
-                    "expires_at": "2024-01-15T09:00:00Z"
+                    "expires_at": "2024-01-15T09:00:00Z",
                 },
-                "x-dataquery-interaction-id": "error-auth-456"
+                "x-dataquery-interaction-id": "error-auth-456",
             },
             "403_forbidden": {
                 "code": "FORBIDDEN",
                 "description": "Access denied: insufficient permissions for requested resource",
                 "details": {
                     "required_permission": "data.market.read",
-                    "user_permissions": ["data.reference.read"]
+                    "user_permissions": ["data.reference.read"],
                 },
-                "x-dataquery-interaction-id": "error-forbidden-789"
+                "x-dataquery-interaction-id": "error-forbidden-789",
             },
             "404_not_found": {
                 "code": "NOT_FOUND",
                 "description": "Resource not found: group does not exist",
                 "details": {
                     "resource_type": "group",
-                    "resource_id": "invalid_group_123"
+                    "resource_id": "invalid_group_123",
                 },
-                "x-dataquery-interaction-id": "error-notfound-012"
+                "x-dataquery-interaction-id": "error-notfound-012",
             },
             "429_rate_limit": {
                 "code": "RATE_LIMIT_EXCEEDED",
                 "description": "Rate limit exceeded: too many requests",
-                "details": {
-                    "limit": 300,
-                    "window": "60s",
-                    "retry_after": 45
-                },
-                "x-dataquery-interaction-id": "error-ratelimit-345"
+                "details": {"limit": 300, "window": "60s", "retry_after": 45},
+                "x-dataquery-interaction-id": "error-ratelimit-345",
             },
             "500_server_error": {
                 "code": "INTERNAL_ERROR",
                 "description": "Internal server error: temporary service disruption",
-                "details": {
-                    "error_id": "srv-err-678",
-                    "retry_recommended": True
-                },
-                "x-dataquery-interaction-id": "error-server-678"
-            }
-        }
+                "details": {"error_id": "srv-err-678", "retry_recommended": True},
+                "x-dataquery-interaction-id": "error-server-678",
+            },
+        },
     }
 
 
@@ -535,91 +580,105 @@ GOOGL,152.38,25847600,2024-01-15T16:00:00Z""",
         "record_count": 3
     }
 }""",
-        "binary_content": b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x10\x00\x00\x00\x10\x08\x06\x00\x00\x00\x1f\xf3\xffa"  # Sample PNG header
+        "binary_content": b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x10\x00\x00\x00\x10\x08\x06\x00\x00\x00\x1f\xf3\xffa",  # Sample PNG header
     }
 
 
 @pytest.fixture
 def mock_client_factory():
     """Factory for creating mocked DataQuery clients."""
-    
+
     def create_mocked_client(config: ClientConfig = None) -> DataQueryClient:
         if config is None:
             config = ClientConfig(
                 base_url="https://api-developer.jpmorgan.com",
-                context_path="/research/dataquery-authe/api/v2"
+                context_path="/research/dataquery-authe/api/v2",
             )
-        
-        with patch.object(DataQueryClient, '_setup_enhanced_components'):
+
+        with patch.object(DataQueryClient, "_setup_enhanced_components"):
             client = DataQueryClient(config)
-            
+
             # Setup all required mocks
             client.rate_limiter = AsyncMock()
             client.rate_limiter.acquire = AsyncMock()
             client.rate_limiter.release = AsyncMock()
             client.rate_limiter.shutdown = AsyncMock()
-            client.rate_limiter.get_stats = Mock(return_value={"rate_limiting": "stats"})
+            client.rate_limiter.get_stats = Mock(
+                return_value={"rate_limiting": "stats"}
+            )
             client.rate_limiter.handle_rate_limit_response = Mock()
-            
+
             client.retry_manager = AsyncMock()
             client.retry_manager.get_stats = Mock(return_value={"retry": "stats"})
-            
+
             client.pool_monitor = Mock()
             client.pool_monitor.start_monitoring = Mock()
             client.pool_monitor.stop_monitoring = Mock()
             client.pool_monitor.get_pool_summary = Mock(return_value={"pool": "stats"})
-            
+
             client.logging_manager = Mock()
             client.logging_manager.get_stats = Mock(return_value={"logging": "stats"})
             client.logging_manager.log_operation_start = Mock()
             client.logging_manager.log_operation_end = Mock()
             client.logging_manager.log_operation_error = Mock()
-            
+
             client.logger = Mock()
-            
+
             client.auth_manager = AsyncMock()
             client.auth_manager.is_authenticated = Mock(return_value=True)
-            client.auth_manager.get_headers = AsyncMock(return_value={"Authorization": "Bearer test_token"})
+            client.auth_manager.get_headers = AsyncMock(
+                return_value={"Authorization": "Bearer test_token"}
+            )
             client.auth_manager.get_stats = Mock(return_value={"auth": "stats"})
-            client.auth_manager.get_auth_info = Mock(return_value={"authenticated": True})
-            
+            client.auth_manager.get_auth_info = Mock(
+                return_value={"authenticated": True}
+            )
+
             return client
-    
+
     return create_mocked_client
 
 
 @pytest.fixture
 def async_response_factory():
     """Factory for creating async HTTP response mocks."""
-    
-    def create_response(status: int = 200, headers: Dict[str, str] = None, json_data: Any = None, content: bytes = None):
+
+    def create_response(
+        status: int = 200,
+        headers: Dict[str, str] = None,
+        json_data: Any = None,
+        content: bytes = None,
+    ):
         from tests.test_client_advanced import AsyncContextManagerMock
-        
+
         response = AsyncMock()
         response.status = status
         response.headers = headers or {}
-        response.url = "https://api-developer.jpmorgan.com/research/dataquery-authe/api/v2/test"
-        
+        response.url = (
+            "https://api-developer.jpmorgan.com/research/dataquery-authe/api/v2/test"
+        )
+
         if json_data is not None:
             response.json = AsyncMock(return_value=json_data)
-        
+
         if content is not None:
             response.content.iter_chunked = AsyncMock(return_value=iter([content]))
-        
+
         return AsyncContextManagerMock(response)
-    
+
     return create_response
 
 
 @pytest.fixture
 def async_session_factory():
     """Factory for creating async session mocks."""
-    
+
     def create_session():
         import aiohttp
+
         session = AsyncMock(spec=aiohttp.ClientSession)
         session.close = AsyncMock()
         session.closed = False
         return session
-    
+
     return create_session

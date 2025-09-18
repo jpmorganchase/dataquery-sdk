@@ -20,94 +20,6 @@ __email__ = "support@dataquery.com"
 __license__ = "MIT"
 __url__ = "https://github.com/dataquery/dataquery-sdk-python"
 
-# Core imports
-from .dataquery import DataQuery, setup_logging
-from .models import (
-    ClientConfig,
-    Group,
-    FileInfo,
-    FileList,
-    AvailabilityInfo,
-    DownloadResult,
-    DownloadStatus,
-    DownloadOptions,
-    DownloadProgress,
-    OAuthToken,
-    TokenRequest,
-    TokenResponse,
-    DateRange,
-    GroupList,
-    AvailableFilesResponse,
-)
-from .exceptions import (
-    DataQueryError,
-    AuthenticationError,
-    ValidationError,
-    NotFoundError,
-    RateLimitError,
-    NetworkError,
-    ConfigurationError,
-    DownloadError,
-    AvailabilityError,
-    GroupNotFoundError,
-    FileNotFoundError,
-    DateRangeError,
-    FileTypeError,
-    WorkflowError,
-)
-
-# Client imports
-from .client import DataQueryClient
-
-# Configuration imports
-from .config import EnvConfig
-
-# Utility imports
-from .utils import (
-    create_env_template,
-    save_config_to_env,
-    load_env_file,
-    get_env_value,
-    set_env_value,
-    validate_env_config,
-    ensure_directory,
-    get_download_paths,
-)
-
-# Rate limiting imports
-from .rate_limiter import (
-    TokenBucketRateLimiter,
-    EnhancedTokenBucketRateLimiter,
-    RateLimitConfig,
-    RateLimitContext,
-    QueuePriority,
-    create_rate_limiter,
-)
-
-# Retry imports
-from .retry import (
-    RetryManager,
-    RetryConfig,
-    RetryStrategy,
-    CircuitBreaker,
-    CircuitState,
-)
-
-# Connection pool imports
-from .connection_pool import (
-    ConnectionPoolMonitor,
-    ConnectionPoolConfig,
-    ConnectionPoolStats,
-)
-
-# Logging imports
-from .logging_config import (
-    LoggingManager,
-    LoggingConfig,
-    LogLevel,
-    LogFormat,
-)
-
 # Authentication imports
 from .auth import (
     OAuthManager,
@@ -117,10 +29,95 @@ from .auth import (
 # Auto-download imports
 from .auto_download import AutoDownloadManager
 
+# Client imports
+from .client import DataQueryClient
+
+# Configuration imports
+from .config import EnvConfig
+
+# Connection pool imports
+from .connection_pool import (
+    ConnectionPoolConfig,
+    ConnectionPoolMonitor,
+    ConnectionPoolStats,
+)
+
+# Core imports
+from .dataquery import DataQuery, setup_logging
+from .exceptions import (
+    AuthenticationError,
+    AvailabilityError,
+    ConfigurationError,
+    DataQueryError,
+    DateRangeError,
+    DownloadError,
+    FileNotFoundError,
+    FileTypeError,
+    GroupNotFoundError,
+    NetworkError,
+    NotFoundError,
+    RateLimitError,
+    ValidationError,
+    WorkflowError,
+)
+
+# Logging imports
+from .logging_config import (
+    LogFormat,
+    LoggingConfig,
+    LoggingManager,
+    LogLevel,
+)
+from .models import (
+    AvailabilityInfo,
+    AvailableFilesResponse,
+    ClientConfig,
+    DateRange,
+    DownloadOptions,
+    DownloadProgress,
+    DownloadResult,
+    DownloadStatus,
+    FileInfo,
+    FileList,
+    Group,
+    GroupList,
+    OAuthToken,
+    TokenRequest,
+    TokenResponse,
+)
+
+# Rate limiting imports
+from .rate_limiter import (
+    EnhancedTokenBucketRateLimiter,
+    QueuePriority,
+    RateLimitConfig,
+    RateLimitContext,
+    TokenBucketRateLimiter,
+    create_rate_limiter,
+)
+
+# Retry imports
+from .retry import (
+    CircuitBreaker,
+    CircuitState,
+    RetryConfig,
+    RetryManager,
+    RetryStrategy,
+)
+
 # Common utility helpers
+# Utility imports
 from .utils import (
-    format_file_size,
+    create_env_template,
+    ensure_directory,
     format_duration,
+    format_file_size,
+    get_download_paths,
+    get_env_value,
+    load_env_file,
+    save_config_to_env,
+    set_env_value,
+    validate_env_config,
 )
 
 # Type aliases for convenience
@@ -128,7 +125,6 @@ __all__ = [
     # Core
     "DataQuery",
     "setup_logging",
-    
     # Models
     "ClientConfig",
     "Group",
@@ -145,7 +141,6 @@ __all__ = [
     "DateRange",
     "GroupList",
     "AvailableFilesResponse",
-    
     # Exceptions
     "DataQueryError",
     "AuthenticationError",
@@ -161,16 +156,13 @@ __all__ = [
     "DateRangeError",
     "FileTypeError",
     "WorkflowError",
-    
     # Client
     "DataQueryClient",
     "format_file_size",
     "format_duration",
     "AutoDownloadManager",
-    
     # Configuration
     "EnvConfig",
-    
     # Utilities
     "create_env_template",
     "save_config_to_env",
@@ -180,7 +172,6 @@ __all__ = [
     "validate_env_config",
     "ensure_directory",
     "get_download_paths",
-    
     # Rate Limiting
     "TokenBucketRateLimiter",
     "EnhancedTokenBucketRateLimiter",
@@ -188,32 +179,28 @@ __all__ = [
     "RateLimitContext",
     "QueuePriority",
     "create_rate_limiter",
-    
     # Retry
     "RetryManager",
     "RetryConfig",
     "RetryStrategy",
     "CircuitBreaker",
     "CircuitState",
-    
     # Connection Pool
     "ConnectionPoolMonitor",
     "ConnectionPoolConfig",
     "ConnectionPoolStats",
-    
     # Logging
     "LoggingManager",
     "LoggingConfig",
     "LogLevel",
     "LogFormat",
-    
     # Authentication
     "OAuthManager",
     "TokenManager",
 ]
 
 # Version info
-__version_info__ = tuple(int(x) for x in __version__.split('.'))
+__version_info__ = tuple(int(x) for x in __version__.split("."))
 
 # Package metadata
 __package_info__ = {
@@ -225,4 +212,4 @@ __package_info__ = {
     "url": __url__,
     "description": "Python SDK for DATAQUERY Data API - Query, download, and check availability of economic data files",
     "python_requires": ">=3.11",
-} 
+}
