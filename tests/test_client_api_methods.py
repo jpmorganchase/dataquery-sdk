@@ -1,11 +1,8 @@
-import asyncio
-from types import SimpleNamespace
-
 import pytest
 
 from dataquery.client import DataQueryClient
+from dataquery.exceptions import AuthenticationError, FileNotFoundError, ValidationError
 from dataquery.models import ClientConfig
-from dataquery.exceptions import FileNotFoundError, ValidationError, AuthenticationError
 
 
 class DummyLogger:
@@ -152,13 +149,17 @@ def make_client(monkeypatch, auth_ok=True):
     client.pool_monitor = DummyPoolMonitor()
     client.auth_manager = DummyAuth(ok=auth_ok)
     client.session = DummySession()
+
     # Don’t actually connect
     async def _noop():
         return None
+
     monkeypatch.setattr(client, "_ensure_connected", _noop)
+
     # Bypass response handler by default (covered elsewhere)
     async def ok_handle(resp):
         return None
+
     monkeypatch.setattr(client, "_handle_response", ok_handle)
     return client
 
@@ -171,32 +172,56 @@ async def test_groups_apis(monkeypatch):
     async def req_groups(method, url, **kwargs):
         data = {"groups": []}
         resp = DummyResponse()
+
         async def json():
             return data
+
         resp.json = json
         return resp
+
     monkeypatch.setattr(client, "_make_authenticated_request", req_groups)
     groups = await client.list_groups_async(limit=5)
     assert isinstance(groups, list)
 
     # list_all_groups_async with two pages (relative next link)
     calls = {"n": 0}
+
     async def req_groups_paged(method, url, **kwargs):
         calls["n"] += 1
         if calls["n"] == 1:
-            data = {"groups": [ {"group-id": "G1", "group-name": "Name", "description": "d",
-                                   "taxonomy-node1": "t1", "taxonomy-node2": "t2", "taxonomy-node3": "t3",
-                                   "taxonomy-node4": "t4", "taxonomy-node5": "t5", "premium": False,
-                                   "population": {"attributes": 0, "instruments": 0, "time-series": 0},
-                                   "attributes": [], "top-instruments": [] } ],
-                    "links": [ {"self": "/groups", "next": "groups?page=2"} ] }
+            data = {
+                "groups": [
+                    {
+                        "group-id": "G1",
+                        "group-name": "Name",
+                        "description": "d",
+                        "taxonomy-node1": "t1",
+                        "taxonomy-node2": "t2",
+                        "taxonomy-node3": "t3",
+                        "taxonomy-node4": "t4",
+                        "taxonomy-node5": "t5",
+                        "premium": False,
+                        "population": {
+                            "attributes": 0,
+                            "instruments": 0,
+                            "time-series": 0,
+                        },
+                        "attributes": [],
+                        "top-instruments": [],
+                    }
+                ],
+                "links": [{"self": "/groups", "next": "groups?page=2"}],
+            }
         else:
-            data = {"groups": [], "links": [ {"self": "/groups", "next": None} ] }
+            data = {"groups": [], "links": [{"self": "/groups", "next": None}]}
         resp = DummyResponse()
+
         async def json():
             return data
+
         resp.json = json
         return resp
+
     monkeypatch.setattr(client, "_make_authenticated_request", req_groups_paged)
     all_groups = await client.list_all_groups_async()
     assert len(all_groups) >= 1
@@ -208,12 +233,18 @@ async def test_files_and_availability(monkeypatch):
 
     # list_files_async
     async def req_files(method, url, **kwargs):
-        data = {"group-id": "G", "file-group-ids": [ {"file-group-id": "F1", "file-type": "csv"} ]}
+        data = {
+            "group-id": "G",
+            "file-group-ids": [{"file-group-id": "F1", "file-type": "csv"}],
+        }
         resp = DummyResponse()
+
         async def json():
             return data
+
         resp.json = json
         return resp
+
     monkeypatch.setattr(client, "_make_authenticated_request", req_files)
     fl = await client.list_files_async("G")
     assert fl.file_count == 1
@@ -226,10 +257,13 @@ async def test_files_and_availability(monkeypatch):
     async def req_files_empty(method, url, **kwargs):
         data = {"group-id": "G", "file-group-ids": []}
         resp = DummyResponse()
+
         async def json():
             return data
+
         resp.json = json
         return resp
+
     monkeypatch.setattr(client, "_make_authenticated_request", req_files_empty)
     with pytest.raises(FileNotFoundError):
         await client.get_file_info_async("G", "F1")
@@ -246,22 +280,28 @@ async def test_files_and_availability(monkeypatch):
             ],
         }
         resp = DummyResponse()
+
         async def json():
             return data
+
         resp.json = json
         return resp
+
     monkeypatch.setattr(client, "_make_authenticated_request", req_avail)
     ar = await client.check_availability_async("F1", "20240101")
-    assert getattr(ar, 'is_available', False) is True
+    assert getattr(ar, "is_available", False) is True
 
     # list_available_files_async
     async def req_avail_list(method, url, **kwargs):
         data = {"available-files": [{"file-datetime": "20240101"}]}
         resp = DummyResponse()
+
         async def json():
             return data
+
         resp.json = json
         return resp
+
     monkeypatch.setattr(client, "_make_authenticated_request", req_avail_list)
     lst = await client.list_available_files_async("G")
     assert lst and lst[0]["file-datetime"] == "20240101"
@@ -275,17 +315,23 @@ async def test_instruments_and_time_series(monkeypatch):
     async def req_inst(method, url, **kwargs):
         data = {"items": 0, "page-size": 50, "links": [], "instruments": []}
         resp = DummyResponse()
+
         async def json():
             return data
+
         resp.json = json
         return resp
+
     def cm_inst(*a, **k):
         data = {"items": 0, "page-size": 50, "links": [], "instruments": []}
         r = DummyResponse()
+
         async def json():
             return data
+
         r.json = json
         return FakeCtx(r)
+
     monkeypatch.setattr(client, "_make_authenticated_request", cm_inst)
     res = await client.list_instruments_async("G")
     assert res.items == 0
@@ -294,17 +340,23 @@ async def test_instruments_and_time_series(monkeypatch):
     async def req_ts(method, url, **kwargs):
         data = {"items": 0, "page-size": 50, "links": [], "instruments": []}
         resp = DummyResponse()
+
         async def json():
             return data
+
         resp.json = json
         return resp
+
     def cm_ts(*a, **k):
         data = {"items": 0, "page-size": 50, "links": [], "instruments": []}
         r = DummyResponse()
+
         async def json():
             return data
+
         r.json = json
         return FakeCtx(r)
+
     monkeypatch.setattr(client, "_make_authenticated_request", cm_ts)
     with pytest.raises(ValidationError):
         await client.get_instrument_time_series_async([], ["A"])  # invalid instruments
@@ -315,10 +367,13 @@ async def test_instruments_and_time_series(monkeypatch):
     def cm_ts2(*a, **k):
         data = {"items": 0, "page-size": 50, "links": [], "instruments": []}
         r = DummyResponse()
+
         async def json():
             return data
+
         r.json = json
         return FakeCtx(r)
+
     monkeypatch.setattr(client, "_make_authenticated_request", cm_ts2)
     ts2 = await client.get_expressions_time_series_async(["DB(X)"])
     assert ts2.items == 0
@@ -332,17 +387,23 @@ async def test_group_filters_attributes_ts(monkeypatch):
     async def req_filters(method, url, **kwargs):
         data = {"items": 0, "page-size": 50, "links": [], "filters": []}
         resp = DummyResponse()
+
         async def json():
             return data
+
         resp.json = json
         return resp
+
     def cm_filters(*a, **k):
         data = {"items": 0, "page-size": 50, "links": [], "filters": []}
         r = DummyResponse()
+
         async def json():
             return data
+
         r.json = json
         return FakeCtx(r)
+
     monkeypatch.setattr(client, "_make_authenticated_request", cm_filters)
     fr = await client.get_group_filters_async("G")
     assert fr.items == 0
@@ -351,17 +412,23 @@ async def test_group_filters_attributes_ts(monkeypatch):
     async def req_attrs(method, url, **kwargs):
         data = {"items": 0, "page-size": 50, "links": [], "instruments": []}
         resp = DummyResponse()
+
         async def json():
             return data
+
         resp.json = json
         return resp
+
     def cm_attrs(*a, **k):
         data = {"items": 0, "page-size": 50, "links": [], "instruments": []}
         r = DummyResponse()
+
         async def json():
             return data
+
         r.json = json
         return FakeCtx(r)
+
     monkeypatch.setattr(client, "_make_authenticated_request", cm_attrs)
     ar = await client.get_group_attributes_async("G")
     assert ar.items == 0
@@ -370,17 +437,23 @@ async def test_group_filters_attributes_ts(monkeypatch):
     async def req_gts(method, url, **kwargs):
         data = {"items": 0, "page-size": 50, "links": [], "instruments": []}
         resp = DummyResponse()
+
         async def json():
             return data
+
         resp.json = json
         return resp
+
     def cm_gts(*a, **k):
         data = {"items": 0, "page-size": 50, "links": [], "instruments": []}
         r = DummyResponse()
+
         async def json():
             return data
+
         r.json = json
         return FakeCtx(r)
+
     monkeypatch.setattr(client, "_make_authenticated_request", cm_gts)
     gts = await client.get_group_time_series_async("G", ["A"])  # minimal valid
     assert gts.items == 0
@@ -398,17 +471,23 @@ async def test_grid_api(monkeypatch):
     async def req_grid(method, url, **kwargs):
         data = {"series": []}
         resp = DummyResponse()
+
         async def json():
             return data
+
         resp.json = json
         return resp
+
     def cm_grid(*a, **k):
         data = {"series": []}
         r = DummyResponse()
+
         async def json():
             return data
+
         r.json = json
         return FakeCtx(r)
+
     monkeypatch.setattr(client, "_make_authenticated_request", cm_grid)
     gr = await client.get_grid_data_async(expr="DBGRID(X)")
     assert isinstance(gr.series, list)
@@ -424,5 +503,3 @@ async def test_auth_and_connect_close_paths(monkeypatch):
     # close non-async close path
     await client.close()
     assert client.session is None
-
-

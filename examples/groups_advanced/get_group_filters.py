@@ -10,8 +10,8 @@ Usage:
   python examples/groups_advanced/get_group_filters.py [--group-id <id>] [--show 5]
 """
 
-import asyncio
 import argparse
+import asyncio
 import sys
 from pathlib import Path
 
@@ -24,8 +24,12 @@ from dataquery.exceptions import DataQueryError
 
 async def main() -> None:
     parser = argparse.ArgumentParser(description="Get group filters (lean)")
-    parser.add_argument("--group-id", help="Group ID. If omitted, uses the first available group")
-    parser.add_argument("--show", type=int, default=5, help="How many filters to print (default: 5)")
+    parser.add_argument(
+        "--group-id", help="Group ID. If omitted, uses the first available group"
+    )
+    parser.add_argument(
+        "--show", type=int, default=5, help="How many filters to print (default: 5)"
+    )
     args = parser.parse_args()
 
     try:

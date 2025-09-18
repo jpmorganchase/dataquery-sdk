@@ -1,13 +1,15 @@
 """Tests for configuration module."""
 
 import os
-import pytest
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, mock_open
+from unittest.mock import mock_open, patch
+
+import pytest
+
 from dataquery.config import EnvConfig
-from dataquery.models import ClientConfig
 from dataquery.exceptions import ConfigurationError
+from dataquery.models import ClientConfig
 
 
 class TestEnvConfig:
@@ -90,34 +92,37 @@ class TestEnvConfig:
 
     def test_env_config_load_env_file(self):
         """Test load_env_file method."""
-        with patch('dataquery.config.load_dotenv') as mock_load_dotenv:
-            with patch('pathlib.Path.exists', return_value=True):
+        with patch("dataquery.config.load_dotenv") as mock_load_dotenv:
+            with patch("pathlib.Path.exists", return_value=True):
                 EnvConfig.load_env_file()
                 mock_load_dotenv.assert_called_once_with(Path(".env"))
 
     def test_env_config_load_env_file_custom_path(self):
         """Test load_env_file method with custom path."""
         custom_path = Path("/custom/.env")
-        with patch('dataquery.config.load_dotenv') as mock_load_dotenv:
-            with patch('pathlib.Path.exists', return_value=True):
+        with patch("dataquery.config.load_dotenv") as mock_load_dotenv:
+            with patch("pathlib.Path.exists", return_value=True):
                 EnvConfig.load_env_file(custom_path)
                 mock_load_dotenv.assert_called_once_with(custom_path)
 
     def test_env_config_load_env_file_not_exists(self):
         """Test load_env_file method when file doesn't exist."""
-        with patch('dataquery.config.load_dotenv') as mock_load_dotenv:
-            with patch('pathlib.Path.exists', return_value=False):
+        with patch("dataquery.config.load_dotenv") as mock_load_dotenv:
+            with patch("pathlib.Path.exists", return_value=False):
                 EnvConfig.load_env_file()
                 mock_load_dotenv.assert_not_called()
 
     def test_env_config_create_client_config(self):
         """Test create_client_config method."""
-        with patch.dict(os.environ, {
-            "DATAQUERY_BASE_URL": "https://api.example.com",
-            "DATAQUERY_OAUTH_ENABLED": "true",
-            "DATAQUERY_CLIENT_ID": "test_client",
-            "DATAQUERY_CLIENT_SECRET": "test_secret"
-        }):
+        with patch.dict(
+            os.environ,
+            {
+                "DATAQUERY_BASE_URL": "https://api.example.com",
+                "DATAQUERY_OAUTH_ENABLED": "true",
+                "DATAQUERY_CLIENT_ID": "test_client",
+                "DATAQUERY_CLIENT_SECRET": "test_secret",
+            },
+        ):
             config = EnvConfig.create_client_config()
             assert config.base_url == "https://api.example.com"
             assert config.oauth_enabled is True
@@ -127,17 +132,24 @@ class TestEnvConfig:
     def test_env_config_create_client_config_missing_base_url(self):
         """Test create_client_config method with missing base URL."""
         with patch.dict(os.environ, {}, clear=True):
-            with pytest.raises(ConfigurationError, match="DATAQUERY_BASE_URL environment variable is required"):
+            with pytest.raises(
+                ConfigurationError,
+                match="DATAQUERY_BASE_URL environment variable is required",
+            ):
                 EnvConfig.create_client_config()
 
     def test_env_config_create_client_config_auto_generate_oauth_url(self):
         """Test create_client_config method auto-generating OAuth URL."""
-        with patch.dict(os.environ, {
-            "DATAQUERY_BASE_URL": "https://api.example.com",
-            "DATAQUERY_OAUTH_ENABLED": "true",
-            "DATAQUERY_CLIENT_ID": "test_client",
-            "DATAQUERY_CLIENT_SECRET": "test_secret"
-        }, clear=True):
+        with patch.dict(
+            os.environ,
+            {
+                "DATAQUERY_BASE_URL": "https://api.example.com",
+                "DATAQUERY_OAUTH_ENABLED": "true",
+                "DATAQUERY_CLIENT_ID": "test_client",
+                "DATAQUERY_CLIENT_SECRET": "test_secret",
+            },
+            clear=True,
+        ):
             # Explicitly remove OAuth_TOKEN_URL to ensure auto-generation
             if "DATAQUERY_OAUTH_TOKEN_URL" in os.environ:
                 del os.environ["DATAQUERY_OAUTH_TOKEN_URL"]
@@ -146,10 +158,13 @@ class TestEnvConfig:
 
     def test_env_config_create_client_config_with_custom_grant_type(self):
         """Test create_client_config method with custom grant type."""
-        with patch.dict(os.environ, {
-            "DATAQUERY_BASE_URL": "https://api.example.com",
-            "DATAQUERY_GRANT_TYPE": "password"
-        }):
+        with patch.dict(
+            os.environ,
+            {
+                "DATAQUERY_BASE_URL": "https://api.example.com",
+                "DATAQUERY_GRANT_TYPE": "password",
+            },
+        ):
             config = EnvConfig.create_client_config()
             assert config.grant_type == "password"
 
@@ -197,9 +212,9 @@ class TestEnvConfig:
             oauth_enabled=True,
             client_id="test_client",
             client_secret="test_secret",
-            oauth_token_url="https://api.example.com/oauth/token"
+            oauth_token_url="https://api.example.com/oauth/token",
         )
-        
+
         # Should not raise exception
         EnvConfig.validate_config(config)
 
@@ -209,12 +224,12 @@ class TestEnvConfig:
         config = ClientConfig(
             base_url="https://api.example.com",  # Use valid URL to pass Pydantic validation
             oauth_enabled=False,
-            bearer_token="test_token"
+            bearer_token="test_token",
         )
-        
+
         # Mock the base_url to be empty after creation to test our validation
         config.base_url = ""
-        
+
         with pytest.raises(ConfigurationError, match="BASE_URL is required"):
             EnvConfig.validate_config(config)
 
@@ -225,9 +240,9 @@ class TestEnvConfig:
             oauth_enabled=True,
             client_id=None,
             client_secret=None,
-            oauth_token_url="https://api.example.com/oauth/token"
+            oauth_token_url="https://api.example.com/oauth/token",
         )
-        
+
         with pytest.raises(ConfigurationError, match="CLIENT_ID is required"):
             EnvConfig.validate_config(config)
 
@@ -238,9 +253,9 @@ class TestEnvConfig:
             oauth_enabled=True,
             client_id="test_client",
             client_secret=None,
-            oauth_token_url="https://api.example.com/oauth/token"
+            oauth_token_url="https://api.example.com/oauth/token",
         )
-        
+
         with pytest.raises(ConfigurationError, match="CLIENT_SECRET is required"):
             EnvConfig.validate_config(config)
 
@@ -251,24 +266,25 @@ class TestEnvConfig:
             oauth_enabled=True,
             client_id="test_client",
             client_secret="test_secret",
-            oauth_token_url="https://api.example.com/oauth/token"  # Set valid URL first
+            oauth_token_url="https://api.example.com/oauth/token",  # Set valid URL first
         )
-        
+
         # Mock the oauth_token_url to be None after creation
         config.oauth_token_url = None
-        
+
         with pytest.raises(ConfigurationError, match="OAUTH_TOKEN_URL is required"):
             EnvConfig.validate_config(config)
 
     def test_env_config_validate_config_no_auth_method(self):
         """Test validate_config with no authentication method."""
         config = ClientConfig(
-            base_url="https://api.example.com",
-            oauth_enabled=False,
-            bearer_token=None
+            base_url="https://api.example.com", oauth_enabled=False, bearer_token=None
         )
-        
-        with pytest.raises(ConfigurationError, match="Either OAuth credentials or Bearer token must be configured"):
+
+        with pytest.raises(
+            ConfigurationError,
+            match="Either OAuth credentials or Bearer token must be configured",
+        ):
             EnvConfig.validate_config(config)
 
     def test_env_config_validate_config_invalid_timeout(self):
@@ -277,9 +293,9 @@ class TestEnvConfig:
             base_url="https://api.example.com",
             oauth_enabled=False,
             bearer_token="test_token",
-            timeout=-1
+            timeout=-1,
         )
-        
+
         with pytest.raises(ConfigurationError, match="TIMEOUT must be positive"):
             EnvConfig.validate_config(config)
 
@@ -289,10 +305,12 @@ class TestEnvConfig:
             base_url="https://api.example.com",
             oauth_enabled=False,
             bearer_token="test_token",
-            max_retries=-1
+            max_retries=-1,
         )
-        
-        with pytest.raises(ConfigurationError, match="MAX_RETRIES must be non-negative"):
+
+        with pytest.raises(
+            ConfigurationError, match="MAX_RETRIES must be non-negative"
+        ):
             EnvConfig.validate_config(config)
 
     def test_env_config_validate_config_invalid_retry_delay(self):
@@ -301,10 +319,12 @@ class TestEnvConfig:
             base_url="https://api.example.com",
             oauth_enabled=False,
             bearer_token="test_token",
-            retry_delay=-1
+            retry_delay=-1,
         )
-        
-        with pytest.raises(ConfigurationError, match="RETRY_DELAY must be non-negative"):
+
+        with pytest.raises(
+            ConfigurationError, match="RETRY_DELAY must be non-negative"
+        ):
             EnvConfig.validate_config(config)
 
     def test_env_config_validate_config_invalid_pool_connections(self):
@@ -313,10 +333,12 @@ class TestEnvConfig:
             base_url="https://api.example.com",
             oauth_enabled=False,
             bearer_token="test_token",
-            pool_connections=0
+            pool_connections=0,
         )
-        
-        with pytest.raises(ConfigurationError, match="POOL_CONNECTIONS must be positive"):
+
+        with pytest.raises(
+            ConfigurationError, match="POOL_CONNECTIONS must be positive"
+        ):
             EnvConfig.validate_config(config)
 
     def test_env_config_validate_config_invalid_pool_maxsize(self):
@@ -325,9 +347,9 @@ class TestEnvConfig:
             base_url="https://api.example.com",
             oauth_enabled=False,
             bearer_token="test_token",
-            pool_maxsize=0
+            pool_maxsize=0,
         )
-        
+
         with pytest.raises(ConfigurationError, match="POOL_MAXSIZE must be positive"):
             EnvConfig.validate_config(config)
 
@@ -337,10 +359,12 @@ class TestEnvConfig:
             base_url="https://api.example.com",
             oauth_enabled=False,
             bearer_token="test_token",
-            requests_per_minute=0
+            requests_per_minute=0,
         )
-        
-        with pytest.raises(ConfigurationError, match="REQUESTS_PER_MINUTE must be positive"):
+
+        with pytest.raises(
+            ConfigurationError, match="REQUESTS_PER_MINUTE must be positive"
+        ):
             EnvConfig.validate_config(config)
 
     def test_env_config_validate_config_invalid_burst_capacity(self):
@@ -349,9 +373,9 @@ class TestEnvConfig:
             base_url="https://api.example.com",
             oauth_enabled=False,
             bearer_token="test_token",
-            burst_capacity=0
+            burst_capacity=0,
         )
-        
+
         with pytest.raises(ConfigurationError, match="BURST_CAPACITY must be positive"):
             EnvConfig.validate_config(config)
 
@@ -360,22 +384,22 @@ class TestEnvConfig:
         with tempfile.TemporaryDirectory() as temp_dir:
             template_path = Path(temp_dir) / ".env.template"
             result = EnvConfig.create_env_template(template_path)
-            
+
             assert result == template_path
             assert template_path.exists()
-            
+
             # Check content
-            with open(template_path, 'r') as f:
+            with open(template_path, "r") as f:
                 content = f.read()
-            
+
             assert "BASE_URL=" in content
             assert "OAUTH_ENABLED=" in content
             assert "CLIENT_ID=" in content
 
     def test_env_config_create_env_template_default_path(self):
         """Test create_env_template method with default path."""
-        with patch('builtins.open', mock_open()) as mock_file:
-            with patch('pathlib.Path.write_text') as mock_write:
+        with patch("builtins.open", mock_open()) as mock_file:
+            with patch("pathlib.Path.write_text") as mock_write:
                 result = EnvConfig.create_env_template()
                 assert result == Path(".env.template")
                 mock_write.assert_called_once()
@@ -385,17 +409,20 @@ class TestEnvConfig:
         with tempfile.TemporaryDirectory() as temp_dir:
             template_path = str(Path(temp_dir) / ".env.template")
             result = EnvConfig.create_env_template(template_path)
-            
+
             assert result == Path(template_path)
             assert Path(template_path).exists()
 
     def test_env_config_get_all_env_vars(self):
         """Test get_all_env_vars method."""
         # Mock the environment to return some values
-        with patch.dict(os.environ, {
-            'DATAQUERY_BASE_URL': 'https://api.example.com',
-            'DATAQUERY_OAUTH_ENABLED': 'true'
-        }):
+        with patch.dict(
+            os.environ,
+            {
+                "DATAQUERY_BASE_URL": "https://api.example.com",
+                "DATAQUERY_OAUTH_ENABLED": "true",
+            },
+        ):
             vars_dict = EnvConfig.get_all_env_vars()
             assert isinstance(vars_dict, dict)
             # The method returns keys without the prefix
@@ -417,11 +444,11 @@ class TestEnvConfig:
             "bearer_token": "token123",
             "oauth_token_url": "https://api.example.com/oauth/token",
             # "scope": "data.read",
-            "proxy_password": "pass123"  # This is not masked by the current implementation
+            "proxy_password": "pass123",  # This is not masked by the current implementation
         }
-        
+
         masked = EnvConfig.mask_secrets(config_dict)
-        
+
         assert masked["base_url"] == "https://api.example.com"
         assert masked["client_secret"] == "***"
         assert masked["bearer_token"] == "***"
@@ -432,14 +459,10 @@ class TestEnvConfig:
 
     def test_env_config_mask_secrets_empty_values(self):
         """Test mask_secrets method with empty values."""
-        config_dict = {
-            "client_secret": "",
-            "bearer_token": None,
-            "oauth_token_url": ""
-        }
-        
+        config_dict = {"client_secret": "", "bearer_token": None, "oauth_token_url": ""}
+
         masked = EnvConfig.mask_secrets(config_dict)
-        
+
         assert masked["client_secret"] == ""
         assert masked["bearer_token"] is None
         assert masked["oauth_token_url"] == ""
@@ -449,11 +472,9 @@ class TestEnvConfig:
         config_dict = {
             "base_url": "https://api.example.com",
             "timeout": "30.0",
-            "max_retries": "3"
+            "max_retries": "3",
         }
-        
+
         masked = EnvConfig.mask_secrets(config_dict)
-        
+
         assert masked == config_dict  # No changes should be made
-
-

@@ -1,7 +1,3 @@
-import asyncio
-import json
-from pathlib import Path
-
 import pytest
 
 from dataquery.client import DataQueryClient
@@ -11,8 +7,10 @@ from dataquery.models import ClientConfig, DownloadOptions, DownloadStatus
 class DummyLogger:
     def info(self, *a, **k):
         pass
+
     def warning(self, *a, **k):
         pass
+
     def error(self, *a, **k):
         pass
 
@@ -20,16 +18,22 @@ class DummyLogger:
 class DummyLoggingManager:
     def __init__(self):
         self.logger = DummyLogger()
+
     def get_logger(self, *_):
         return self.logger
+
     def log_operation_start(self, *a, **k):
         pass
+
     def log_operation_end(self, *a, **k):
         pass
+
     def log_request(self, *a, **k):
         pass
+
     def log_response(self, *a, **k):
         pass
+
     def log_metric(self, *a, **k):
         pass
 
@@ -47,6 +51,7 @@ class FakeResponse:
     class content:
         def __init__(self, outer):
             self._outer = outer
+
         async def iter_chunked(self, n):
             for chunk in self._outer._chunks:
                 yield chunk
@@ -59,12 +64,12 @@ class FakeResponse:
 class FakeCtx:
     def __init__(self, resp: FakeResponse):
         self._resp = resp
+
     async def __aenter__(self):
         return self._resp
+
     async def __aexit__(self, exc_type, exc, tb):
         return False
-
-
 
 
 def make_client(tmp_path) -> DataQueryClient:
@@ -79,8 +84,10 @@ def make_client(tmp_path) -> DataQueryClient:
     client = DataQueryClient(cfg)
     client.logging_manager = DummyLoggingManager()
     client.logger = client.logging_manager.get_logger(__name__)
+
     async def _noop(*args, **kwargs):
         return None
+
     # Avoid real IO
     client._ensure_connected = _noop  # type: ignore
     client._ensure_authenticated = _noop  # type: ignore
@@ -99,8 +106,16 @@ async def test_download_overwrite_protection(tmp_path, monkeypatch):
     dest.write_bytes(b"existing")
 
     async def cm_ok(method, url, **kwargs):
-        resp = FakeResponse(status=200, headers={"content-disposition": 'attachment; filename="f.csv"', "content-length": "3"}, body_chunks=[b"abc"]) 
+        resp = FakeResponse(
+            status=200,
+            headers={
+                "content-disposition": 'attachment; filename="f.csv"',
+                "content-length": "3",
+            },
+            body_chunks=[b"abc"],
+        )
         return FakeCtx(resp)
+
     monkeypatch.setattr(client, "_make_authenticated_request", cm_ok)
 
     opts = DownloadOptions(destination_path=str(tmp_path), overwrite_existing=False)
@@ -111,5 +126,3 @@ async def test_download_overwrite_protection(tmp_path, monkeypatch):
 
 
 ## Removed xfail test: download_range_header
-
-

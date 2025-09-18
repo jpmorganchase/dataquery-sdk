@@ -5,54 +5,37 @@ Utility functions for the DATAQUERY SDK.
 import os
 from pathlib import Path
 from typing import Optional
+
 import structlog
-# Note: load_dotenv is imported where used to avoid unused import in environments
 
 from .models import ClientConfig
 
+# Note: load_dotenv is imported where used to avoid unused import in environments
+
+
 logger = structlog.get_logger(__name__)
-
-
-def load_env_file(env_file: Optional[Path] = None) -> None:
-    """
-    Load environment variables from a .env file.
-    
-    Args:
-        env_file: Path to the .env file (default: .env)
-    """
-    env_path = env_file or Path(".env")
-    
-    if env_path.exists():
-        try:
-            from dotenv import load_dotenv
-            load_dotenv(env_path)
-            logger.info("Loaded environment variables from .env file", file=str(env_path))
-        except ImportError:
-            logger.warning("python-dotenv not available, skipping .env file loading")
-        except Exception as e:
-            logger.error("Failed to load .env file", file=str(env_path), error=str(e))
 
 
 def create_env_template(env_file: Optional[Path] = None) -> Path:
     """
     Create a .env template file with all available configuration options.
-    
+
     Args:
         env_file: Path to the template file (default: .env.template)
-        
+
     Returns:
         Path to the created template file
     """
     template_file = env_file or Path(".env.template")
-    
+
     # Validate the path
     if not isinstance(template_file, Path):
         template_file = Path(template_file)
-    
+
     try:
         # Ensure parent directory exists
         template_file.parent.mkdir(parents=True, exist_ok=True)
-        
+
         template_content = """# DATAQUERY SDK Configuration Template
 # Copy this file to .env and update the values according to your setup
 # cp .env.template .env
@@ -227,14 +210,16 @@ DATAQUERY_LOG_REQUESTS=false
 # DATAQUERY_OAUTH_ENABLED=false
 # DATAQUERY_BEARER_TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 """
-        
+
         template_file.write_text(template_content)
-        
+
         logger.info("Created .env template", file=str(template_file))
         return template_file
-        
+
     except (OSError, IOError) as e:
-        logger.error("Failed to create .env template", file=str(template_file), error=str(e))
+        logger.error(
+            "Failed to create .env template", file=str(template_file), error=str(e)
+        )
         raise
     except Exception as e:
         logger.error("Unexpected error creating .env template", error=str(e))
@@ -244,20 +229,20 @@ DATAQUERY_LOG_REQUESTS=false
 def save_config_to_env(config: ClientConfig, env_file: Optional[Path] = None) -> Path:
     """
     Save configuration to .env file.
-    
+
     Args:
         config: Client configuration to save
         env_file: Path to the .env file (default: .env)
-        
+
     Returns:
         Path to the saved .env file
     """
     env_file = env_file or Path(".env")
-    
+
     # Ensure env_file is a Path object
     if not isinstance(env_file, Path):
         env_file = Path(env_file)
-    
+
     env_content = f"""# DATAQUERY SDK Configuration
 
 # API Configuration
@@ -302,9 +287,9 @@ DATAQUERY_GROUPS_DIR=groups
 DATAQUERY_AVAILABILITY_DIR=availability
 DATAQUERY_DEFAULT_DIR=files
 """
-    
+
     env_file.write_text(env_content)
-    
+
     logger.info("Saved configuration to .env file", file=str(env_file))
     return env_file
 
@@ -312,7 +297,7 @@ DATAQUERY_DEFAULT_DIR=files
 def load_env_file(env_file: Optional[Path] = None) -> None:
     """
     Load environment variables from .env file.
-    
+
     Args:
         env_file: Path to the .env file (default: .env)
     """
@@ -321,13 +306,13 @@ def load_env_file(env_file: Optional[Path] = None) -> None:
     except ImportError:
         logger.warning("python-dotenv not installed, skipping .env file loading")
         return
-    
+
     env_file = env_file or Path(".env")
-    
+
     # Ensure env_file is a Path object
     if not isinstance(env_file, Path):
         env_file = Path(env_file)
-    
+
     # For compatibility with tests: only call loader if file exists
     # Use Path.exists as an unbound method to cooperate with tests that patch pathlib.Path.exists
     if Path.exists(env_file):
@@ -344,11 +329,11 @@ def load_env_file(env_file: Optional[Path] = None) -> None:
 def get_env_value(key: str, default: Optional[str] = None) -> Optional[str]:
     """
     Get environment variable value with optional default.
-    
+
     Args:
         key: Environment variable name
         default: Default value if not found
-        
+
     Returns:
         Environment variable value or default
     """
@@ -358,7 +343,7 @@ def get_env_value(key: str, default: Optional[str] = None) -> Optional[str]:
 def set_env_value(key: str, value: str) -> None:
     """
     Set environment variable value.
-    
+
     Args:
         key: Environment variable name
         value: Value to set
@@ -370,7 +355,7 @@ def set_env_value(key: str, value: str) -> None:
 def validate_env_config() -> None:
     """
     Validate that required environment variables are set.
-    
+
     Raises:
         ValueError: If required variables are missing or invalid
     """
@@ -381,32 +366,37 @@ def validate_env_config() -> None:
             float(timeout)
         except ValueError:
             raise ValueError(f"Invalid timeout value: {timeout}")
-    
+
     max_retries = get_env_value("DATAQUERY_MAX_RETRIES")
     if max_retries:
         try:
             int(max_retries)
         except ValueError:
             raise ValueError(f"Invalid max retries value: {max_retries}")
-    
+
     # Validate boolean values if present
     oauth_enabled_val = get_env_value("DATAQUERY_OAUTH_ENABLED")
-    if oauth_enabled_val and oauth_enabled_val.lower() not in ('true', 'false'):
+    if oauth_enabled_val and oauth_enabled_val.lower() not in ("true", "false"):
         raise ValueError(f"Invalid OAuth enabled value: {oauth_enabled_val}")
-    
+
     # Check required variables - BASE_URL is always required
     base_url = get_env_value("DATAQUERY_BASE_URL")
-    if not base_url or not base_url.startswith(('http://', 'https://')):
+    if not base_url or not base_url.startswith(("http://", "https://")):
         raise ValueError("DATAQUERY_BASE_URL is required")
-    
+
     # Validate OAuth configuration
     oauth_enabled = get_env_value("DATAQUERY_OAUTH_ENABLED", "false").lower() == "true"
     if oauth_enabled:
         client_id = get_env_value("DATAQUERY_CLIENT_ID")
         client_secret = get_env_value("DATAQUERY_CLIENT_SECRET")
-        if not client_id or not client_secret or client_id.strip() == "" or client_secret.strip() == "":
+        if (
+            not client_id
+            or not client_secret
+            or client_id.strip() == ""
+            or client_secret.strip() == ""
+        ):
             raise ValueError("OAuth credentials are required")
-    
+
     # Check if either OAuth or Bearer token is configured
     if not oauth_enabled:
         bearer_token = get_env_value("DATAQUERY_BEARER_TOKEN")
@@ -414,7 +404,7 @@ def validate_env_config() -> None:
             # Only require authentication if OAuth is explicitly enabled
             # If OAuth is disabled and no bearer token, that's okay for testing
             pass
-    
+
     logger.info("Environment configuration validation passed")
 
 
@@ -505,7 +495,7 @@ def ensure_directory(path) -> Path:
     # Convert string to Path if needed
     if not isinstance(path, Path):
         path = Path(path)
-    
+
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -514,7 +504,7 @@ def get_download_paths(base_dir: Optional[Path] = None) -> dict:
     """Get download paths from environment variables with defaults."""
     import os
     from pathlib import Path
-    
+
     if base_dir is None:
         base_download_dir = Path(os.getenv("DATAQUERY_DOWNLOAD_DIR", "./downloads"))
     else:
@@ -523,11 +513,12 @@ def get_download_paths(base_dir: Optional[Path] = None) -> dict:
             base_download_dir = Path(base_dir)
         else:
             base_download_dir = base_dir
-    
+
     return {
         "base": base_download_dir,
         "workflow": base_download_dir / os.getenv("DATAQUERY_WORKFLOW_DIR", "workflow"),
         "groups": base_download_dir / os.getenv("DATAQUERY_GROUPS_DIR", "groups"),
-        "availability": base_download_dir / os.getenv("DATAQUERY_AVAILABILITY_DIR", "availability"),
-        "default": base_download_dir / os.getenv("DATAQUERY_DEFAULT_DIR", "files")
-    } 
+        "availability": base_download_dir
+        / os.getenv("DATAQUERY_AVAILABILITY_DIR", "availability"),
+        "default": base_download_dir / os.getenv("DATAQUERY_DEFAULT_DIR", "files"),
+    }

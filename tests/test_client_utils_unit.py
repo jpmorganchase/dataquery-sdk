@@ -1,4 +1,4 @@
-from dataquery.client import format_file_size, format_duration, DataQueryClient
+from dataquery.client import DataQueryClient, format_duration, format_file_size
 from dataquery.models import ClientConfig
 
 
@@ -25,4 +25,3 @@ def test_url_builders_and_extract():
     assert u2.startswith("https://api.example.com")
     # _extract_endpoint
     assert client._extract_endpoint(u2).endswith("group/file/download")
-

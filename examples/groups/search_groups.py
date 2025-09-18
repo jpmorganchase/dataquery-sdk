@@ -10,8 +10,8 @@ Usage:
   python examples/groups/search_groups.py --keyword rates --limit 5
 """
 
-import asyncio
 import argparse
+import asyncio
 import sys
 from pathlib import Path
 
@@ -23,8 +23,12 @@ from dataquery import DataQuery
 
 async def main():
     parser = argparse.ArgumentParser(description="Search groups (lean)")
-    parser.add_argument("--keyword", default="economy", help="Search keyword (default: economy)")
-    parser.add_argument("--limit", type=int, default=10, help="Max results (default: 10)")
+    parser.add_argument(
+        "--keyword", default="economy", help="Search keyword (default: economy)"
+    )
+    parser.add_argument(
+        "--limit", type=int, default=10, help="Max results (default: 10)"
+    )
     args = parser.parse_args()
 
     try:
@@ -32,13 +36,12 @@ async def main():
             results = await dq.search_groups_async(args.keyword, limit=args.limit)
             print(f"Found {len(results)} groups")
             for i, g in enumerate(results, 1):
-                print(f"{i}. {getattr(g, 'group_id', '')} | {getattr(g, 'group_name', '')}")
+                print(
+                    f"{i}. {getattr(g, 'group_id', '')} | {getattr(g, 'group_name', '')}"
+                )
     except Exception as e:
         print(f"Error: {e}")
 
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-
- 

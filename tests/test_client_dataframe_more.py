@@ -26,4 +26,3 @@ def test_dataframe_nested_list_and_metadata(monkeypatch):
     ]
     df = c.to_dataframe(data, include_metadata=True, flatten_nested=True)
     assert "items_0_k" in df.columns and "items_1_k" in df.columns
-

@@ -11,10 +11,10 @@ from typing import Optional
 
 from dataquery.dataquery import DataQuery
 from dataquery.logging_config import (
+    LogFormat,
+    LogLevel,
     create_logging_config,
     create_logging_manager,
-    LogLevel,
-    LogFormat,
 )
 
 
@@ -46,5 +46,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     asyncio.run(main(args.env_file))
-
-

@@ -1,0 +1,117 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_HTTP_TIMEOUT: 300
+  PIP_DISABLE_PIP_VERSION_CHECK: 1
+
+jobs:
+  tests:
+    strategy:
+      fail-fast: true
+      matrix:
+        python-versions: ["3.10", "3.11", "3.12", "3.13"]
+    name: Tests on Python ${{ matrix.python-versions }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python ${{ matrix.python-versions }}
+        run: uv python install ${{ matrix.python-versions }}
+
+      - name: Install project (dev + extras)
+        run: uv sync --all-extras --dev
+
+      - name: Setup git for documentation
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+      - name: Run tests
+        run: |
+          uv python pin ${{ matrix.python-versions }}
+          uv run pytest tests/ -v --cov=dataquery --cov-report=xml --cov-report=html
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+
+  lint:
+    runs-on: ubuntu-latest
+    name: Lint and Format Check
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python 3.11
+        run: uv python install 3.11
+
+      - name: Install project (dev + extras)
+        run: uv sync --all-extras --dev
+
+      - name: Run black formatter check
+        run: uv run black --check --diff .
+
+      - name: Run isort import sorting check
+        run: uv run isort --check-only --diff .
+
+      - name: Run flake8 linter
+        run: uv run flake8 dataquery/ 
+
+      - name: Run mypy type checker
+        run: uv run mypy dataquery/
+
+  build-and-integ:
+    needs: [tests, lint]
+    runs-on: ubuntu-latest
+    name: Build + Integration Tests (Python 3.11)
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python 3.11
+        run: uv python install 3.11
+
+      - name: Install project (dev + extras)
+        run: uv sync --all-extras --dev
+
+      - name: Build sdist & wheel
+        run: uv build --sdist --wheel
+
+      - name: Integration test artifacts (install wheel)
+        run: |
+          ls -l dist
+          rm -rf .venv
+          for pkg in dist/*.whl; do
+            echo "Testing wheel: $pkg[test]"
+            uv venv
+            uv pip install "$pkg[test]" pytest --force-reinstall
+            .venv/bin/pytest -v tests/ -s
+          done
+          
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts
+          path: |
+            dist/*.tar.gz
+            dist/*.whl

@@ -1,11 +1,20 @@
 """Tests for custom exceptions."""
 
-import pytest
 from dataquery.exceptions import (
-    DataQueryError, AuthenticationError, ValidationError, NotFoundError,
-    RateLimitError, NetworkError, ConfigurationError, DownloadError,
-    AvailabilityError, GroupNotFoundError, FileNotFoundError, DateRangeError,
-    FileTypeError, WorkflowError
+    AuthenticationError,
+    AvailabilityError,
+    ConfigurationError,
+    DataQueryError,
+    DateRangeError,
+    DownloadError,
+    FileNotFoundError,
+    FileTypeError,
+    GroupNotFoundError,
+    NetworkError,
+    NotFoundError,
+    RateLimitError,
+    ValidationError,
+    WorkflowError,
 )
 
 
@@ -22,7 +31,10 @@ class TestDataQueryError:
         """Test DataQueryError with details."""
         details = {"field": "test_field", "value": "test_value"}
         error = DataQueryError("Test error", details)
-        assert "Test error - Details: {'field': 'test_field', 'value': 'test_value'}" in str(error)
+        assert (
+            "Test error - Details: {'field': 'test_field', 'value': 'test_value'}"
+            in str(error)
+        )
         assert error.details == details
 
 
@@ -67,7 +79,10 @@ class TestNotFoundError:
     def test_not_found_error_with_custom_message(self):
         """Test NotFoundError with custom message."""
         error = NotFoundError("Resource", "test_id", "Custom not found message")
-        assert "Custom not found message - Details: {'resource_type': 'Resource', 'resource_id': 'test_id'}" in str(error)
+        assert (
+            "Custom not found message - Details: {'resource_type': 'Resource', 'resource_id': 'test_id'}"
+            in str(error)
+        )
 
 
 class TestRateLimitError:
@@ -120,14 +135,20 @@ class TestDownloadError:
     def test_download_error_basic(self):
         """Test basic DownloadError creation."""
         error = DownloadError("test_file", "test_group")
-        assert "Download failed - Details: {'file_group_id': 'test_file', 'group_id': 'test_group'}" in str(error)
+        assert (
+            "Download failed - Details: {'file_group_id': 'test_file', 'group_id': 'test_group'}"
+            in str(error)
+        )
         assert error.details["file_group_id"] == "test_file"
         assert error.details["group_id"] == "test_group"
 
     def test_download_error_with_custom_message(self):
         """Test DownloadError with custom message."""
         error = DownloadError("test_file", "test_group", "Custom download error")
-        assert "Custom download error - Details: {'file_group_id': 'test_file', 'group_id': 'test_group'}" in str(error)
+        assert (
+            "Custom download error - Details: {'file_group_id': 'test_file', 'group_id': 'test_group'}"
+            in str(error)
+        )
 
 
 class TestAvailabilityError:
@@ -136,14 +157,22 @@ class TestAvailabilityError:
     def test_availability_error_basic(self):
         """Test basic AvailabilityError creation."""
         error = AvailabilityError("test_file", "test_group")
-        assert "Availability check failed - Details: {'file_group_id': 'test_file', 'group_id': 'test_group'}" in str(error)
+        assert (
+            "Availability check failed - Details: {'file_group_id': 'test_file', 'group_id': 'test_group'}"
+            in str(error)
+        )
         assert error.details["file_group_id"] == "test_file"
         assert error.details["group_id"] == "test_group"
 
     def test_availability_error_with_custom_message(self):
         """Test AvailabilityError with custom message."""
-        error = AvailabilityError("test_file", "test_group", "Custom availability error")
-        assert "Custom availability error - Details: {'file_group_id': 'test_file', 'group_id': 'test_group'}" in str(error)
+        error = AvailabilityError(
+            "test_file", "test_group", "Custom availability error"
+        )
+        assert (
+            "Custom availability error - Details: {'file_group_id': 'test_file', 'group_id': 'test_group'}"
+            in str(error)
+        )
 
 
 class TestGroupNotFoundError:
@@ -193,7 +222,10 @@ class TestDateRangeError:
     def test_date_range_error_with_custom_message(self):
         """Test DateRangeError with custom message."""
         error = DateRangeError("20240101", "20241231", "Custom date range error")
-        assert "Custom date range error - Details: {'start_date': '20240101', 'end_date': '20241231'}" in str(error)
+        assert (
+            "Custom date range error - Details: {'start_date': '20240101', 'end_date': '20241231'}"
+            in str(error)
+        )
 
 
 class TestFileTypeError:
@@ -225,7 +257,10 @@ class TestWorkflowError:
     def test_workflow_error_with_custom_message(self):
         """Test WorkflowError with custom message."""
         error = WorkflowError("download_workflow", "Custom workflow error")
-        assert "Custom workflow error - Details: {'workflow_name': 'download_workflow'}" in str(error)
+        assert (
+            "Custom workflow error - Details: {'workflow_name': 'download_workflow'}"
+            in str(error)
+        )
         assert error.details["workflow_name"] == "download_workflow"
 
 
@@ -247,9 +282,9 @@ class TestExceptionHierarchy:
             FileNotFoundError("test_file", "test_group"),
             DateRangeError("20240101", "20241231"),
             FileTypeError("xyz"),
-            WorkflowError("test_workflow")
+            WorkflowError("test_workflow"),
         ]
-        
+
         for exc in exceptions:
             assert isinstance(exc, DataQueryError)
 
@@ -258,15 +293,15 @@ class TestExceptionHierarchy:
         group_error = GroupNotFoundError("test_group")
         assert isinstance(group_error, NotFoundError)
         assert isinstance(group_error, DataQueryError)
-        
+
         file_error = FileNotFoundError("test_file", "test_group")
         assert isinstance(file_error, NotFoundError)
         assert isinstance(file_error, DataQueryError)
-        
+
         date_error = DateRangeError("20240101", "20241231")
         assert isinstance(date_error, ValidationError)
         assert isinstance(date_error, DataQueryError)
-        
+
         file_type_error = FileTypeError("xyz")
         assert isinstance(file_type_error, ValidationError)
         assert isinstance(file_type_error, DataQueryError)
@@ -289,9 +324,11 @@ class TestExceptionStringRepresentation:
         """Test specific exception string representation."""
         not_found_error = NotFoundError("Resource", "test")
         assert "Resource not found: test" in str(not_found_error)
-        
+
         rate_limit_error = RateLimitError("Rate limit exceeded", retry_after=30)
-        assert "Rate limit exceeded - Details: {'retry_after': 30}" in str(rate_limit_error)
+        assert "Rate limit exceeded - Details: {'retry_after': 30}" in str(
+            rate_limit_error
+        )
 
 
 class TestExceptionAttributes:
@@ -346,4 +383,4 @@ class TestExceptionAttributes:
         """Test WorkflowError attributes."""
         error = WorkflowError("test_workflow", "Workflow error")
         assert error.details["workflow_name"] == "test_workflow"
-        assert error.message == "Workflow error" 
+        assert error.message == "Workflow error"

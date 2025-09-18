@@ -1,4 +1,4 @@
-from dataquery.utils import format_file_size, format_duration
+from dataquery.utils import format_duration, format_file_size
 
 
 def test_format_file_size_edges():
@@ -11,4 +11,3 @@ def test_format_duration_edges():
     assert format_duration(0) == "0s"
     assert format_duration(-1).endswith("s")
     assert format_duration(120).startswith("2m")
-
