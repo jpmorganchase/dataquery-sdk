@@ -96,7 +96,13 @@ all = [
     "pandas>=2.0.0",
     "pip-audit>=2.7.0",
 ]
-
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-asyncio",
+    "flake8",
+    "anyio",
+]
 [project.scripts]
 dataquery = "dataquery.cli:main"
 
