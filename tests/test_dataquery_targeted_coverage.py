@@ -109,6 +109,7 @@ async def test_run_availability_async_report():
         assert report["file_datetime"] == "20240101"
         assert report["is_available"] is True
 
+
 #
 # @pytest.mark.asyncio
 # async def test_run_download_async_report_from_result():

@@ -589,11 +589,15 @@ class FileInfo(BaseModel):
 
     def is_csv(self) -> bool:
         """Check if file is CSV format."""
-        return bool(self.file_type) and any((t or "").lower() == "csv" for t in (self.file_type or []))
+        return bool(self.file_type) and any(
+            (t or "").lower() == "csv" for t in (self.file_type or [])
+        )
 
     def is_json(self) -> bool:
         """Check if file is JSON format."""
-        return bool(self.file_type) and any((t or "").lower() == "json" for t in (self.file_type or []))
+        return bool(self.file_type) and any(
+            (t or "").lower() == "json" for t in (self.file_type or [])
+        )
 
 
 class FileList(BaseModel):

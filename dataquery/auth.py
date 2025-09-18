@@ -303,7 +303,11 @@ class TokenManager:
         return {
             "status": self.current_token.status.value,
             "token_type": self.current_token.token_type,
-            "issued_at": self.current_token.issued_at.isoformat() if self.current_token.issued_at else None,
+            "issued_at": (
+                self.current_token.issued_at.isoformat()
+                if self.current_token.issued_at
+                else None
+            ),
             "expires_at": (
                 self.current_token.expires_at.isoformat()
                 if self.current_token.expires_at

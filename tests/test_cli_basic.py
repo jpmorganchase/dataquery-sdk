@@ -10,6 +10,7 @@ from dataquery import cli
 def _parser():
     return cli.create_parser()
 
+
 #
 # def test_cli_no_command_prints_help(capsys):
 #     parser = _parser()
@@ -123,7 +124,7 @@ async def test_cli_download_missing_group_id_in_watch(monkeypatch, capsys):
 #     rc = await cli.cmd_download(args)
 #     out = capsys.readouterr().out
 #     assert rc == 0
-    # assert str(dest) in out
+# assert str(dest) in out
 
 
 def test_cli_config_show_and_validate(monkeypatch, capsys, tmp_path):

@@ -779,9 +779,9 @@ class DataQueryClient:
             params["limit"] = str(limit)
 
         try:
-            async with (await self._make_authenticated_request(
+            async with await self._make_authenticated_request(
                 "GET", url, params=params
-            )) as response:
+            ) as response:
                 await self._handle_response(response)
                 data = await response.json()
 
@@ -819,9 +819,9 @@ class DataQueryClient:
                 page_count += 1
                 self.logger.info("Fetching groups page", page=page_count, url=next_url)
 
-                async with (await self._make_authenticated_request(
+                async with await self._make_authenticated_request(
                     "GET", next_url
-                )) as response:
+                ) as response:
                     await self._handle_response(response)
                     data = await response.json()
 
@@ -883,9 +883,9 @@ class DataQueryClient:
         url = self._build_api_url("groups/search")
 
         try:
-            async with (await self._make_authenticated_request(
+            async with await self._make_authenticated_request(
                 "GET", url, params=params
-            )) as response:
+            ) as response:
                 await self._handle_response(response)
                 data = await response.json()
 
@@ -923,9 +923,9 @@ class DataQueryClient:
         url = self._build_files_api_url("group/files")
 
         try:
-            async with (await self._make_authenticated_request(
+            async with await self._make_authenticated_request(
                 "GET", url, params=params
-            )) as response:
+            ) as response:
                 await self._handle_response(response)
                 data = await response.json()
 
@@ -979,9 +979,9 @@ class DataQueryClient:
         url = self._build_files_api_url("group/file/availability")
 
         try:
-            async with (await self._make_authenticated_request(
+            async with await self._make_authenticated_request(
                 "GET", url, params=params
-            )) as response:
+            ) as response:
                 await self._handle_response(response)
                 data = await response.json()
                 # Extract a single availability item matching the requested datetime if present
@@ -1329,9 +1329,9 @@ class DataQueryClient:
             url = self._build_files_api_url("group/file/download")
 
             # Support either an awaitable that yields a context manager, or a context manager directly
-            async with (await self._make_authenticated_request(
+            async with await self._make_authenticated_request(
                 "GET", url, params=params, headers=headers
-            )) as response:
+            ) as response:
                 await self._handle_response(response)
 
                 # Extract filename from Content-Disposition header or generate one
@@ -1506,7 +1506,7 @@ class DataQueryClient:
         """Check if the DataQuery service is available."""
         try:
             url = self._build_api_url("services/heartbeat")
-            async with (await self._make_authenticated_request("GET", url)) as response:
+            async with await self._make_authenticated_request("GET", url) as response:
                 return response.status == 200
         except Exception as e:
             logger.error("Health check failed", error=str(e))
@@ -1537,7 +1537,7 @@ class DataQueryClient:
             params["page"] = page
 
         url = self._build_api_url("group/instruments")
-        async with (await self._enter_request_cm("GET", url, params=params)) as response:
+        async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             data = await response.json()
             return InstrumentsResponse(**data)
@@ -1561,7 +1561,7 @@ class DataQueryClient:
             params["page"] = page
 
         url = self._build_api_url("group/instruments/search")
-        async with (await self._enter_request_cm("GET", url, params=params)) as response:
+        async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             data = await response.json()
             return InstrumentsResponse(**data)
@@ -1649,7 +1649,7 @@ class DataQueryClient:
             params["page"] = page
 
         url = self._build_api_url("instruments/time-series")
-        async with (await self._enter_request_cm("GET", url, params=params)) as response:
+        async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             payload = await response.json()
             return TimeSeriesResponse(**payload)
@@ -1703,7 +1703,7 @@ class DataQueryClient:
             params["page"] = page
 
         url = self._build_api_url("expressions/time-series")
-        async with (await self._enter_request_cm("GET", url, params=params)) as response:
+        async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             payload = await response.json()
             return TimeSeriesResponse(**payload)
@@ -1727,7 +1727,7 @@ class DataQueryClient:
             params["page"] = page
 
         url = self._build_api_url("group/filters")
-        async with (await self._enter_request_cm("GET", url, params=params)) as response:
+        async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             payload = await response.json()
             return FiltersResponse(**payload)
@@ -1756,7 +1756,7 @@ class DataQueryClient:
             params["page"] = page
 
         url = self._build_api_url("group/attributes")
-        async with (await self._enter_request_cm("GET", url, params=params)) as response:
+        async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             payload = await response.json()
             return AttributesResponse(**payload)
@@ -1817,7 +1817,7 @@ class DataQueryClient:
             params["page"] = page
 
         url = self._build_api_url("group/time-series")
-        async with (await self._enter_request_cm("GET", url, params=params)) as response:
+        async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             payload = await response.json()
             return TimeSeriesResponse(**payload)
@@ -1857,7 +1857,7 @@ class DataQueryClient:
             params["date"] = date
 
         url = self._build_api_url("grid-data")
-        async with (await self._enter_request_cm("GET", url, params=params)) as response:
+        async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             payload = await response.json()
             return GridDataResponse(**payload)

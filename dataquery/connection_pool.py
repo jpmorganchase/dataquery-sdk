@@ -278,14 +278,21 @@ class ConnectionPoolMonitor:
             }
 
             # Use aiohttp's built-in stats if available (more efficient)
-            if self.connector is not None and hasattr(self.connector, "closed") and not self.connector.closed:
+            if (
+                self.connector is not None
+                and hasattr(self.connector, "closed")
+                and not self.connector.closed
+            ):
                 # Try to get stats from aiohttp's internal structures
                 total_connections = 0
                 active_connections = 0
                 idle_connections = 0
 
                 # Check if we have the newer aiohttp stats API
-                if hasattr(self.connector, "_conns") and self.connector._conns is not None:
+                if (
+                    hasattr(self.connector, "_conns")
+                    and self.connector._conns is not None
+                ):
                     try:
                         # More efficient iteration
                         for host_connections in self.connector._conns.values():
