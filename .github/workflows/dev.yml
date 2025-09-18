@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        python-versions: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        python-versions: ["3.10", "3.11", "3.12", "3.13"]
     name: Tests on Python ${{ matrix.python-versions }}
     runs-on: ubuntu-latest
 
