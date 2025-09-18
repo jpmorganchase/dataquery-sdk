@@ -71,6 +71,22 @@ dev = [
     "pre-commit>=3.0.0",
     "pip-audit>=2.7.0",
 ]
+test = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.5.0",
+    "isort>=5.12.0",
+    "pre-commit>=3.0.0",
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.0.0",
+    "mkdocstrings[python]>=0.24.0",
+    "mike>=1.1.0",
+    "pandas>=2.0.0",
+    "pip-audit>=2.7.0",
+]
 docs = [
     "mkdocs>=1.5.0",
     "mkdocs-material>=9.0.0",
@@ -96,13 +112,7 @@ all = [
     "pandas>=2.0.0",
     "pip-audit>=2.7.0",
 ]
-[project.optional-dependencies]
-test = [
-    "pytest",
-    "pytest-asyncio",
-    "flake8",
-    "anyio",
-]
+
 [project.scripts]
 dataquery = "dataquery.cli:main"
 
