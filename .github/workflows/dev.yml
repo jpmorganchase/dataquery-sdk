@@ -101,9 +101,9 @@ jobs:
           ls -l dist
           rm -rf .venv
           for pkg in dist/*.whl; do
-            echo "Testing wheel: $pkg"
+            echo "Testing wheel: $pkg[test]"
             uv venv
-            uv pip install "$pkg" pytest --force-reinstall
+            uv pip install "$pkg[test]" pytest --force-reinstall
             .venv/bin/pytest -v tests/ -s
           done
           
