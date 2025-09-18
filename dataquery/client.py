@@ -1610,7 +1610,6 @@ class DataQueryClient:
             validate_date_format(end_date, "end-date")
         """
         Retrieve time-series data for explicit list of instruments and attributes using identifiers.
-        
         Args:
             instruments: List of instrument identifiers
             attributes: List of attribute identifiers
@@ -1623,7 +1622,6 @@ class DataQueryClient:
             conversion: Conversion convention
             nan_treatment: Missing data treatment
             page: Optional page token for pagination
-            
         Returns:
             TimeSeriesResponse containing the time series data
         """
@@ -2765,7 +2763,6 @@ class DataQueryClient:
 
     def _run_sync(self, coro):
         try:
-            loop = asyncio.get_running_loop()
             import concurrent.futures
 
             with concurrent.futures.ThreadPoolExecutor() as executor:

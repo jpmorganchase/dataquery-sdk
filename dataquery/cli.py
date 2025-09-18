@@ -169,7 +169,7 @@ async def cmd_download(args: argparse.Namespace) -> int:
 def cmd_config_show(args: argparse.Namespace) -> int:
     from dataquery.config import EnvConfig
 
-    cfg = EnvConfig.create_client_config(
+    EnvConfig.create_client_config(
         env_file=Path(args.env_file) if getattr(args, "env_file", None) else None
     )
     print("Configuration loaded")
