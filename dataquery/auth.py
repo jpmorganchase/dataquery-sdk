@@ -259,18 +259,14 @@ class TokenManager:
             # Write to temporary file first, then rename for atomic operation
             temp_file = self.token_file.with_suffix(".tmp")
             with open(temp_file, "w") as f:
+                # Set restrictive permissions on the temp file (owner read/write only)
+                import os
+
+                os.chmod(temp_file, 0o600)
                 json.dump(token_data, f, indent=2)
-
-            # Set restrictive permissions on the temp file (owner read/write only)
-            import os
-
-            os.chmod(temp_file, 0o600)
 
             # Atomic rename
             temp_file.replace(self.token_file)
-
-            # Ensure the final file also has restrictive permissions
-            os.chmod(self.token_file, 0o600)
 
             logger.debug("Token saved to storage with secure permissions")
 

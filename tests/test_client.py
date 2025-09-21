@@ -4,8 +4,15 @@ This file combines all client tests for maximum coverage and maintainability.
 """
 
 import asyncio
-from unittest.mock import AsyncMock, Mock, patch
+import json
+import shutil
+import tempfile
+from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Any, Dict, List
+from unittest.mock import AsyncMock, MagicMock, Mock, call, patch
 
+import aiohttp
 import pytest
 
 from dataquery.client import (
@@ -19,17 +26,31 @@ from dataquery.client import (
 )
 from dataquery.exceptions import (
     AuthenticationError,
+    AvailabilityError,
     ConfigurationError,
+    DownloadError,
     NetworkError,
     NotFoundError,
     RateLimitError,
     ValidationError,
 )
 from dataquery.models import (
+    AttributesResponse,
+    AvailabilityInfo,
     ClientConfig,
     DownloadOptions,
+    DownloadProgress,
+    DownloadResult,
     DownloadStatus,
+    FileInfo,
     FileList,
+    FiltersResponse,
+    GridDataResponse,
+    Group,
+    GroupList,
+    InstrumentsResponse,
+    OAuthToken,
+    TimeSeriesResponse,
 )
 
 
@@ -1471,7 +1492,7 @@ class TestDataQueryClientAPI:
 
         client.download_file_async = AsyncMock(return_value=expected_result)
 
-        options = DownloadOptions(overwrite_existing=True)
+        options = DownloadOptions(output_dir="/tmp", overwrite_existing=True)
         result = await client.download_file_async("file123", options=options)
 
         assert result.success is True
@@ -1723,18 +1744,20 @@ class TestDataQueryClientSyncWrappers:
             mock_run.assert_called_once()
             assert result == expected_result
 
-    # def test_download_file_sync(self):
-    #     """Test synchronous download_file."""
-    #     client = create_test_client()
-    #
-    #     expected_result = Mock()
-    #
-    #     with patch("asyncio.run") as mock_run:
-    #         mock_run.return_value = expected_result
-    #         result = client.download_file("file123")
-    #
-    #         mock_run.assert_called_once()
-    #         assert result == expected_result
+    def test_download_file_sync(self):
+        """Test synchronous download_file."""
+        client = create_test_client()
+
+        expected_result = Mock()
+
+        with patch("asyncio.run") as mock_run:
+            mock_run.return_value = expected_result
+
+            options = DownloadOptions(output_dir="./downloads")
+            result = client.download_file("file123", options)
+
+            mock_run.assert_called_once()
+            assert result == expected_result
 
     def test_all_sync_wrappers_call_asyncio_run(self):
         """Test that all sync methods properly call asyncio.run."""
@@ -1778,8 +1801,8 @@ class TestAdvancedScenarios:
             "_ensure_authenticated",
             side_effect=AuthenticationError("Not authenticated"),
         ):
-
-            result = await client.download_file_async("file123", "20240115")
+            options = DownloadOptions(destination_path="./downloads")
+            result = await client.download_file_async("file123", "20240115", options)
 
             assert result.status != DownloadStatus.COMPLETED
             assert "Not authenticated" in str(result.error_message)
@@ -1790,8 +1813,8 @@ class TestAdvancedScenarios:
             "_make_authenticated_request",
             side_effect=NetworkError("Network failed"),
         ):
-
-            result = await client.download_file_async("file123", "20240115")
+            options = DownloadOptions(destination_path="./downloads")
+            result = await client.download_file_async("file123", "20240115", options)
 
             assert result.status != DownloadStatus.COMPLETED
             assert "Network failed" in str(result.error_message)

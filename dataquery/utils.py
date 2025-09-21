@@ -385,7 +385,8 @@ def validate_env_config() -> None:
         raise ValueError("DATAQUERY_BASE_URL is required")
 
     # Validate OAuth configuration
-    oauth_enabled = get_env_value("DATAQUERY_OAUTH_ENABLED", "false").lower() == "true"
+    oauth_enabled_val = get_env_value("DATAQUERY_OAUTH_ENABLED", "false")
+    oauth_enabled = (oauth_enabled_val or "false").lower() == "true"
     if oauth_enabled:
         client_id = get_env_value("DATAQUERY_CLIENT_ID")
         client_secret = get_env_value("DATAQUERY_CLIENT_SECRET")

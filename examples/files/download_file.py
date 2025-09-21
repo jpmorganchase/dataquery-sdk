@@ -1,8 +1,9 @@
 import asyncio
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-from dataquery.dataquery import DataQuery
+from dataquery import DataQuery
 from dataquery.models import DownloadOptions, DownloadProgress
 
 
@@ -26,14 +27,15 @@ async def main():
     dest = input("Destination directory [./downloads]: ").strip() or "./downloads"
     overwrite = input("Overwrite existing? (y/N) [N]: ").strip().lower() in ("y", "yes")
 
-    options = DownloadOptions(destination_path=dest, overwrite_existing=overwrite)
+    options = DownloadOptions(overwrite_existing=overwrite)
 
     try:
         async with DataQuery() as dq:
-            # Use the client-level parallel downloader
-            result = await dq._client.download_file_async(
+            # Use the SDK download method
+            result = await dq.download_file_async(
                 file_group_id=file_group_id,
                 file_datetime=file_datetime,
+                destination_path=Path(dest),
                 options=options,
                 progress_callback=simple_progress_callback,
             )

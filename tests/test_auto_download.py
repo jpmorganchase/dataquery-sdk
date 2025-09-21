@@ -10,6 +10,8 @@ from dataquery.models import (
     DownloadProgress,
     DownloadResult,
     DownloadStatus,
+    FileInfo,
+    FileList,
 )
 
 

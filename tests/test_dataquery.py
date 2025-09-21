@@ -1,23 +1,29 @@
 import asyncio
 import os
 import tempfile
+from datetime import datetime
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pytest
 
+from dataquery.client import format_duration, format_file_size
 from dataquery.dataquery import (
     ConfigManager,
     DataQuery,
     ProgressTracker,
+    get_download_paths,
     setup_logging,
 )
+from dataquery.exceptions import ConfigurationError
 from dataquery.models import (
     Attribute,
     AttributesResponse,
     AvailabilityInfo,
     ClientConfig,
+    DateRange,
     DownloadOptions,
+    DownloadProgress,
     DownloadResult,
     DownloadStatus,
     FileInfo,
@@ -31,12 +37,7 @@ from dataquery.models import (
     InstrumentWithAttributes,
     TimeSeriesResponse,
 )
-from dataquery.utils import (
-    ensure_directory,
-    format_duration,
-    format_file_size,
-    get_download_paths,
-)
+from dataquery.utils import ensure_directory
 
 
 class TestUtilityFunctions:
@@ -53,19 +54,20 @@ class TestUtilityFunctions:
     def test_format_file_size(self):
         """Test format_file_size function."""
         assert format_file_size(0) == "0 B"
-        assert format_file_size(1024) == "1.0 KB"
-        assert format_file_size(1024 * 1024) == "1.0 MB"
-        assert format_file_size(1024 * 1024 * 1024) == "1.0 GB"
-        assert format_file_size(1024 * 1024 * 1024 * 1024) == "1.0 TB"
-        assert format_file_size(1500) == "1.5 KB"
-        assert format_file_size(500) == "500 B"
+        assert format_file_size(1024) == "1.00 KB"
+        assert format_file_size(1024 * 1024) == "1.00 MB"
+        assert format_file_size(1024 * 1024 * 1024) == "1.00 GB"
+        assert format_file_size(1024 * 1024 * 1024 * 1024) == "1.00 TB"
+        assert format_file_size(1500) == "1.46 KB"
+        assert format_file_size(500) == "500.00 B"
 
     def test_format_duration(self):
         """Test format_duration function."""
         assert format_duration(30.5) == "30.5s"
-        assert format_duration(7200.0) == "2h"
+        assert format_duration(90.0) == "1.5m"
+        assert format_duration(7200.0) == "2.0h"
         assert format_duration(0.5) == "0.5s"
-        assert format_duration(3600.0) == "1h"
+        assert format_duration(3600.0) == "1.0h"
 
     def test_ensure_directory(self):
         """Test ensure_directory function."""
@@ -139,7 +141,7 @@ class TestConfigManager:
             # Just check that the method was called, not exact equality
             assert result is not None
             # Fix: The actual implementation calls create_client_config directly
-            mock_create_config.assert_called_once_with(Path(".env"))
+            mock_create_config.assert_called_once_with(env_file=Path(".env"))
 
     def test_get_client_config_without_env_file(self):
         """Test get_client_config without environment file."""
@@ -159,7 +161,7 @@ class TestConfigManager:
             # Just check that the method was called, not exact equality
             assert result is not None
             # Fix: The actual implementation calls create_client_config directly
-            mock_create_config.assert_called_once_with(None)
+            mock_create_config.assert_called_once_with(env_file=None)
 
     def test_get_default_config(self):
         """Test _get_default_config method."""
@@ -283,113 +285,6 @@ class TestDataQueryInitialization:
                 mock_config_manager.assert_called_once()
                 call_args = mock_config_manager.call_args
                 assert call_args[0][0] is None  # First positional argument
-
-
-class TestDataQueryEventLoopManagement:
-    """Test DataQuery event loop management methods."""
-
-    def test_get_or_create_loop_no_running_loop(self):
-        """Test _get_or_create_loop when no event loop is running."""
-        config = ClientConfig(
-            base_url="https://api.example.com",
-            oauth_enabled=False,
-            bearer_token="test_token",
-        )
-
-        with patch("dataquery.dataquery.EnvConfig.validate_config"):
-            dataquery = DataQuery(config)
-
-            with patch("asyncio.get_running_loop") as mock_get_running:
-                mock_get_running.side_effect = RuntimeError("No running event loop")
-
-                with patch("asyncio.new_event_loop") as mock_new_loop:
-                    with patch("asyncio.set_event_loop") as mock_set_loop:
-                        mock_loop = MagicMock()
-                        mock_new_loop.return_value = mock_loop
-
-                        result = dataquery._get_or_create_loop()
-
-                        assert result == mock_loop
-                        assert dataquery._own_loop is True
-                        mock_new_loop.assert_called_once()
-                        mock_set_loop.assert_called_once_with(mock_loop)
-
-    def test_get_or_create_loop_with_running_loop(self):
-        """Test _get_or_create_loop when an event loop is already running."""
-        config = ClientConfig(
-            base_url="https://api.example.com",
-            oauth_enabled=False,
-            bearer_token="test_token",
-        )
-
-        with patch("dataquery.dataquery.EnvConfig.validate_config"):
-            dataquery = DataQuery(config)
-
-            mock_loop = MagicMock()
-            with patch("asyncio.get_running_loop", return_value=mock_loop):
-                result = dataquery._get_or_create_loop()
-
-                assert result == mock_loop
-                assert dataquery._own_loop is False
-
-    def test_run_async_with_own_loop(self):
-        """Test _run_async when we own the event loop."""
-        config = ClientConfig(
-            base_url="https://api.example.com",
-            oauth_enabled=False,
-            bearer_token="test_token",
-        )
-
-        with patch("dataquery.dataquery.EnvConfig.validate_config"):
-            dataquery = DataQuery(config)
-            dataquery._own_loop = True
-
-            mock_loop = MagicMock()
-            mock_loop.run_until_complete.return_value = "test_result"
-
-            with patch.object(dataquery, "_get_or_create_loop", return_value=mock_loop):
-
-                async def test_coro():
-                    return "test_result"
-
-                result = dataquery._run_async(test_coro())
-
-                assert result == "test_result"
-                mock_loop.run_until_complete.assert_called_once()
-                mock_loop.close.assert_called_once()
-                assert dataquery._own_loop is False
-
-    def test_run_async_with_existing_loop(self):
-        """Test _run_async when an event loop is already running."""
-        config = ClientConfig(
-            base_url="https://api.example.com",
-            oauth_enabled=False,
-            bearer_token="test_token",
-        )
-
-        with patch("dataquery.dataquery.EnvConfig.validate_config"):
-            dataquery = DataQuery(config)
-            dataquery._own_loop = False
-
-            # Mock asyncio.get_running_loop to simulate an existing event loop
-            with patch("asyncio.get_running_loop") as mock_get_running:
-                mock_loop = MagicMock()
-                mock_get_running.return_value = mock_loop
-
-                with patch("concurrent.futures.ThreadPoolExecutor") as mock_executor:
-                    mock_future = MagicMock()
-                    mock_future.result.return_value = "test_result"
-                    mock_executor.return_value.__enter__.return_value.submit.return_value = (
-                        mock_future
-                    )
-
-                    async def test_coro():
-                        return "test_result"
-
-                    result = dataquery._run_async(test_coro())
-
-                    assert result == "test_result"
-                    mock_executor.assert_called_once()
 
 
 class TestDataQueryContextManager:
@@ -627,7 +522,7 @@ class TestDataQueryAsyncMethods:
                 assert result == mock_result
                 # Fix: The actual method signature is different - destination_path is passed separately
                 mock_client.download_file_async.assert_called_once_with(
-                    "file1", "20200101", options, None
+                    "file1", "20200101", options, 5, None
                 )
 
     @pytest.mark.asyncio
@@ -1100,14 +995,14 @@ class TestDataQuerySyncMethods:
 
                 dataquery = DataQuery(config)
 
-                with patch.object(dataquery, "_run_async") as mock_run_async:
+                with patch.object(dataquery, "_run_sync") as mock_run_sync:
                     dataquery.connect()
-                    mock_run_async.assert_called_once()
+                    mock_run_sync.assert_called_once()
 
                     dataquery.close()
-                    # The close method might not call _run_async if client is None
+                    # The close method might not call _run_sync if client is None
                     # Let's check if it was called at least once (for connect)
-                    assert mock_run_async.call_count >= 1
+                    assert mock_run_sync.call_count >= 1
 
     def test_list_groups_sync(self):
         """Test list_groups sync wrapper."""
@@ -1127,13 +1022,13 @@ class TestDataQuerySyncMethods:
 
                 dataquery = DataQuery(config)
 
-                with patch.object(dataquery, "_run_async") as mock_run_async:
-                    mock_run_async.return_value = mock_groups
+                with patch.object(dataquery, "_run_sync") as mock_run_sync:
+                    mock_run_sync.return_value = mock_groups
 
                     result = dataquery.run_groups(max_concurrent=2)
 
                     assert result == mock_groups
-                    mock_run_async.assert_called_once()
+                    mock_run_sync.assert_called_once()
 
     def test_search_groups_sync(self):
         """Test search_groups sync wrapper."""
@@ -1155,13 +1050,13 @@ class TestDataQuerySyncMethods:
 
                 dataquery = DataQuery(config)
 
-                with patch.object(dataquery, "_run_async") as mock_run_async:
-                    mock_run_async.return_value = mock_groups
+                with patch.object(dataquery, "_run_sync") as mock_run_sync:
+                    mock_run_sync.return_value = mock_groups
 
-                    result = dataquery.run_groups(max_concurrent=2)
+                    result = dataquery.search_groups("test", limit=5, offset=0)
 
                     assert result == mock_groups
-                    mock_run_async.assert_called_once()
+                    mock_run_sync.assert_called_once()
 
     def test_list_files_sync(self):
         """Test list_files sync wrapper."""
@@ -1183,13 +1078,13 @@ class TestDataQuerySyncMethods:
 
                 dataquery = DataQuery(config)
 
-                with patch.object(dataquery, "_run_async") as mock_run_async:
-                    mock_run_async.return_value = mock_files
+                with patch.object(dataquery, "_run_sync") as mock_run_sync:
+                    mock_run_sync.return_value = mock_files
 
-                    result = dataquery.run_group_files("group1", max_concurrent=2)
+                    result = dataquery.list_files("group1")
 
                     assert result == mock_files
-                    mock_run_async.assert_called_once()
+                    mock_run_sync.assert_called_once()
 
     def test_check_availability_sync(self):
         """Test check_availability sync wrapper."""
@@ -1212,13 +1107,13 @@ class TestDataQuerySyncMethods:
 
                 dataquery = DataQuery(config)
 
-                with patch.object(dataquery, "_run_async") as mock_run_async:
-                    mock_run_async.return_value = mock_availability
+                with patch.object(dataquery, "_run_sync") as mock_run_sync:
+                    mock_run_sync.return_value = mock_availability
 
                     result = dataquery.check_availability("file1", "20200101")
 
                     assert result == mock_availability
-                    mock_run_async.assert_called_once()
+                    mock_run_sync.assert_called_once()
 
     def test_download_file_sync(self):
         """Test download_file sync wrapper."""
@@ -1246,13 +1141,13 @@ class TestDataQuerySyncMethods:
 
                 dataquery = DataQuery(config)
 
-                with patch.object(dataquery, "_run_async") as mock_run_async:
-                    mock_run_async.return_value = mock_result
+                with patch.object(dataquery, "_run_sync") as mock_run_sync:
+                    mock_run_sync.return_value = mock_result
 
                     result = dataquery.run_download("file1", "20200101")
 
                     assert result == mock_result
-                    mock_run_async.assert_called_once()
+                    mock_run_sync.assert_called_once()
 
     def test_list_available_files_sync(self):
         """Test list_available_files sync wrapper."""
@@ -1268,17 +1163,15 @@ class TestDataQuerySyncMethods:
                 mock_client_class.return_value = mock_client
 
                 mock_files = [{"file_id": "file1", "is_available": True}]
-                mock_client.list_available_files_async.return_value = mock_files
-
                 dataquery = DataQuery(config)
 
-                with patch.object(dataquery, "_run_async") as mock_run_async:
-                    mock_run_async.return_value = mock_files
+                with patch.object(dataquery, "_run_sync") as mock_run_sync:
+                    mock_run_sync.return_value = mock_files
 
-                    result = dataquery.run_group_files("group1", max_concurrent=2)
+                    result = dataquery.list_available_files("group1")
 
                     assert result == mock_files
-                    mock_run_async.assert_called_once()
+                    mock_run_sync.assert_called_once()
 
     def test_health_check_sync(self):
         """Test health_check sync wrapper."""
@@ -1298,13 +1191,13 @@ class TestDataQuerySyncMethods:
 
                 dataquery = DataQuery(config)
 
-                with patch.object(dataquery, "_run_async") as mock_run_async:
-                    mock_run_async.return_value = mock_health
+                with patch.object(dataquery, "_run_sync") as mock_run_sync:
+                    mock_run_sync.return_value = mock_health
 
                     result = dataquery.health_check()
 
                     assert result == mock_health
-                    mock_run_async.assert_called_once()
+                    mock_run_sync.assert_called_once()
 
     def test_list_instruments_sync(self):
         """Test list_instruments sync wrapper."""
@@ -1328,15 +1221,15 @@ class TestDataQuerySyncMethods:
 
                 dataquery = DataQuery(config)
 
-                with patch.object(dataquery, "_run_async") as mock_run_async:
-                    mock_run_async.return_value = mock_instruments
+                with patch.object(dataquery, "_run_sync") as mock_run_sync:
+                    mock_run_sync.return_value = mock_instruments
 
                     result = dataquery.list_instruments(
                         "group1", "INSTR1", "page_token"
                     )
 
                     assert result == mock_instruments
-                    mock_run_async.assert_called_once()
+                    mock_run_sync.assert_called_once()
 
     def test_search_instruments_sync(self):
         """Test search_instruments sync wrapper."""
@@ -1366,15 +1259,15 @@ class TestDataQuerySyncMethods:
 
                 dataquery = DataQuery(config)
 
-                with patch.object(dataquery, "_run_async") as mock_run_async:
-                    mock_run_async.return_value = mock_instruments
+                with patch.object(dataquery, "_run_sync") as mock_run_sync:
+                    mock_run_sync.return_value = mock_instruments
 
                     result = dataquery.search_instruments(
                         "group1", "test", "page_token"
                     )
 
                     assert result == mock_instruments
-                    mock_run_async.assert_called_once()
+                    mock_run_sync.assert_called_once()
 
     def test_get_instrument_time_series_sync(self):
         """Test get_instrument_time_series sync wrapper."""
@@ -1415,8 +1308,8 @@ class TestDataQuerySyncMethods:
 
                 dataquery = DataQuery(config)
 
-                with patch.object(dataquery, "_run_async") as mock_run_async:
-                    mock_run_async.return_value = mock_time_series
+                with patch.object(dataquery, "_run_sync") as mock_run_sync:
+                    mock_run_sync.return_value = mock_time_series
 
                     result = dataquery.get_instrument_time_series(
                         instruments=["INSTR1"],
@@ -1426,7 +1319,7 @@ class TestDataQuerySyncMethods:
                     )
 
                     assert result == mock_time_series
-                    mock_run_async.assert_called_once()
+                    mock_run_sync.assert_called_once()
 
     def test_get_expressions_time_series_sync(self):
         """Test get_expressions_time_series sync wrapper."""
@@ -1467,8 +1360,8 @@ class TestDataQuerySyncMethods:
 
                 dataquery = DataQuery(config)
 
-                with patch.object(dataquery, "_run_async") as mock_run_async:
-                    mock_run_async.return_value = mock_time_series
+                with patch.object(dataquery, "_run_sync") as mock_run_sync:
+                    mock_run_sync.return_value = mock_time_series
 
                     result = dataquery.get_expressions_time_series(
                         expressions=["DB(BIGI,ABS,Q10,TR)"],
@@ -1477,7 +1370,7 @@ class TestDataQuerySyncMethods:
                     )
 
                     assert result == mock_time_series
-                    mock_run_async.assert_called_once()
+                    mock_run_sync.assert_called_once()
 
     def test_get_group_filters_sync(self):
         """Test get_group_filters sync wrapper."""
@@ -1504,13 +1397,13 @@ class TestDataQuerySyncMethods:
 
                 dataquery = DataQuery(config)
 
-                with patch.object(dataquery, "_run_async") as mock_run_async:
-                    mock_run_async.return_value = mock_filters
+                with patch.object(dataquery, "_run_sync") as mock_run_sync:
+                    mock_run_sync.return_value = mock_filters
 
                     result = dataquery.get_group_filters("group1", "page_token")
 
                     assert result == mock_filters
-                    mock_run_async.assert_called_once()
+                    mock_run_sync.assert_called_once()
 
     def test_get_group_attributes_sync(self):
         """Test get_group_attributes sync wrapper."""
@@ -1554,15 +1447,15 @@ class TestDataQuerySyncMethods:
 
                 dataquery = DataQuery(config)
 
-                with patch.object(dataquery, "_run_async") as mock_run_async:
-                    mock_run_async.return_value = mock_attributes
+                with patch.object(dataquery, "_run_sync") as mock_run_sync:
+                    mock_run_sync.return_value = mock_attributes
 
                     result = dataquery.get_group_attributes(
                         "group1", "INSTR1", "page_token"
                     )
 
                     assert result == mock_attributes
-                    mock_run_async.assert_called_once()
+                    mock_run_sync.assert_called_once()
 
     def test_get_group_time_series_sync(self):
         """Test get_group_time_series sync wrapper."""
@@ -1601,8 +1494,8 @@ class TestDataQuerySyncMethods:
 
                 dataquery = DataQuery(config)
 
-                with patch.object(dataquery, "_run_async") as mock_run_async:
-                    mock_run_async.return_value = mock_time_series
+                with patch.object(dataquery, "_run_sync") as mock_run_sync:
+                    mock_run_sync.return_value = mock_time_series
 
                     result = dataquery.get_group_time_series(
                         group_id="group1",
@@ -1613,7 +1506,7 @@ class TestDataQuerySyncMethods:
                     )
 
                     assert result == mock_time_series
-                    mock_run_async.assert_called_once()
+                    mock_run_sync.assert_called_once()
 
     def test_get_grid_data_sync(self):
         """Test get_grid_data sync wrapper."""
@@ -1640,8 +1533,8 @@ class TestDataQuerySyncMethods:
 
                 dataquery = DataQuery(config)
 
-                with patch.object(dataquery, "_run_async") as mock_run_async:
-                    mock_run_async.return_value = mock_grid_data
+                with patch.object(dataquery, "_run_sync") as mock_run_sync:
+                    mock_run_sync.return_value = mock_grid_data
 
                     result = dataquery.get_grid_data(
                         expr="DBGRID(EQTY,2823 HK,ABS_REL,ATMF,CLOSE,VOL)",
@@ -1649,7 +1542,7 @@ class TestDataQuerySyncMethods:
                     )
 
                     assert result == mock_grid_data
-                    mock_run_async.assert_called_once()
+                    mock_run_sync.assert_called_once()
 
 
 class TestDataQueryWorkflowMethods:
@@ -1678,16 +1571,16 @@ class TestDataQueryWorkflowMethods:
                     ),
                 ]
 
-                # Mock the list_all_groups_async method that is called by list_groups_async when no limit is provided
-                mock_client.list_all_groups_async.return_value = mock_groups
+                # Mock the list_groups_async method that is called with default limit=100
+                mock_client.list_groups_async.return_value = mock_groups
 
                 dataquery = DataQuery(config)
                 dataquery._client = mock_client
 
                 result = await dataquery.run_groups_async()
 
-                # Check that the method was called
-                mock_client.list_all_groups_async.assert_called_once()
+                # Check that the method was called with default limit=100
+                mock_client.list_groups_async.assert_called_once_with(limit=100)
 
                 # Check the result structure
                 assert result["total_groups"] == 2
@@ -1987,8 +1880,8 @@ class TestDataQueryWorkflowMethods:
                 "num_parts": 5,
             }
 
-            with patch.object(dataquery, "_run_async") as mock_run_async:
-                mock_run_async.return_value = expected
+            with patch.object(dataquery, "_run_sync") as mock_run_sync:
+                mock_run_sync.return_value = expected
                 result = dataquery.run_group_download(
                     group_id="group1",
                     start_date="20240101",
@@ -1997,8 +1890,9 @@ class TestDataQueryWorkflowMethods:
                     max_concurrent=2,
                     num_parts=5,
                 )
+
                 assert result == expected
-                mock_run_async.assert_called_once()
+                mock_run_sync.assert_called_once()
 
     def test_run_groups_sync(self):
         """Test run_groups sync wrapper."""
@@ -2018,13 +1912,13 @@ class TestDataQueryWorkflowMethods:
 
                 dataquery = DataQuery(config)
 
-                with patch.object(dataquery, "_run_async") as mock_run_async:
-                    mock_run_async.return_value = mock_groups
+                with patch.object(dataquery, "_run_sync") as mock_run_sync:
+                    mock_run_sync.return_value = mock_groups
 
                     result = dataquery.run_groups(max_concurrent=2)
 
                     assert result == mock_groups
-                    mock_run_async.assert_called_once()
+                    mock_run_sync.assert_called_once()
 
     def test_run_group_files_sync(self):
         """Test run_group_files sync wrapper."""
@@ -2046,13 +1940,13 @@ class TestDataQueryWorkflowMethods:
 
                 dataquery = DataQuery(config)
 
-                with patch.object(dataquery, "_run_async") as mock_run_async:
-                    mock_run_async.return_value = mock_files
+                with patch.object(dataquery, "_run_sync") as mock_run_sync:
+                    mock_run_sync.return_value = mock_files
 
                     result = dataquery.run_group_files("group1", max_concurrent=2)
 
                     assert result == mock_files
-                    mock_run_async.assert_called_once()
+                    mock_run_sync.assert_called_once()
 
     def test_run_availability_sync(self):
         """Test run_availability sync wrapper."""
@@ -2075,13 +1969,13 @@ class TestDataQueryWorkflowMethods:
 
                 dataquery = DataQuery(config)
 
-                with patch.object(dataquery, "_run_async") as mock_run_async:
-                    mock_run_async.return_value = mock_availability
+                with patch.object(dataquery, "_run_sync") as mock_run_sync:
+                    mock_run_sync.return_value = mock_availability
 
                     result = dataquery.run_availability("file1", "20200101")
 
                     assert result == mock_availability
-                    mock_run_async.assert_called_once()
+                    mock_run_sync.assert_called_once()
 
     def test_run_download_sync(self):
         """Test run_download sync wrapper."""
@@ -2109,13 +2003,13 @@ class TestDataQueryWorkflowMethods:
 
                 dataquery = DataQuery(config)
 
-                with patch.object(dataquery, "_run_async") as mock_run_async:
-                    mock_run_async.return_value = mock_result
+                with patch.object(dataquery, "_run_sync") as mock_run_sync:
+                    mock_run_sync.return_value = mock_result
 
-                    result = dataquery.run_download("file1", "20200101")
+                    result = dataquery.download_file("file1", "20200101")
 
                     assert result == mock_result
-                    mock_run_async.assert_called_once()
+                    mock_run_sync.assert_called_once()
 
     def test_run_group_download_sync(self):
         """Test run_group_download sync wrapper."""
@@ -2144,8 +2038,8 @@ class TestDataQueryWorkflowMethods:
 
                 dataquery = DataQuery(config)
 
-                with patch.object(dataquery, "_run_async") as mock_run_async:
-                    mock_run_async.return_value = mock_result
+                with patch.object(dataquery, "_run_sync") as mock_run_sync:
+                    mock_run_sync.return_value = mock_result
 
                     result = dataquery.run_group_download(
                         group_id="group1",
@@ -2156,14 +2050,14 @@ class TestDataQueryWorkflowMethods:
                     )
 
                     assert result == mock_result
-                    mock_run_async.assert_called_once()
+                    mock_run_sync.assert_called_once()
 
 
 class TestDataQueryImprovedSyncCalls:
     """Test DataQuery improved synchronous calling approach."""
 
-    def test_sync_calls_use_run_async_instead_of_asyncio_run(self):
-        """Test that sync methods use _run_async instead of asyncio.run."""
+    def test_sync_calls_use_run_sync_instead_of_asyncio_run(self):
+        """Test that sync methods use _run_sync instead of asyncio.run."""
         config = ClientConfig(
             base_url="https://api.example.com",
             oauth_enabled=False,
@@ -2173,14 +2067,10 @@ class TestDataQueryImprovedSyncCalls:
         with patch("dataquery.dataquery.EnvConfig.validate_config"):
             dataquery = DataQuery(config)
 
-            # Test that sync methods use _run_async
-            with patch.object(dataquery, "_run_async") as mock_run_async:
-                mock_run_async.return_value = True
-
-                result = dataquery.health_check()
-
-                assert result is True
-                mock_run_async.assert_called_once()
+            # Test that sync methods use _run_sync
+            with patch.object(dataquery, "_run_sync") as mock_run_sync:
+                dataquery.list_groups()
+                mock_run_sync.assert_called_once()
 
     def test_mixed_async_sync_usage(self):
         """Test mixing async and sync calls in the same context."""
@@ -2209,13 +2099,14 @@ class TestDataQueryImprovedSyncCalls:
                     assert health is True
 
                     # Sync call from within async context (should work with new approach)
-                    with patch.object(dataquery, "_run_async") as mock_run_async:
-                        mock_run_async.return_value = [
+                    with patch.object(dataquery, "_run_sync") as mock_run_sync:
+                        mock_run_sync.return_value = [
                             Group(item=1, group_id="group1", group_name="Test Group")
                         ]
                         groups = dataquery.list_groups()
                         assert len(groups) == 1
                         assert groups[0].group_id == "group1"
+                        mock_run_sync.assert_called_once()
 
                     # Another async call
                     health2 = await dataquery.health_check_async()
@@ -2247,12 +2138,12 @@ class TestDataQueryImprovedSyncCalls:
 
                 async def inner_async_function():
                     """Inner async function that calls sync methods."""
-                    with patch.object(dataquery, "_run_async") as mock_run_async:
-                        mock_run_async.return_value = True
+                    with patch.object(dataquery, "_run_sync") as mock_run_sync:
+                        mock_run_sync.return_value = True
                         health = dataquery.health_check()
                         assert health is True
 
-                        mock_run_async.return_value = [
+                        mock_run_sync.return_value = [
                             Group(item=1, group_id="group1", group_name="Test Group")
                         ]
                         groups = dataquery.list_groups()
@@ -2361,6 +2252,6 @@ class TestDataQueryUtilityMethods:
                 dataquery = DataQuery(config)
                 dataquery._client = mock_client  # Set the client
 
-                with patch.object(dataquery, "_run_async") as mock_run_async:
+                with patch.object(dataquery, "_run_sync") as mock_run_sync:
                     dataquery.cleanup()
-                    mock_run_async.assert_called_once()
+                    mock_run_sync.assert_called_once()

@@ -1,3 +1,4 @@
+import asyncio
 import time
 from unittest.mock import AsyncMock, patch
 
@@ -16,6 +17,8 @@ def make_cfg(**over):
         timeout=600.0,
         pool_connections=2,
         pool_maxsize=4,
+        files_base_url=None,  # Explicitly set to None to test fallback behavior
+        oauth_token_url=None,  # Explicitly set to None for this test
     )
     base.update(over)
     return ClientConfig(**base)

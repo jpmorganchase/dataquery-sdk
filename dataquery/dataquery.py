@@ -6,7 +6,6 @@ for all API interactions, encapsulating the client and providing high-level oper
 """
 
 import asyncio
-import os
 import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
@@ -14,7 +13,7 @@ from typing import Any, Callable, Dict, List, Optional, Union
 import structlog
 from dotenv import load_dotenv
 
-from .client import DataQueryClient
+from .client import DataQueryClient, format_file_size
 from .config import EnvConfig
 from .exceptions import ConfigurationError
 from .models import (
@@ -58,15 +57,18 @@ utils to maintain a single source of truth for these helpers across the SDK.
 
 def get_download_paths() -> Dict[str, Path]:
     """Get download paths from environment variables with defaults."""
-    base_download_dir = Path(os.getenv("DATAQUERY_DOWNLOAD_DIR", "./downloads"))
+    base_download_dir = EnvConfig.get_path("DOWNLOAD_DIR", "./downloads")
 
     return {
         "base": base_download_dir,
-        "workflow": base_download_dir / os.getenv("DATAQUERY_WORKFLOW_DIR", "workflow"),
-        "groups": base_download_dir / os.getenv("DATAQUERY_GROUPS_DIR", "groups"),
+        "workflow": base_download_dir
+        / (EnvConfig.get_env_var("WORKFLOW_DIR", "workflow") or "workflow"),
+        "groups": base_download_dir
+        / (EnvConfig.get_env_var("GROUPS_DIR", "groups") or "groups"),
         "availability": base_download_dir
-        / os.getenv("DATAQUERY_AVAILABILITY_DIR", "availability"),
-        "default": base_download_dir / os.getenv("DATAQUERY_DEFAULT_DIR", "files"),
+        / (EnvConfig.get_env_var("AVAILABILITY_DIR", "availability") or "availability"),
+        "default": base_download_dir
+        / (EnvConfig.get_env_var("DEFAULT_DIR", "files") or "files"),
     }
 
 
@@ -85,8 +87,8 @@ class ConfigManager:
     def get_client_config(self) -> ClientConfig:
         """Get client configuration from environment variables."""
         try:
-            # Pass env_file positionally to match expected signature in tests
-            config = EnvConfig.create_client_config(self.env_file)
+            # Pass env_file as keyword argument to match expected signature
+            config = EnvConfig.create_client_config(env_file=self.env_file)
             EnvConfig.validate_config(config)
             return config
         except Exception as e:
@@ -110,7 +112,7 @@ class ProgressTracker:
 
     def __init__(self, log_interval: int = 10):
         self.log_interval = log_interval
-        self.last_log_time = 0
+        self.last_log_time = 0.0
 
     def create_progress_callback(self) -> Callable:
         """Create a progress callback function."""
@@ -170,6 +172,11 @@ class DataQuery:
         # Apply default-first initialization pattern with optional overrides.
         # Credentials are never defaulted; if provided, enable OAuth and set them.
         if client_id or client_secret:
+            if client_id and not isinstance(client_id, str):
+                raise ConfigurationError("client_id must be a string")
+            if client_secret and not isinstance(client_secret, str):
+                raise ConfigurationError("client_secret must be a string")
+
             self.client_config.oauth_enabled = True
             if client_id:
                 self.client_config.client_id = client_id
@@ -211,6 +218,11 @@ class DataQuery:
         await self.connect_async()
         return self
 
+    def __enter__(self):
+        """Sync context manager entry."""
+        self.connect()
+        return self
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit."""
         await self.close_async()
@@ -236,28 +248,9 @@ class DataQuery:
 
         gc.collect()
 
-    def _get_or_create_loop(self) -> asyncio.AbstractEventLoop:
+    def _run_sync(self, coro):
         """
-        Get the current event loop or create a new one if needed.
-
-        Returns:
-            Event loop to use for operations
-        """
-        try:
-            # Try to get the current running loop
-            loop = asyncio.get_running_loop()
-            self._own_loop = False
-            return loop
-        except RuntimeError:
-            # No running loop, create a new one
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            self._own_loop = True
-            return loop
-
-    def _run_async(self, coro):
-        """
-        Run an async coroutine in the appropriate event loop with optimized performance.
+        Run an async coroutine in a new event loop.
 
         Args:
             coro: Coroutine to run
@@ -265,35 +258,24 @@ class DataQuery:
         Returns:
             Result of the coroutine
         """
-        loop = self._get_or_create_loop()
-        if self._own_loop:
-            try:
-                return loop.run_until_complete(coro)
-            finally:
-                loop.close()
-                self._own_loop = False
-        else:
-            # Running inside an existing event loop: use asyncio.create_task for better performance
-            try:
-                # Try to create a task in the current loop
-                task = asyncio.create_task(coro)
-                return loop.run_until_complete(task)
-            except RuntimeError:
-                # Fallback to thread executor if create_task fails
-                import concurrent.futures
-
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                    future = executor.submit(asyncio.run, coro)
-                    return future.result()
+        try:
+            return asyncio.run(coro)
+        except RuntimeError as e:
+            if "cannot run loop while another loop is running" in str(e):
+                raise RuntimeError(
+                    "Cannot run sync method when an asyncio event loop is already running. "
+                    "Use the async version of the method instead."
+                ) from e
+            raise
 
     # Core API Methods
 
-    async def list_groups_async(self, limit: Optional[int] = None) -> List[Group]:
+    async def list_groups_async(self, limit: Optional[int] = 100) -> List[Group]:
         """
         List all available data groups with pagination support.
 
         Args:
-            limit: Optional limit on number of groups to return. If None, returns all groups.
+            limit: Maximum number of groups to return (default: 100). If None, returns all groups.
 
         Returns:
             List of group information
@@ -310,14 +292,14 @@ class DataQuery:
             return await self._client.list_groups_async(limit=limit)
 
     async def search_groups_async(
-        self, keywords: str, limit: Optional[int] = None, offset: Optional[int] = None
+        self, keywords: str, limit: Optional[int] = 100, offset: Optional[int] = None
     ) -> List[Group]:
         """
         Search groups by keywords.
 
         Args:
             keywords: Search keywords
-            limit: Maximum number of results to return
+            limit: Maximum number of results to return (default: 100)
             offset: Number of results to skip
 
         Returns:
@@ -407,10 +389,10 @@ class DataQuery:
             )
 
         assert self._client is not None
-        # Pass only (file_group_id, file_datetime, options, progress_callback) to satisfy tests.
-        # The client will use its default num_parts.
+        # Pass parameters in correct order: file_group_id, file_datetime, options, num_parts, progress_callback
+        # Use default num_parts=5
         return await self._client.download_file_async(
-            file_group_id, file_datetime, options, progress_callback
+            file_group_id, file_datetime, options, num_parts, progress_callback
         )
 
     async def list_available_files_async(
@@ -1083,7 +1065,7 @@ class DataQuery:
                 total_files=len(filtered_files),
                 base_delay=delay_between_downloads,
                 intelligent_delay=intelligent_delay,
-                total_delay_range=f"0-{(len(filtered_files)-1) * intelligent_delay:.1f}s",
+                total_delay_range=f"0-{(len(filtered_files) - 1) * intelligent_delay:.1f}s",
                 rate_limit_protection="enabled",
             )
 
@@ -1096,11 +1078,12 @@ class DataQuery:
             failed = []
 
             for file_info, result in zip(filtered_files, download_results):
-                if isinstance(result, Exception):
+                if isinstance(result, BaseException):
                     failed.append(file_info)
                 elif (
                     result
                     and hasattr(result, "status")
+                    and hasattr(result, "file_group_id")
                     and result.status.value == "completed"
                 ):
                     successful.append(result)
@@ -1173,7 +1156,7 @@ class DataQuery:
                 "rate_limit_protection": "enabled",
                 "base_delay": delay_between_downloads,
                 "intelligent_delay": intelligent_delay,
-                "delay_range": f"0-{(len(filtered_files)-1) * intelligent_delay:.1f}s",
+                "delay_range": f"0-{(len(filtered_files) - 1) * intelligent_delay:.1f}s",
                 "rate_limit_capacity": rate_limit_capacity,
                 "rate_limit_recommendations": recommendations,
                 "total_time_seconds": round(total_time_seconds, 2),
@@ -1247,7 +1230,6 @@ class DataQuery:
             DownloadResult,
             DownloadStatus,
         )
-        from .utils import format_file_size
 
         try:
             assert self._client is not None
@@ -1359,13 +1341,20 @@ class DataQuery:
             file_lock = asyncio.Lock()
             shared_fh = open(temp_destination, "r+b")
 
+            # Progress callback optimization: track last callback state
+            last_callback_bytes = 0
+            last_callback_time = time.time()
+            callback_threshold_bytes = 1024 * 1024  # 1MB
+            callback_threshold_time = 0.5  # 0.5 seconds
+
             # Step 4: Download each range with global semaphore control
             async def download_range_with_global_semaphore(
                 start_byte: int, end_byte: int
             ):
-                nonlocal bytes_downloaded
+                nonlocal bytes_downloaded, last_callback_bytes, last_callback_time
                 headers = {"Range": f"bytes={start_byte}-{end_byte}"}
 
+                assert self._client is not None  # Already checked above
                 # Each range request uses the global semaphore
                 async with global_semaphore:
                     async with await self._client._enter_request_cm(
@@ -1383,15 +1372,33 @@ class DataQuery:
                             async with bytes_lock:
                                 bytes_downloaded += len(chunk)
                                 progress.update_progress(bytes_downloaded)
-                                if progress_callback:
-                                    progress_callback(progress)
-                                elif download_options.show_progress:
-                                    logger.info(
-                                        "Download progress (flattened)",
-                                        file=file_group_id,
-                                        percentage=f"{progress.percentage:.1f}%",
-                                        downloaded=format_file_size(bytes_downloaded),
-                                    )
+
+                                # Optimized progress callback: only call every 1MB or 0.5s
+                                current_time = time.time()
+                                bytes_diff = bytes_downloaded - last_callback_bytes
+                                time_diff = current_time - last_callback_time
+
+                                should_callback = (
+                                    bytes_diff >= callback_threshold_bytes
+                                    or time_diff >= callback_threshold_time
+                                    or bytes_downloaded
+                                    == total_bytes  # Always callback on completion
+                                )
+
+                                if should_callback:
+                                    if progress_callback:
+                                        progress_callback(progress)
+                                    elif download_options.show_progress:
+                                        logger.info(
+                                            "Download progress (flattened)",
+                                            file=file_group_id,
+                                            percentage=f"{progress.percentage:.1f}%",
+                                            downloaded=format_file_size(
+                                                bytes_downloaded
+                                            ),
+                                        )
+                                    last_callback_bytes = bytes_downloaded
+                                    last_callback_time = current_time
 
             # Step 5: Execute all range downloads concurrently (each will acquire global semaphore)
             await asyncio.gather(
@@ -1698,7 +1705,7 @@ class DataQuery:
         try:
             rate_config = self._client.rate_limiter.config
 
-            recommendations = {
+            recommendations: Dict[str, Any] = {
                 "current_settings": {
                     "requests_per_minute": rate_config.requests_per_minute,
                     "burst_capacity": rate_config.burst_capacity,
@@ -1873,34 +1880,34 @@ class DataQuery:
 
     def connect(self):
         """Connect to the API."""
-        return self._run_async(self.connect_async())
+        return self._run_sync(self.connect_async())
 
     def close(self):
         """Close the connection and cleanup resources."""
         if self._client:
-            return self._run_async(self.close_async())
+            return self._run_sync(self.close_async())
 
-    def list_groups(self, limit: Optional[int] = None) -> List[Group]:
+    def list_groups(self, limit: Optional[int] = 100) -> List[Group]:
         """Synchronous wrapper for list_groups."""
-        return self._run_async(self.list_groups_async(limit))
+        return self._run_sync(self.list_groups_async(limit))
 
     def search_groups(
-        self, keywords: str, limit: Optional[int] = None, offset: Optional[int] = None
+        self, keywords: str, limit: Optional[int] = 100, offset: Optional[int] = None
     ) -> List[Group]:
         """Synchronous wrapper for search_groups."""
-        return self._run_async(self.search_groups_async(keywords, limit, offset))
+        return self._run_sync(self.search_groups_async(keywords, limit, offset))
 
     def list_files(
         self, group_id: str, file_group_id: Optional[str] = None
     ) -> List[FileInfo]:
         """Synchronous wrapper for list_files."""
-        return self._run_async(self.list_files_async(group_id, file_group_id))
+        return self._run_sync(self.list_files_async(group_id, file_group_id))
 
     def check_availability(
         self, file_group_id: str, file_datetime: str
     ) -> AvailabilityInfo:
         """Synchronous wrapper for check_availability."""
-        return self._run_async(
+        return self._run_sync(
             self.check_availability_async(file_group_id, file_datetime)
         )
 
@@ -1910,6 +1917,7 @@ class DataQuery:
         file_datetime: Optional[str] = None,
         destination_path: Optional[Path] = None,
         options: Optional[DownloadOptions] = None,
+        num_parts: int = 5,
         progress_callback: Optional[Callable] = None,
     ) -> DownloadResult:
         """
@@ -1923,17 +1931,19 @@ class DataQuery:
                              from the Content-Disposition header in the response. If not provided,
                              uses the default download directory from configuration.
             options: Download options
+            num_parts: Number of parallel parts for download (default: 5)
             progress_callback: Optional progress callback function
 
         Returns:
             DownloadResult with download information
         """
-        return self._run_async(
+        return self._run_sync(
             self.download_file_async(
                 file_group_id,
                 file_datetime,
                 destination_path,
                 options,
+                num_parts,
                 progress_callback,
             )
         )
@@ -1946,7 +1956,7 @@ class DataQuery:
         end_date: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Synchronous wrapper for list_available_files."""
-        return self._run_async(
+        return self._run_sync(
             self.list_available_files_async(
                 group_id, file_group_id, start_date, end_date
             )
@@ -1954,7 +1964,7 @@ class DataQuery:
 
     def health_check(self) -> bool:
         """Synchronous wrapper for health_check."""
-        return self._run_async(self.health_check_async())
+        return self._run_sync(self.health_check_async())
 
     # Instrument Collection Endpoints - Synchronous wrappers
     def list_instruments(
@@ -1974,13 +1984,13 @@ class DataQuery:
         Returns:
             InstrumentsResponse containing the list of instruments
         """
-        return self._run_async(
+        return self._run_sync(
             self.list_instruments_async(group_id, instrument_id, page)
         )
 
     def search_instruments(
         self, group_id: str, keywords: str, page: Optional[str] = None
-    ) -> Dict[str, Any]:
+    ) -> "InstrumentsResponse":
         """
         Search within a dataset using keywords to create subsets of matching instruments.
 
@@ -1992,7 +2002,7 @@ class DataQuery:
         Returns:
             InstrumentsResponse containing the matching instruments
         """
-        return self._run_async(self.search_instruments_async(group_id, keywords, page))
+        return self._run_sync(self.search_instruments_async(group_id, keywords, page))
 
     def get_instrument_time_series(
         self,
@@ -2027,7 +2037,7 @@ class DataQuery:
         Returns:
             TimeSeriesResponse containing the time series data
         """
-        return self._run_async(
+        return self._run_sync(
             self.get_instrument_time_series_async(
                 instruments,
                 attributes,
@@ -2074,7 +2084,7 @@ class DataQuery:
         Returns:
             TimeSeriesResponse containing the time series data
         """
-        return self._run_async(
+        return self._run_sync(
             self.get_expressions_time_series_async(
                 expressions,
                 format,
@@ -2103,7 +2113,7 @@ class DataQuery:
         Returns:
             FiltersResponse containing the available filters
         """
-        return self._run_async(self.get_group_filters_async(group_id, page))
+        return self._run_sync(self.get_group_filters_async(group_id, page))
 
     def get_group_attributes(
         self,
@@ -2122,7 +2132,7 @@ class DataQuery:
         Returns:
             AttributesResponse containing the attributes for each instrument
         """
-        return self._run_async(
+        return self._run_sync(
             self.get_group_attributes_async(group_id, instrument_id, page)
         )
 
@@ -2161,7 +2171,7 @@ class DataQuery:
         Returns:
             TimeSeriesResponse containing the time series data
         """
-        return self._run_async(
+        return self._run_sync(
             self.get_group_time_series_async(
                 group_id,
                 attributes,
@@ -2199,23 +2209,21 @@ class DataQuery:
         Raises:
             ValueError: If both expr and grid_id are provided or neither is provided
         """
-        return self._run_async(self.get_grid_data_async(expr, grid_id, date))
+        return self._run_sync(self.get_grid_data_async(expr, grid_id, date))
 
     def run_groups(self, max_concurrent: int = 5) -> Dict[str, Any]:
         """Synchronous wrapper for run_groups_async."""
-        return self._run_async(self.run_groups_async(max_concurrent))
+        return self._run_sync(self.run_groups_async(max_concurrent))
 
     def run_group_files(self, group_id: str, max_concurrent: int = 5) -> Dict[str, Any]:
         """Synchronous wrapper for run_group_files_async."""
-        return self._run_async(self.run_group_files_async(group_id, max_concurrent))
+        return self._run_sync(self.run_group_files_async(group_id, max_concurrent))
 
     def run_availability(
         self, file_group_id: str, file_datetime: str
     ) -> Dict[str, Any]:
         """Synchronous wrapper for run_availability_async."""
-        return self._run_async(
-            self.run_availability_async(file_group_id, file_datetime)
-        )
+        return self._run_sync(self.run_availability_async(file_group_id, file_datetime))
 
     def run_download(
         self,
@@ -2225,7 +2233,7 @@ class DataQuery:
         max_concurrent: int = 1,
     ) -> Dict[str, Any]:
         """Synchronous wrapper for run_download_async."""
-        return self._run_async(
+        return self._run_sync(
             self.run_download_async(
                 file_group_id, file_datetime, destination_path, max_concurrent
             )
@@ -2238,37 +2246,28 @@ class DataQuery:
         end_date: str,
         destination_dir: Path = Path("./downloads"),
         max_concurrent: int = 5,
+        num_parts: int = 5,
         progress_callback: Optional[Callable] = None,
+        delay_between_downloads: float = 1.0,
     ) -> dict:
-        """
-        Synchronous wrapper for run_group_download_async.
-
-        Args:
-            group_id: Group ID to download files from
-            start_date: Start date in YYYYMMDD format
-            end_date: End date in YYYYMMDD format
-            destination_dir: Destination directory for downloads
-            max_concurrent: Maximum concurrent downloads
-            progress_callback: Optional progress callback function for individual downloads
-
-        Returns:
-            Dictionary with download results and statistics
-        """
-        return self._run_async(
+        """Synchronous wrapper for run_group_download_async."""
+        return self._run_sync(
             self.run_group_download_async(
                 group_id,
                 start_date,
                 end_date,
                 destination_dir,
                 max_concurrent,
+                num_parts,
                 progress_callback,
+                delay_between_downloads,
             )
         )
 
     def cleanup(self):
         """Synchronous cleanup resources and ensure proper shutdown."""
         if self._client:
-            self._run_async(self.close_async())
+            self._run_sync(self.close_async())
             self._client = None
 
         # Force garbage collection to clean up any remaining references
@@ -2287,12 +2286,12 @@ class DataQuery:
         if self._client:
             return asyncio.run(self.close_async())
 
-    def list_groups_sync(self, limit: Optional[int] = None) -> List[Group]:
+    def list_groups_sync(self, limit: Optional[int] = 100) -> List[Group]:
         """Synchronous wrapper for list_groups with _sync suffix."""
         return asyncio.run(self.list_groups_async(limit))
 
     def search_groups_sync(
-        self, keywords: str, limit: Optional[int] = None, offset: Optional[int] = None
+        self, keywords: str, limit: Optional[int] = 100, offset: Optional[int] = None
     ) -> List[Group]:
         """Synchronous wrapper for search_groups with _sync suffix."""
         return asyncio.run(self.search_groups_async(keywords, limit, offset))
@@ -2315,6 +2314,7 @@ class DataQuery:
         file_datetime: Optional[str] = None,
         destination_path: Optional[Path] = None,
         options: Optional[DownloadOptions] = None,
+        num_parts: int = 5,
         progress_callback: Optional[Callable] = None,
     ) -> DownloadResult:
         """Synchronous wrapper for download_file with _sync suffix."""
@@ -2324,6 +2324,7 @@ class DataQuery:
                 file_datetime,
                 destination_path,
                 options,
+                num_parts,
                 progress_callback,
             )
         )
@@ -2399,7 +2400,7 @@ class DataQuery:
         check_current_date_only: bool = True,
     ):
         """Synchronous proxy to client's start_auto_download_async."""
-        return self._run_async(
+        return self._run_sync(
             self.start_auto_download_async(
                 group_id,
                 destination_dir,

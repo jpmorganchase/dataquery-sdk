@@ -88,9 +88,8 @@ async def main() -> None:
 
             resp = await dq.get_group_time_series_async(
                 group_id=group_id,
-                instruments=None,
                 attributes=attributes_list,
-                filters=None,
+                filter=None,
                 data="REFERENCE_DATA",
                 format="JSON",
                 start_date=start_date,

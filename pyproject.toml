@@ -21,6 +21,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Office/Business :: Financial",
     "Topic :: Scientific/Engineering :: Information Analysis",
@@ -31,13 +32,11 @@ dependencies = [
     "pydantic>=2.0.0,<3.0.0",
     "structlog>=23.0.0",
     "python-dotenv>=1.0.0",
-    "pandas>=2.0.0",
     "build>=1.3.0",
-    "pytest>=8.4.2",
     "black>=25.1.0",
     "isort>=6.0.1",
-    "flake8>=7.3.0",
-    "ruff>=0.13.0",
+    "mkdocstrings>=0.30.1",
+    "mypy>=1.18.2",
 ]
 dynamic = ["version"]
 keywords = [
@@ -54,10 +53,10 @@ keywords = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/dataquery/dataquery-sdk-python"
-"Bug Tracker" = "https://github.com/dataquery/dataquery-sdk-python/issues"
-Documentation = "https://github.com/dataquery/dataquery-sdk-python/wiki"
-"Source Code" = "https://github.com/dataquery/dataquery-sdk-python"
+Homepage = "https://github.com/dataquery/dataquery-sdk"
+"Bug Tracker" = "https://github.com/dataquery/dataquery-sdk/issues"
+Documentation = "https://github.com/dataquery/dataquery-sdk/wiki"
+"Source Code" = "https://github.com/dataquery/dataquery-sdk"
 
 [project.optional-dependencies]
 dev = [
@@ -70,22 +69,8 @@ dev = [
     "isort>=5.12.0",
     "pre-commit>=3.0.0",
     "pip-audit>=2.7.0",
-]
-test = [
-    "pytest>=7.0.0",
-    "pytest-asyncio>=0.21.0",
-    "pytest-cov>=4.0.0",
-    "black>=23.0.0",
-    "flake8>=6.0.0",
-    "mypy>=1.5.0",
-    "isort>=5.12.0",
-    "pre-commit>=3.0.0",
-    "mkdocs>=1.5.0",
-    "mkdocs-material>=9.0.0",
-    "mkdocstrings[python]>=0.24.0",
-    "mike>=1.1.0",
-    "pandas>=2.0.0",
-    "pip-audit>=2.7.0",
+    "build>=1.3.0",
+    "twine>=4.0.0",
 ]
 docs = [
     "mkdocs>=1.5.0",
@@ -161,7 +146,7 @@ check_untyped_defs = true
 disallow_untyped_decorators = true
 no_implicit_optional = true
 warn_redundant_casts = true
-warn_unused_ignores = true
+warn_unused_ignores = false
 warn_no_return = true
 warn_unreachable = true
 strict_equality = true
@@ -216,4 +201,15 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "class .*\\(Protocol\\):",
     "@(abc\\.)?abstractmethod",
+]
+
+[dependency-groups]
+dev = [
+    "flake8>=7.3.0",
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.6.20",
+    "mkdocstrings>=0.30.0",
+    "mkdocstrings-python>=1.18.2",
+    "mypy>=1.17.1",
+    "pytest>=8.4.2",
 ]

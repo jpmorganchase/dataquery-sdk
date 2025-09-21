@@ -129,32 +129,36 @@ class TestEnvConfig:
             assert config.client_id == "test_client"
             assert config.client_secret == "test_secret"
 
-    def test_env_config_create_client_config_missing_base_url(self):
-        """Test create_client_config method with missing base URL."""
+    def test_env_config_create_client_config_uses_defaults(self):
+        """Test create_client_config method uses default values when no env vars set."""
         with patch.dict(os.environ, {}, clear=True):
-            with pytest.raises(
-                ConfigurationError,
-                match="DATAQUERY_BASE_URL environment variable is required",
-            ):
-                EnvConfig.create_client_config()
+            config = EnvConfig.create_client_config()
+            # Should use default values
+            assert config.base_url == "https://api-developer.jpmorgan.com"
+            assert config.context_path == "/research/dataquery-authe/api/v2"
+            assert (
+                config.oauth_token_url == "https://authe.jpmorgan.com/as/token.oauth2"
+            )
 
-    def test_env_config_create_client_config_auto_generate_oauth_url(self):
-        """Test create_client_config method auto-generating OAuth URL."""
+    def test_env_config_create_client_config_override_defaults(self):
+        """Test create_client_config method overriding default values."""
         with patch.dict(
             os.environ,
             {
                 "DATAQUERY_BASE_URL": "https://api.example.com",
+                "DATAQUERY_CONTEXT_PATH": "/custom/path",
+                "DATAQUERY_OAUTH_TOKEN_URL": "https://auth.example.com/token",
                 "DATAQUERY_OAUTH_ENABLED": "true",
                 "DATAQUERY_CLIENT_ID": "test_client",
                 "DATAQUERY_CLIENT_SECRET": "test_secret",
             },
             clear=True,
         ):
-            # Explicitly remove OAuth_TOKEN_URL to ensure auto-generation
-            if "DATAQUERY_OAUTH_TOKEN_URL" in os.environ:
-                del os.environ["DATAQUERY_OAUTH_TOKEN_URL"]
             config = EnvConfig.create_client_config()
-            assert config.oauth_token_url == "https://api.example.com/oauth/token"
+            # Should override defaults with env vars
+            assert config.base_url == "https://api.example.com"
+            assert config.context_path == "/custom/path"
+            assert config.oauth_token_url == "https://auth.example.com/token"
 
     def test_env_config_create_client_config_with_custom_grant_type(self):
         """Test create_client_config method with custom grant type."""

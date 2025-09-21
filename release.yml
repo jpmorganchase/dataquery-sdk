@@ -106,21 +106,15 @@ jobs:
     # Build docs but only alias latest for non-dev releases
     - name: build documentation
       run: |
-        git fetch origin dataquery_release --depth=1
+        git fetch origin fusion_release --depth=1
         if [[ "${{ steps.tag_name.outputs.current_version }}" != *.dev* ]]; then
           # Commands for regular release
-            uv run mike deploy --branch dataquery_release --deploy-prefix docs --push --update-aliases ${{ steps.tag_name.outputs.current_version }} latest
-            uv run mike set-default --branch dataquery_release --deploy-prefix docs --push latest
+            uv run mike deploy --branch fusion_release --deploy-prefix docs --push --update-aliases ${{ steps.tag_name.outputs.current_version }} latest
+            uv run mike set-default --branch fusion_release --deploy-prefix docs --push latest
           else
           # Commands for pre-release
-            uv run mike deploy --branch dataquery_release --deploy-prefix docs --push ${{ steps.tag_name.outputs.current_version }}
+            uv run mike deploy --branch fusion_release --deploy-prefix docs --push ${{ steps.tag_name.outputs.current_version }}
         fi
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Deploy MkDocs to GitHub Pages
-      run: |
-        uv run mkdocs gh-deploy --force --clean --message "docs: deploy ${{ steps.tag_name.outputs.current_version }}"
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -147,5 +141,5 @@ jobs:
     - name: publish to PyPI
       env:
         TWINE_USERNAME: __token__
-        TWINE_PASSWORD: ${{ secrets.PYPI_API_JPMC_OSS}}
+        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
       run: uv run twine upload dist/*

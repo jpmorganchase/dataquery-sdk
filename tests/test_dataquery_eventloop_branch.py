@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -21,6 +22,6 @@ async def test_run_async_in_existing_loop(monkeypatch):
         inst.close = AsyncMock()
         await dq.connect_async()
         # Call a method that uses existing loop path
-        inst.list_all_groups_async = AsyncMock(return_value=[])
+        inst.list_groups_async = AsyncMock(return_value=[])
         groups = await dq.list_groups_async()
         assert groups == []

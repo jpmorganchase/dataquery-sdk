@@ -11,7 +11,9 @@ Press Ctrl+C to stop.
 """
 
 import asyncio
+import signal
 import sys
+from datetime import datetime
 from pathlib import Path
 
 # Add parent directory to path for imports
@@ -19,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dataquery import DataQuery
 from dataquery.exceptions import AuthenticationError
+from dataquery.models import DownloadProgress
 
 
 async def main():

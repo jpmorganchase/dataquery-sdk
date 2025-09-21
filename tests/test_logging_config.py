@@ -1,6 +1,8 @@
+import logging
 import tempfile
+from datetime import datetime
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, mock_open, patch
 
 import pytest
 
@@ -330,20 +332,20 @@ class TestLoggingManager:
         assert manager.performance_logger is not None
         assert manager.structured_logger is not None
 
-    # def test_setup_file_logging(self, manager):
-    #     """Test file logging setup."""
-    #     manager.config.enable_file = True
-    #     manager.config.log_file = Path("/tmp/test.log")
-    #
-    #     with patch("logging.handlers.RotatingFileHandler") as mock_handler:
-    #         with patch("logging.getLogger") as mock_get_logger:
-    #             mock_logger = Mock()
-    #             mock_get_logger.return_value = mock_logger
-    #
-    #             manager._setup_file_logging()
-    #
-    #             mock_handler.assert_called_once()
-    #             mock_get_logger.assert_called_once()
+    def test_setup_file_logging(self, manager):
+        """Test file logging setup."""
+        manager.config.enable_file = True
+        manager.config.log_file = Path("/tmp/test.log")
+
+        with patch("logging.handlers.RotatingFileHandler") as mock_handler:
+            with patch("logging.getLogger") as mock_get_logger:
+                mock_logger = Mock()
+                mock_get_logger.return_value = mock_logger
+
+                manager._setup_file_logging()
+
+                mock_handler.assert_called_once()
+                mock_get_logger.assert_called_once()
 
     def test_get_logger(self, manager):
         """Test getting logger."""

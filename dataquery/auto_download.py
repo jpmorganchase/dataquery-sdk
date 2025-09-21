@@ -97,9 +97,9 @@ class AutoDownloadManager:
         # Download options
         # Note: destination_path is used by the client to treat this as a directory target
         self.download_options = DownloadOptions(
-            destination_path=str(self.destination_dir),
+            destination_path=self.destination_dir,
             overwrite_existing=False,  # Don't overwrite existing files
-            chunk_size_setting=8192,
+            chunk_size=8192,
         )
         # Backward-compat extra attribute used by tests; harmless extra field
         setattr(self.download_options, "output_dir", str(self.destination_dir))

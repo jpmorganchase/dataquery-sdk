@@ -2,7 +2,8 @@
 Targeted tests to improve client.py utility functions coverage.
 """
 
-from unittest.mock import Mock
+from pathlib import Path
+from unittest.mock import Mock, patch
 
 import aiohttp
 import pytest

@@ -1,10 +1,12 @@
+import asyncio
+import json
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
 from dataquery.auth import OAuthManager, TokenManager
-from dataquery.models import ClientConfig, OAuthToken
+from dataquery.models import ClientConfig, OAuthToken, TokenResponse
 
 
 def make_config(tmp_path: Path, oauth: bool = True) -> ClientConfig:

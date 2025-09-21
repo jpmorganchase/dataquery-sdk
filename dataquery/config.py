@@ -24,19 +24,19 @@ class EnvConfig:
     # Default values for configuration
     DEFAULTS = {
         # API Configuration
-        "BASE_URL": None,
-        "CONTEXT_PATH": "",
+        "BASE_URL": "https://api-developer.jpmorgan.com",
+        "CONTEXT_PATH": "/research/dataquery-authe/api/v2",
         "API_VERSION": "2.0.0",
         # Optional separate files host
-        "FILES_BASE_URL": None,
-        "FILES_CONTEXT_PATH": "",
+        "FILES_BASE_URL": "https://api-strm-gw01.jpmchase.com",
+        "FILES_CONTEXT_PATH": "/research/dataquery-authe/api/v2",
         # OAuth Configuration
         "OAUTH_ENABLED": "true",
-        "OAUTH_TOKEN_URL": None,
+        "OAUTH_TOKEN_URL": "https://authe.jpmorgan.com/as/token.oauth2",
         "CLIENT_ID": None,
         "CLIENT_SECRET": None,
         # scope removed
-        "AUDIENCE": "",
+        "OAUTH_AUD": "JPMC:URI:RS-06785-DataQueryExternalApi-PROD",
         "GRANT_TYPE": "client_credentials",
         # Bearer Token Configuration
         "BEARER_TOKEN": None,
@@ -268,7 +268,7 @@ class EnvConfig:
                 # API configuration
                 base_url=base_url,
                 context_path=cls.get_env_var("CONTEXT_PATH"),
-                api_version=cls.get_env_var("API_VERSION"),
+                api_version=cls.get_env_var("API_VERSION") or "2.0.0",
                 files_base_url=cls.get_env_var("FILES_BASE_URL"),
                 files_context_path=cls.get_env_var("FILES_CONTEXT_PATH"),
                 # OAuth configuration
@@ -278,7 +278,7 @@ class EnvConfig:
                 client_secret=cls.get_env_var("CLIENT_SECRET"),
                 # scope removed
                 aud=cls.get_env_var("OAUTH_AUD"),
-                grant_type=cls.get_env_var("GRANT_TYPE"),
+                grant_type=cls.get_env_var("GRANT_TYPE") or "client_credentials",
                 # Bearer token configuration
                 bearer_token=cls.get_env_var("BEARER_TOKEN"),
                 token_refresh_threshold=cls.get_int("TOKEN_REFRESH_THRESHOLD"),
@@ -299,10 +299,10 @@ class EnvConfig:
                 proxy_password=cls.get_env_var("PROXY_PASSWORD"),
                 proxy_verify_ssl=cls.get_bool("PROXY_VERIFY_SSL"),
                 # Logging
-                log_level=cls.get_env_var("LOG_LEVEL"),
+                log_level=cls.get_env_var("LOG_LEVEL") or "INFO",
                 enable_debug_logging=cls.get_bool("ENABLE_DEBUG_LOGGING"),
                 # Download configuration
-                download_dir=cls.get_env_var("DOWNLOAD_DIR"),
+                download_dir=cls.get_env_var("DOWNLOAD_DIR") or "./downloads",
                 create_directories=cls.get_bool("CREATE_DIRECTORIES"),
                 overwrite_existing=cls.get_bool("OVERWRITE_EXISTING"),
                 # Batch Download Configuration
@@ -324,10 +324,10 @@ class EnvConfig:
                 enable_range_requests=cls.get_bool("ENABLE_RANGE_REQUESTS"),
                 show_progress=cls.get_bool("SHOW_PROGRESS"),
                 # Workflow Configuration
-                workflow_dir=cls.get_env_var("WORKFLOW_DIR"),
-                groups_dir=cls.get_env_var("GROUPS_DIR"),
-                availability_dir=cls.get_env_var("AVAILABILITY_DIR"),
-                default_dir=cls.get_env_var("DEFAULT_DIR"),
+                workflow_dir=cls.get_env_var("WORKFLOW_DIR") or "workflow",
+                groups_dir=cls.get_env_var("GROUPS_DIR") or "groups",
+                availability_dir=cls.get_env_var("AVAILABILITY_DIR") or "availability",
+                default_dir=cls.get_env_var("DEFAULT_DIR") or "files",
                 # Security
                 mask_secrets=cls.get_bool("MASK_SECRETS"),
                 token_storage_enabled=cls.get_bool("TOKEN_STORAGE_ENABLED"),
@@ -459,16 +459,17 @@ class EnvConfig:
 # Copy this file to .env and update the values as needed
 
 # API Configuration
-{cls.PREFIX}BASE_URL=https://api.dataquery.com
-{cls.PREFIX}CONTEXT_PATH=
+{cls.PREFIX}BASE_URL=https://api-developer.jpmorgan.com
+{cls.PREFIX}CONTEXT_PATH=/research/dataquery-authe/api/v2
+# Optional separate Files API host
+{cls.PREFIX}FILES_BASE_URL=https://api-strm-gw01.jpmchase.com
+{cls.PREFIX}FILES_CONTEXT_PATH=/research/dataquery-authe/api/v2
 
 # OAuth Configuration
 {cls.PREFIX}OAUTH_ENABLED=true
-{cls.PREFIX}OAUTH_TOKEN_URL=https://api.dataquery.com/oauth/token
+{cls.PREFIX}OAUTH_TOKEN_URL=https://authe.jpmorgan.com/as/token.oauth2
 {cls.PREFIX}CLIENT_ID=your_client_id_here
 {cls.PREFIX}CLIENT_SECRET=your_client_secret_here
-{cls.PREFIX}SCOPE=data.read
-{cls.PREFIX}AUDIENCE=
 {cls.PREFIX}GRANT_TYPE=client_credentials
 
 # Bearer Token Configuration (alternative to OAuth)
@@ -476,7 +477,7 @@ class EnvConfig:
 {cls.PREFIX}TOKEN_REFRESH_THRESHOLD=300
 
 # HTTP Configuration
-{cls.PREFIX}TIMEOUT=6000.0
+{cls.PREFIX}TIMEOUT=600.0
 {cls.PREFIX}MAX_RETRIES=3
 {cls.PREFIX}RETRY_DELAY=1.0
 
@@ -505,7 +506,7 @@ class EnvConfig:
 {cls.PREFIX}OVERWRITE_EXISTING=false
 
 # Batch Download Configuration
-{cls.PREFIX}MAX_CONCURRENT_DOWNLOADS=3
+{cls.PREFIX}MAX_CONCURRENT_DOWNLOADS=5
 {cls.PREFIX}BATCH_SIZE=10
 {cls.PREFIX}RETRY_FAILED=true
 {cls.PREFIX}MAX_RETRY_ATTEMPTS=2

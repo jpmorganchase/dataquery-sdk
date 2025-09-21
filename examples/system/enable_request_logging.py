@@ -9,7 +9,7 @@ import asyncio
 from pathlib import Path
 from typing import Optional
 
-from dataquery.dataquery import DataQuery
+from dataquery import DataQuery
 from dataquery.logging_config import (
     LogFormat,
     LogLevel,

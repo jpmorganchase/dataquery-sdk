@@ -1,14 +1,17 @@
 """Tests for authentication module."""
 
 import json
+import os
+import tempfile
 from datetime import datetime, timedelta
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pytest
 
 from dataquery.auth import OAuthManager, TokenManager
 from dataquery.exceptions import AuthenticationError, ConfigurationError
-from dataquery.models import ClientConfig
+from dataquery.models import ClientConfig, OAuthToken, TokenResponse
 
 
 class TestOAuthManager:
@@ -161,6 +164,7 @@ class TestOAuthManager:
             base_url="https://api.example.com",
             oauth_enabled=False,
             bearer_token="test_bearer_token",
+            oauth_token_url=None,
         )
 
         oauth_manager = OAuthManager(config)
@@ -378,10 +382,11 @@ class TestTokenManager:
     async def test_token_manager_get_new_token_no_token_url(self):
         """Test TokenManager _get_new_token method with no token URL."""
         config = ClientConfig(
-            base_url="https://api.example.com",
+            base_url="",  # Empty base URL to prevent auto-generation
             oauth_enabled=True,
             client_id="test_client",
             client_secret="test_secret",
+            oauth_token_url=None,
         )
 
         token_manager = TokenManager(config)
@@ -537,10 +542,11 @@ class TestTokenManager:
     async def test_token_manager_refresh_token_no_token_url(self):
         """Test TokenManager _refresh_token method with no token URL."""
         config = ClientConfig(
-            base_url="https://api.example.com",
+            base_url="",  # Empty base URL to prevent auto-generation
             oauth_enabled=True,
             client_id="test_client",
             client_secret="test_secret",
+            oauth_token_url=None,
         )
 
         token_manager = TokenManager(config)

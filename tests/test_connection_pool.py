@@ -3,7 +3,8 @@ Targeted tests to improve connection_pool.py coverage.
 """
 
 import asyncio
-from unittest.mock import Mock
+from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
@@ -372,6 +373,7 @@ class TestConnectionPoolEdgeCases:
 
 
 # ===== Merged from test_connection_pool_advanced.py =====
+import asyncio as _asyncio_conn_adv
 from types import SimpleNamespace as _SimpleNamespace
 
 

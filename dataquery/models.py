@@ -33,30 +33,39 @@ class ClientConfig(BaseModel):
     """Configuration for the DATAQUERY client."""
 
     # API configuration
-    base_url: str = Field(..., description="Base URL of the DATAQUERY API")
+    base_url: str = Field(
+        default="https://api-developer.jpmorgan.com",
+        description="Base URL of the DATAQUERY API",
+    )
     context_path: Optional[str] = Field(
-        default="", description="API context path (e.g., '/api/v1')"
+        default="/research/dataquery-authe/api/v2", description="API context path"
     )
     api_version: str = Field(default="2.0.0", description="API version")
     # Optional separate host for file endpoints
     files_base_url: Optional[str] = Field(
-        default=None, description="Optional separate base URL for file endpoints"
+        default="https://api-strm-gw01.jpmchase.com",
+        description="Separate base URL for file endpoints",
     )
     files_context_path: Optional[str] = Field(
-        default="", description="Optional context path for the files host"
+        default="/research/dataquery-authe/api/v2",
+        description="Context path for the files host",
     )
 
     # OAuth configuration
     oauth_enabled: bool = Field(default=True, description="Enable OAuth authentication")
     oauth_token_url: Optional[str] = Field(
-        default=None, description="OAuth token endpoint URL"
+        default="https://authe.jpmorgan.com/as/token.oauth2",
+        description="OAuth token endpoint URL",
     )
     client_id: Optional[str] = Field(default=None, description="OAuth client ID")
     client_secret: Optional[str] = Field(
         default=None, description="OAuth client secret"
     )
     # scope removed
-    aud: Optional[str] = Field(default="", description="OAuth audience (aud)")
+    aud: Optional[str] = Field(
+        default="JPMC:URI:RS-06785-DataQueryExternalApi-PROD",
+        description="OAuth audience (aud)",
+    )
     grant_type: str = Field(
         default="client_credentials", description="OAuth grant type"
     )
