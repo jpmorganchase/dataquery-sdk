@@ -813,9 +813,6 @@ uv run mypy dataquery/
 
 ---
 
-## 📝 License
-
-MIT License — see `LICENSE` for details.
 
 ---
 
@@ -824,21 +821,3 @@ MIT License — see `LICENSE` for details.
 See `CHANGELOG.md` for version history and release notes.
 
 ---
-
-## 🎯 What's Next?
-
-### File Delivery
-- 🔍 **Automate daily pipelines** for regular file downloads
-- 🚀 **Optimize performance** for your specific infrastructure
-- 📊 **Build monitoring dashboards** for download success rates
-
-### Time Series
-- 📈 **Create custom analytics** using instrument time series
-- 🏗️ **Build data pipelines** combining files and time series
-- 🔬 **Develop quantitative models** with historical data access
-
----
-
-**Need Help?** 💬 Check the troubleshooting section or contact your DataQuery support team.
-
-*Happy downloading and querying! 🚀*
