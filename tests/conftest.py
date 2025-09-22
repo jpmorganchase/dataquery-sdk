@@ -6,7 +6,7 @@ import asyncio
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -16,6 +16,7 @@ from dataquery.models import ClientConfig
 
 # Fallback async test runner if pytest-asyncio plugin is unavailable
 try:
+    import pytest_asyncio  # type: ignore
 
     _HAS_PYTEST_ASYNCIO = True
 except Exception:  # pragma: no cover - environment dependent

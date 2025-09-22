@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Python 3.9 or higher
+- Python 3.10 or higher
 - pip or uv package manager
 
 ## Install from PyPI
@@ -27,7 +27,7 @@ For development or to get the latest features:
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/dataquery-sdk.git
+git clone https://github.com/dataquery/dataquery-sdk.git
 cd dataquery-sdk
 
 # Install in development mode
@@ -98,5 +98,5 @@ CMD ["python", "your_script.py"]
 If you encounter issues:
 
 1. Check the [configuration guide](configuration.md) for setup options
-2. Search [existing issues](https://github.com/your-org/dataquery-sdk/issues)
-3. Create a [new issue](https://github.com/your-org/dataquery-sdk/issues/new) with details
+2. Search [existing issues](https://github.com/dataquery/dataquery-sdk/issues)
+3. Create a [new issue](https://github.com/dataquery/dataquery-sdk/issues/new) with details

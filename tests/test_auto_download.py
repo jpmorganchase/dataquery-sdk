@@ -10,6 +10,8 @@ from dataquery.models import (
     DownloadProgress,
     DownloadResult,
     DownloadStatus,
+    FileInfo,
+    FileList,
 )
 
 
@@ -24,7 +26,7 @@ async def test_init_creates_directory_and_defaults(temp_download_dir):
     assert manager.download_options.output_dir == str(temp_download_dir)
     assert manager.max_retries == 3
     assert manager.check_current_date_only is True
-    assert manager.max_concurrent_downloads == 7
+    assert manager.max_concurrent_downloads == 5  # Now uses SDK default
     assert manager.is_running is False
 
 

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from dataquery.dataquery import DataQuery
+from dataquery import DataQuery
 from dataquery.models import DownloadProgress
 
 
@@ -22,13 +22,14 @@ Examples:
   %(prog)s GROUP123 20240101 20240131 ./downloads
   %(prog)s GROUP123 20240101 20240131 ./downloads
 
-Note: This script uses default concurrency settings (5 concurrent files, 5 parts per file).
-To customize these settings, modify the script or use the DataQuery SDK directly.
+Note: This script uses automatic concurrency optimization from the DataQuery SDK.
 
 Required Environment Variables:
-  DATAQUERY_BASE_URL     - Base URL of the DataQuery API
-  DATAQUERY_CLIENT_ID    - OAuth client ID (if using OAuth)
-  DATAQUERY_CLIENT_SECRET - OAuth client secret (if using OAuth)
+  DATAQUERY_CLIENT_ID    - OAuth client ID
+  DATAQUERY_CLIENT_SECRET - OAuth client secret
+
+Optional Environment Variables (only set if overriding defaults):
+  DATAQUERY_BASE_URL     - Base URL of the DataQuery API (default: https://api-developer.jpmorgan.com)
         """,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -47,7 +48,7 @@ Required Environment Variables:
     dest = args.destination
 
     # Validate required environment variables
-    required_env_vars = ["DATAQUERY_BASE_URL"]
+    required_env_vars = ["DATAQUERY_CLIENT_ID", "DATAQUERY_CLIENT_SECRET"]
     missing_vars = []
     for var in required_env_vars:
         value = os.getenv(var)
@@ -60,9 +61,11 @@ Required Environment Variables:
             print(f"   {var}")
         print("\nPlease set these environment variables before running the script.")
         print("Example:")
-        print("   export DATAQUERY_BASE_URL='https://api-developer.jpmorgan.com'")
         print("   export DATAQUERY_CLIENT_ID='your_client_id'")
         print("   export DATAQUERY_CLIENT_SECRET='your_client_secret'")
+        print(
+            "\nNote: DATAQUERY_BASE_URL is pre-configured and only needs to be set if overriding defaults"
+        )
         return
 
     # Validate date format
@@ -88,16 +91,13 @@ Required Environment Variables:
             print(f"❌ Error: Cannot create destination directory '{dest}': {e}")
             return
 
-    # Use default concurrency settings from the SDK
-    max_concurrent = 5  # Default from SDK
-    num_parts = 5  # Default from SDK
+    # SDK automatically optimizes concurrency settings
 
     print("🚀 Group Parallel Download by Date Range")
     print(f"   Group ID: {group_id}")
     print(f"   Date Range: {start_date} to {end_date}")
     print(f"   Destination: {dest}")
-    print(f"   Max Concurrent: {max_concurrent} (default)")
-    print(f"   Parts per File: {num_parts} (default)")
+    print("   Concurrency: Auto-optimized by SDK")
     print()
 
     try:
@@ -105,7 +105,7 @@ Required Environment Variables:
         os.environ.setdefault("DATAQUERY_ENABLE_DEBUG_LOGGING", "true")
         os.environ.setdefault("DATAQUERY_LOG_LEVEL", "DEBUG")
 
-        async with DataQuery(enable_debug_logging=True, log_level="DEBUG") as dq:
+        async with DataQuery() as dq:
             # Per-file progress callback (invoked for each file part update)
             def progress_callback(progress: DownloadProgress):
                 pct = f"{progress.percentage:.1f}%" if progress.total_bytes else "..."
@@ -130,7 +130,7 @@ Required Environment Variables:
                 print("\n✅ Completed")
 
             # Display timing information
-            print("\n⏱️  Timing Information:")
+            print(f"\n⏱️  Timing Information:")
             print(f"   Total time: {report.get('total_time_formatted', 'N/A')}")
             print(f"   Total time (seconds): {report.get('total_time_seconds', 'N/A')}")
             if report.get("total_time_minutes", 0) >= 1:
@@ -145,7 +145,7 @@ Required Environment Variables:
             except Exception:
                 pass
 
-            print("\n📁 Download Summary:")
+            print(f"\n📁 Download Summary:")
             print(f"   Group: {report.get('group_id')}")
             print(f"   Range: {report.get('start_date')} to {report.get('end_date')}")
             print(f"   Total files: {report.get('total_files')}")
@@ -155,9 +155,11 @@ Required Environment Variables:
 
             # Display concurrency and timing details (only if not an error case)
             if not report.get("error"):
-                print("\n🚀 Performance Details:")
-                print(f"   Max concurrent files: {report.get('max_concurrent')}")
-                print(f"   Parts per file: {report.get('num_parts')}")
+                print(f"\n🚀 Performance Details:")
+                if report.get("max_concurrent"):
+                    print(f"   Max concurrent files: {report.get('max_concurrent')}")
+                if report.get("num_parts"):
+                    print(f"   Parts per file: {report.get('num_parts')}")
                 print(
                     f"   Total concurrent requests: {report.get('total_concurrent_requests')}"
                 )
@@ -178,7 +180,7 @@ Required Environment Variables:
             # Display per-file timing information
             per_file_timing = report.get("per_file_timing", {})
             if per_file_timing and per_file_timing.get("file_times"):
-                print("\n⏱️  Per-File Timing Details:")
+                print(f"\n⏱️  Per-File Timing Details:")
                 print(
                     f"   Total download time: {per_file_timing.get('total_download_time_formatted', 'N/A')}"
                 )
@@ -192,7 +194,7 @@ Required Environment Variables:
                     f"   Slowest file: {per_file_timing.get('max_file_time_seconds', 0):.2f}s"
                 )
 
-                print("\n📁 Individual File Times:")
+                print(f"\n📁 Individual File Times:")
                 file_times = per_file_timing.get("file_times", [])
                 for i, file_info in enumerate(
                     file_times[:10], 1

@@ -73,7 +73,7 @@ jobs:
         run: uv run isort --check-only --diff .
 
       - name: Run flake8 linter
-        run: uv run flake8 dataquery/ 
+        run: uv run flake8 dataquery/
 
       - name: Run mypy type checker
         run: uv run mypy dataquery/
@@ -101,9 +101,9 @@ jobs:
           ls -l dist
           rm -rf .venv
           for pkg in dist/*.whl; do
-            echo "Testing wheel: $pkg[test]"
+            echo "Testing wheel: $pkg"
             uv venv
-            uv pip install "$pkg[test]" pytest --force-reinstall
+            uv pip install "$pkg[all]" pytest --force-reinstall
             .venv/bin/pytest -v tests/ -s
           done
           

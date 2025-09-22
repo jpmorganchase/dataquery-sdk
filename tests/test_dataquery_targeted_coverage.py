@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 from typing import List
 from unittest.mock import AsyncMock, patch
 
@@ -9,6 +10,8 @@ from dataquery.exceptions import ConfigurationError
 from dataquery.models import (
     AvailabilityInfo,
     ClientConfig,
+    DownloadResult,
+    DownloadStatus,
     FileInfo,
     Group,
 )
@@ -107,26 +110,25 @@ async def test_run_availability_async_report():
         assert report["is_available"] is True
 
 
-#
-# @pytest.mark.asyncio
-# async def test_run_download_async_report_from_result():
-#     dq = DataQuery(
-#         config_or_env_file=ClientConfig(
-#             base_url="https://api.example.com", oauth_enabled=False, bearer_token="t"
-#         )
-#     )
-#     result = DownloadResult(
-#         file_group_id="fg",
-#         local_path=Path("/tmp/x"),
-#         file_size=1024 * 1024,
-#         download_time=1.0,
-#         status=DownloadStatus.COMPLETED,
-#     )
-#     with patch.object(dq, "download_file_async", new=AsyncMock(return_value=result)):
-#         report = await dq.run_download_async("fg", "20240101")
-#         assert report["download_successful"] is True
-#         assert report["local_path"].endswith("/tmp/x")
-#         assert report["file_size"] == result.file_size
+@pytest.mark.asyncio
+async def test_run_download_async_report_from_result():
+    dq = DataQuery(
+        config_or_env_file=ClientConfig(
+            base_url="https://api.example.com", oauth_enabled=False, bearer_token="t"
+        )
+    )
+    result = DownloadResult(
+        file_group_id="fg",
+        local_path=Path("/tmp/x"),
+        file_size=1024 * 1024,
+        download_time=1.0,
+        status=DownloadStatus.COMPLETED,
+    )
+    with patch.object(dq, "download_file_async", new=AsyncMock(return_value=result)):
+        report = await dq.run_download_async("fg", "20240101")
+        assert report["download_successful"] is True
+        assert report["local_path"].endswith("/tmp/x")
+        assert report["file_size"] == result.file_size
 
 
 @pytest.mark.asyncio
@@ -154,7 +156,10 @@ def test_init_raises_configurationerror_on_validate_failure():
 
 def test_token_url_autoderive_when_client_id_given():
     cfg = ClientConfig(
-        base_url="https://api.example.com", oauth_enabled=False, bearer_token="t"
+        base_url="https://api.example.com",
+        oauth_enabled=False,
+        bearer_token="t",
+        oauth_token_url=None,
     )
     with patch("dataquery.dataquery.EnvConfig.validate_config", return_value=None):
         dq = DataQuery(config_or_env_file=cfg, client_id="id")
@@ -297,23 +302,6 @@ async def test_wrapper_methods_delegate_to_client():
         assert isinstance(ar.instruments, list)
         assert (await dq.get_group_time_series_async(["g"], ["a"])) is not None
         assert (await dq.get_grid_data_async(expr="x")) is not None
-
-
-@pytest.mark.asyncio
-async def test__run_async_fallback_inside_running_loop():
-    dq = DataQuery(
-        config_or_env_file=ClientConfig(
-            base_url="https://api.example.com", oauth_enabled=False, bearer_token="t"
-        )
-    )
-
-    async def add_one(x):
-        await asyncio.sleep(0)
-        return x + 1
-
-    # Call the sync helper from within a running loop to exercise fallback branch
-    result = dq._run_async(add_one(1))
-    assert result == 2
 
 
 @pytest.mark.asyncio

@@ -45,7 +45,7 @@ async def test_more_async_endpoints(monkeypatch):
 def test_sync_proxies_more(monkeypatch):
     dq = _dq(monkeypatch)
     with patch(
-        "dataquery.dataquery.DataQuery._run_async", return_value={"ok": True}
+        "dataquery.dataquery.DataQuery._run_sync", return_value={"ok": True}
     ) as ra:
         assert dq.get_grid_data(expr="x") == {"ok": True}
         assert ra.called

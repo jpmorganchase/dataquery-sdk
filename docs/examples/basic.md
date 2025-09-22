@@ -230,10 +230,11 @@ from dataquery import DataQuery
 from dataquery.models import ClientConfig
 
 async def download_with_config():
-    # Minimal configuration - only base_url required!
+    # Minimal configuration - only credentials required!
     config = ClientConfig(
-        base_url="https://api-developer.jpmorgan.com"
-        # All other settings use sensible defaults
+        client_id="your_client_id",
+        client_secret="your_client_secret"
+        # All other settings use pre-configured defaults
     )
     
     async with DataQuery(config=config) as dq:
@@ -252,12 +253,11 @@ asyncio.run(download_with_config())
 async def download_with_custom_config():
     # Override only what you need to change
     config = ClientConfig(
-        base_url="https://api-developer.jpmorgan.com",
+        client_id="your_client_id",
+        client_secret="your_client_secret",
         timeout=300.0,  # Override default timeout
         log_level="DEBUG",  # Override default log level
-        oauth_enabled=True,  # Enable OAuth
-        client_id="your_client_id",
-        client_secret="your_client_secret"
+        base_url="https://custom-api.example.com"  # Override default base URL
     )
     
     async with DataQuery(config=config) as dq:

@@ -74,7 +74,7 @@ pip install dataquery-sdk
 
 ## What's New
 
-### Latest Release: v0.1.0
+### Latest Release: v1.0.0
 
 - ✅ Initial release with parallel download capabilities
 - ✅ Group download functionality with intelligent rate limiting
@@ -93,10 +93,10 @@ DataQuery SDK is designed for high-performance data operations:
 
 ## Community
 
-- :material-github: [GitHub Repository](https://github.com/your-org/dataquery-sdk)
-- :material-bug: [Report Issues](https://github.com/your-org/dataquery-sdk/issues)
-- :material-lightbulb: [Request Features](https://github.com/your-org/dataquery-sdk/issues/new?template=feature_request.md)
-- :material-book: [Documentation](https://your-org.github.io/dataquery-sdk/)
+- :material-github: [GitHub Repository](https://github.com/dataquery/dataquery-sdk)
+- :material-bug: [Report Issues](https://github.com/dataquery/dataquery-sdk/issues)
+- :material-lightbulb: [Request Features](https://github.com/dataquery/dataquery-sdk/issues/new?template=feature_request.md)
+- :material-book: [Documentation](https://dataquery.github.io/dataquery-sdk/)
 
 ## License
 

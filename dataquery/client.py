@@ -4,6 +4,7 @@ Main client for the DATAQUERY SDK.
 
 import asyncio
 import re
+import socket
 import time
 import urllib.parse
 from datetime import datetime
@@ -11,8 +12,15 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import aiohttp
-import pandas as pd
 import structlog
+
+try:
+    import pandas as pd
+
+    HAS_PANDAS = True
+except ImportError:
+    pd = None
+    HAS_PANDAS = False
 
 from .auth import OAuthManager
 from .auto_download import AutoDownloadManager
@@ -514,7 +522,7 @@ class DataQueryClient:
                 enable_cleanup_closed=True,
                 use_dns_cache=True,  # Enable DNS caching
                 ttl_dns_cache=300,  # 5 minutes DNS cache
-                family=0,  # Allow both IPv4 and IPv6
+                family=socket.AF_UNSPEC,  # Allow both IPv4 and IPv6
                 ssl=False,  # Let aiohttp handle SSL context
                 local_addr=None,  # Let OS choose local address
                 force_close=False,  # Keep connections alive
@@ -524,11 +532,18 @@ class DataQueryClient:
             self.pool_monitor.start_monitoring(connector)
 
             # Configure session with optimized settings
+            try:
+                from importlib import metadata
+
+                version = metadata.version("dataquery-sdk")
+            except metadata.PackageNotFoundError:
+                version = "0.0.0"  # fallback
+
             session_kwargs = {
                 "timeout": timeout,
                 "connector": connector,
                 "headers": {
-                    "User-Agent": "DATAQUERY-SDK/1.0.0",
+                    "User-Agent": f"DATAQUERY-SDK/{version}",
                     "Connection": "keep-alive",  # Explicit keep-alive
                     "Accept-Encoding": "gzip, deflate",  # Enable compression
                 },
@@ -538,7 +553,7 @@ class DataQueryClient:
 
             # Note: Proxy is applied per-request in _execute_request
 
-            self.session = aiohttp.ClientSession(**session_kwargs)
+            self.session = aiohttp.ClientSession(**session_kwargs)  # type: ignore[arg-type]
 
             # For compatibility tests expecting BasicAuth construction when proxy auth is configured
             if self.config.proxy_enabled and self.config.has_proxy_credentials:
@@ -587,7 +602,7 @@ class DataQueryClient:
                         await self.session.close()
                     else:
                         # For mock objects, call close directly
-                        self.session.close()
+                        self.session.close()  # type: ignore[unused-coroutine]
                 self.session = None
 
             self.logger.info("DataQuery client closed successfully")
@@ -637,8 +652,8 @@ class DataQueryClient:
         max_url_length = 2080
         if len(complete_url) > max_url_length:
             raise ValidationError(
-                f"Complete request URL length ({len(complete_url)}) exceeds maximum allowed ({max_url_length} characters). "
-                f"Consider reducing parameter values.",
+                f"Complete request URL length ({len(complete_url)}) exceeds maximum allowed "
+                f"({max_url_length} characters). Consider reducing parameter values.",
                 details={
                     "url_length": len(complete_url),
                     "max_length": max_url_length,
@@ -1154,11 +1169,17 @@ class DataQueryClient:
             # Open a single shared handle for all range writers
             shared_fh = open(temp_destination, "r+b")
 
+            # Progress callback optimization: track last callback state
+            last_callback_bytes = 0
+            last_callback_time = time.time()
+            callback_threshold_bytes = 1024 * 1024  # 1MB
+            callback_threshold_time = 0.5  # 0.5 seconds
+
             # Get the current event loop
             loop = asyncio.get_running_loop()
 
             async def download_range(start_byte: int, end_byte: int):
-                nonlocal bytes_downloaded
+                nonlocal bytes_downloaded, last_callback_bytes, last_callback_time
                 headers = {"Range": f"bytes={start_byte}-{end_byte}"}
                 # each part request
                 async with await self._enter_request_cm(
@@ -1178,15 +1199,31 @@ class DataQueryClient:
                         async with bytes_lock:
                             bytes_downloaded += len(chunk)
                             progress.update_progress(bytes_downloaded)
-                            if progress_callback:
-                                progress_callback(progress)
-                            elif options.show_progress:
-                                self.logger.info(
-                                    "Download progress",
-                                    file=file_group_id,
-                                    percentage=f"{progress.percentage:.1f}%",
-                                    downloaded=format_file_size(bytes_downloaded),
-                                )
+
+                            # Optimized progress callback: only call every 1MB or 0.5s
+                            current_time = time.time()
+                            bytes_diff = bytes_downloaded - last_callback_bytes
+                            time_diff = current_time - last_callback_time
+
+                            should_callback = (
+                                bytes_diff >= callback_threshold_bytes
+                                or time_diff >= callback_threshold_time
+                                or bytes_downloaded
+                                == total_bytes  # Always callback on completion
+                            )
+
+                            if should_callback:
+                                if progress_callback:
+                                    progress_callback(progress)
+                                elif options.show_progress:
+                                    self.logger.info(
+                                        "Download progress",
+                                        file=file_group_id,
+                                        percentage=f"{progress.percentage:.1f}%",
+                                        downloaded=format_file_size(bytes_downloaded),
+                                    )
+                                last_callback_bytes = bytes_downloaded
+                                last_callback_time = current_time
 
             # Run all parts concurrently
             await asyncio.gather(*(download_range(s, e) for s, e in ranges))
@@ -1610,6 +1647,7 @@ class DataQueryClient:
             validate_date_format(end_date, "end-date")
         """
         Retrieve time-series data for explicit list of instruments and attributes using identifiers.
+
         Args:
             instruments: List of instrument identifiers
             attributes: List of attribute identifiers
@@ -1622,6 +1660,7 @@ class DataQueryClient:
             conversion: Conversion convention
             nan_treatment: Missing data treatment
             page: Optional page token for pagination
+
         Returns:
             TimeSeriesResponse containing the time series data
         """
@@ -1960,7 +1999,9 @@ class DataQueryClient:
         if response.status < 400:
             self.rate_limiter.handle_successful_request()
 
-    async def _enter_request_cm(self, method: str, url: str, **kwargs):
+    async def _enter_request_cm(
+        self, method: str, url: str, **kwargs
+    ) -> aiohttp.ClientResponse:
         """Support both awaitable and direct async context manager returns from mocks.
 
         Some tests monkeypatch `_make_authenticated_request` to return a context
@@ -1970,7 +2011,8 @@ class DataQueryClient:
         try:
             cm = await req  # coroutine returning CM
         except TypeError:
-            cm = req  # already a CM
+            # For mocked tests that return CM directly
+            cm = req  # type: ignore[assignment]  # already a CM
         return cm
 
     def _get_file_extension(self, file_group_id: str) -> str:
@@ -2023,6 +2065,7 @@ class DataQueryClient:
         error_callback: Optional[Callable] = None,
         max_retries: int = 3,
         check_current_date_only: bool = True,
+        max_concurrent_downloads: Optional[int] = None,
     ) -> "AutoDownloadManager":
         """
         Start automatic file download monitoring and downloading.
@@ -2039,6 +2082,7 @@ class DataQueryClient:
             error_callback: Optional callback for errors
             max_retries: Maximum retry attempts for failed downloads
             check_current_date_only: If True, only check files for current date
+            max_concurrent_downloads: Maximum concurrent downloads (uses SDK default if None)
 
         Returns:
             AutoDownloadManager instance for controlling the auto-download process
@@ -2073,6 +2117,7 @@ class DataQueryClient:
             error_callback=error_callback,
             max_retries=max_retries,
             check_current_date_only=check_current_date_only,
+            max_concurrent_downloads=max_concurrent_downloads,
         )
 
         await manager.start()
@@ -2088,6 +2133,7 @@ class DataQueryClient:
         error_callback: Optional[Callable] = None,
         max_retries: int = 3,
         check_current_date_only: bool = True,
+        max_concurrent_downloads: Optional[int] = None,
     ) -> "AutoDownloadManager":
         """
         Synchronous wrapper for start_auto_download_async.
@@ -2111,6 +2157,7 @@ class DataQueryClient:
                 error_callback,
                 max_retries,
                 check_current_date_only,
+                max_concurrent_downloads,
             )
         )
 
@@ -2164,9 +2211,7 @@ class DataQueryClient:
                 }
             )
         """
-        try:
-            import pandas as pd
-        except ImportError:
+        if not HAS_PANDAS:
             raise ImportError(
                 "pandas is required for DataFrame conversion. "
                 "Install it with: pip install pandas"
@@ -2440,7 +2485,7 @@ class DataQueryClient:
                             pd.to_datetime(sample_values.iloc[0])  # Test conversion
                             df[column] = pd.to_datetime(df[column], errors="coerce")
                             continue
-                    except:
+                    except Exception:
                         pass
 
                 # Auto-detect numeric columns
@@ -2465,7 +2510,7 @@ class DataQueryClient:
                         # If most values converted successfully, use numeric type
                         if numeric_series.notna().sum() / len(df) > 0.7:
                             df[column] = numeric_series
-                    except:
+                    except Exception:
                         pass
 
         return df
@@ -2588,13 +2633,20 @@ class DataQueryClient:
         progress_callback: Optional[Callable[[DownloadProgress], None]] = None,
     ) -> DownloadResult:
         """Synchronous wrapper using an event-loop aware runner."""
-        # Maintain positional call order expected by async signature
-        # Reorder to match async signature (file_group_id, file_datetime, destination_path, options, num_parts=5, progress_callback)
+        # If destination_path is provided but options is None, create options with destination_path
+        if destination_path is not None and options is None:
+            from .models import DownloadOptions
+
+            options = DownloadOptions(destination_path=destination_path)
+        elif destination_path is not None and options is not None:
+            # If both are provided, update options with destination_path
+            options = options.model_copy(update={"destination_path": destination_path})
+
+        # Match async signature (file_group_id, file_datetime, options, num_parts, progress_callback)
         return self._run_sync(
             self.download_file_async(
                 file_group_id,
                 file_datetime,
-                destination_path,
                 options,
                 5,
                 progress_callback,
@@ -2763,6 +2815,7 @@ class DataQueryClient:
 
     def _run_sync(self, coro):
         try:
+            asyncio.get_running_loop()
             import concurrent.futures
 
             with concurrent.futures.ThreadPoolExecutor() as executor:

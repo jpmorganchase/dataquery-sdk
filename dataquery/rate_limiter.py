@@ -117,6 +117,12 @@ class RateLimitState:
     # Adaptive rate limiting
     consecutive_failures: int = 0
     current_backoff: float = 0.0
+
+    # Request statistics
+    total_requests: int = 0
+    successful_requests: int = 0
+    failed_requests: int = 0
+    rate_limited_requests: int = 0
     last_failure_time: float = 0.0
 
 
