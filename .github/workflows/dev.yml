@@ -103,7 +103,7 @@ jobs:
           for pkg in dist/*.whl; do
             echo "Testing wheel: $pkg"
             uv venv
-            uv pip install "$pkg" pytest --force-reinstall
+            uv pip install "$pkg[all]" pytest --force-reinstall
             .venv/bin/pytest -v tests/ -s
           done
           
