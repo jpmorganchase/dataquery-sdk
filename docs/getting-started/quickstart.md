@@ -13,16 +13,17 @@ pip install dataquery-sdk
 ### 2. Set Environment Variables
 
 ```bash
-# Required - Only this is needed to get started!
-export DATAQUERY_BASE_URL="https://api-developer.jpmorgan.com"
-
-# Optional - Only set these if you want to use OAuth authentication
-export DATAQUERY_OAUTH_ENABLED="true"
+# Required for OAuth authentication
 export DATAQUERY_CLIENT_ID="your_client_id_here"
 export DATAQUERY_CLIENT_SECRET="your_client_secret_here"
+
+# Optional - Only set these if you want to override the defaults
+# export DATAQUERY_BASE_URL="https://api-developer.jpmorgan.com"  # Default
+# export DATAQUERY_CONTEXT_PATH="/research/dataquery-authe/api/v2"  # Default
+# export DATAQUERY_OAUTH_TOKEN_URL="https://authe.jpmorgan.com/as/token.oauth2"  # Default
 ```
 
-> **Note**: The SDK comes with sensible defaults for all other configuration options. You only need to set `DATAQUERY_BASE_URL` to get started!
+> **Note**: The SDK comes with pre-configured defaults for JPMorgan's DataQuery API. You only need to set your OAuth credentials to get started!
 
 ### 3. Basic Usage
 
@@ -185,5 +186,5 @@ Now that you have the basics:
 ## Need Help?
 
 - 📚 [Full Documentation](../index.md)
-- 🐛 [Report Issues](https://github.com/your-org/dataquery-sdk/issues)
-- 💬 [Ask Questions](https://github.com/your-org/dataquery-sdk/discussions)
+- 🐛 [Report Issues](https://github.com/dataquery/dataquery-sdk/issues)
+- 💬 [Ask Questions](https://github.com/dataquery/dataquery-sdk/discussions)

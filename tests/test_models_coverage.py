@@ -2,6 +2,10 @@
 Focused tests to improve coverage on specific areas.
 """
 
+from datetime import datetime, timedelta
+
+import pytest
+
 from dataquery.models import (
     AuthenticationErrorResponse,
     Available,
@@ -30,7 +34,7 @@ class TestClientConfigCoverage:
 
     def test_api_base_url_without_context_path(self):
         """Test api_base_url property without context path."""
-        config = ClientConfig(base_url="https://api.example.com")
+        config = ClientConfig(base_url="https://api.example.com", context_path="")
         assert config.api_base_url == "https://api.example.com"
 
 

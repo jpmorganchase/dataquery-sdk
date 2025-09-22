@@ -11,7 +11,7 @@ Quick Start:
     ...     groups = await dq.list_groups_async()
     ...     print(f"Found {len(groups)} groups")
 
-For more information, visit: https://github.com/dataquery/dataquery-sdk-python
+For more information, visit: https://github.com/dataquery/dataquery-sdk
 """
 
 __version__ = "1.0.0"

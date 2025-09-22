@@ -15,7 +15,9 @@ def test_format_duration():
 
 
 def test_url_builders_and_extract():
-    cfg = ClientConfig(base_url="https://api.example.com", context_path="/ctx")
+    cfg = ClientConfig(
+        base_url="https://api.example.com", context_path="/ctx", files_base_url=None
+    )
     client = DataQueryClient(cfg)
     # _build_api_url
     u1 = client._build_api_url("groups")

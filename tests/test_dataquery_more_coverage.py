@@ -74,19 +74,21 @@ async def test_run_group_download_async_filters_availability(monkeypatch):
             )()
 
             # Build a real DataQuery but with client mocked
-            async with DataQuery() as dq:
-                # Mock the internal method that group download actually calls
-                dq._download_file_parallel_flattened = AsyncMock(
-                    return_value=mock_download_result
-                )
+            dq = DataQuery()
+            await dq.connect_async()
+            # Mock the internal method that group download actually calls
+            dq._download_file_parallel_flattened = AsyncMock(
+                return_value=mock_download_result
+            )
 
-                report = await dq.run_group_download_async(
-                    group_id="G",
-                    start_date="20240101",
-                    end_date="20240131",
-                    max_concurrent=2,
-                    num_parts=2,
-                )
+            report = await dq.run_group_download_async(
+                group_id="G",
+                start_date="20240101",
+                end_date="20240131",
+                max_concurrent=2,
+                num_parts=2,
+            )
+            await dq.close_async()
 
         # Only two entries are available True
         assert report["total_files"] == 2

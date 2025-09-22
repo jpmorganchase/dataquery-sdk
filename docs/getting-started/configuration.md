@@ -1,54 +1,54 @@
 # Configuration
 
-DataQuery SDK can be configured through environment variables, configuration files, or programmatically. The SDK comes with sensible defaults for most configuration options, so you only need to set the values you want to override.
+DataQuery SDK can be configured through environment variables, configuration files, or programmatically. The SDK comes with pre-configured defaults for JPMorgan's DataQuery API, so you only need to set your credentials to get started.
 
 ## Environment Variables
 
 ### Required Configuration
 
-- **`DATAQUERY_BASE_URL`**: Base URL of the DataQuery API (e.g., `https://api-developer.jpmorgan.com`)
+- **`DATAQUERY_CLIENT_ID`**: OAuth client ID for API authentication
+- **`DATAQUERY_CLIENT_SECRET`**: OAuth client secret for API authentication
 
-> **Note**: All other configuration options have sensible defaults and are optional. You only need to set them if you want to override the default behavior.
+> **Note**: The SDK is pre-configured with JPMorgan's DataQuery API endpoints. All other configuration options have sensible defaults and are optional.
 
-### Host Configuration (Base URL and Context Path)
+### Host Configuration (Pre-configured for JPMorgan)
 
-You can configure a single host (most common) or an optional separate host specifically for the Files streaming API.
+The SDK comes pre-configured with JPMorgan's DataQuery API endpoints:
 
-#### Single host (time-series and files on same host)
-
+**Default Configuration (automatically set):**
 ```bash
-DATAQUERY_BASE_URL=https://api-developer.jpmorgan.com
-DATAQUERY_CONTEXT_PATH=/research/dataquery-authe/api/v2
-```
-
-- Use this when both time-series and file downloads are served from the same platform.
-- `DATAQUERY_CONTEXT_PATH` is optional. If omitted, the SDK will use root (`/`).
-
-#### Separate Files API host (optional)
-
-Some environments expose a separate Files streaming gateway. Configure both the main API host and the Files host:
-
-```bash
-# Main API host (time-series, catalogs, instruments, etc.)
+# Main API endpoints (pre-configured)
 DATAQUERY_BASE_URL=https://api-developer.jpmorgan.com
 DATAQUERY_CONTEXT_PATH=/research/dataquery-authe/api/v2
 
-# Files API host (parallel range downloads/streaming)
+# Files API endpoints (pre-configured)
 DATAQUERY_FILES_BASE_URL=https://api-strm-gw01.jpmchase.com
 DATAQUERY_FILES_CONTEXT_PATH=/research/dataquery-authe/api/v2
+
+# OAuth endpoint (pre-configured)
+DATAQUERY_OAUTH_TOKEN_URL=https://authe.jpmorgan.com/as/token.oauth2
 ```
 
-- If you only use time-series or metadata endpoints, you can omit the Files host settings.
-- If you use file downloads, and your organization requires a separate streaming gateway, set both `DATAQUERY_FILES_BASE_URL` and `DATAQUERY_FILES_CONTEXT_PATH`.
+**Override Only If Needed:**
+You only need to set these environment variables if you want to override the defaults for a different environment:
+
+```bash
+# Only set these if you need to override the defaults
+export DATAQUERY_BASE_URL="https://your-custom-api.com"
+export DATAQUERY_CONTEXT_PATH="/your/custom/path"
+export DATAQUERY_FILES_BASE_URL="https://your-custom-files-api.com"
+export DATAQUERY_FILES_CONTEXT_PATH="/your/custom/files/path"
+export DATAQUERY_OAUTH_TOKEN_URL="https://your-custom-auth.com/token"
+```
 
 ### Authentication Configuration
 
 #### OAuth 2.0 (Recommended)
-- **`DATAQUERY_OAUTH_ENABLED`**: Enable OAuth authentication (`true`/`false`) - **enabled by default**
-- **`DATAQUERY_OAUTH_TOKEN_URL`**: OAuth token endpoint URL (e.g., `{BASE_URL}/oauth/token`)
-- **`DATAQUERY_CLIENT_ID`**: OAuth client ID
-- **`DATAQUERY_CLIENT_SECRET`**: OAuth client secret
-- **`DATAQUERY_OAUTH_AUD`**: OAuth audience (optional)
+- **`DATAQUERY_CLIENT_ID`**: OAuth client ID (**required**)
+- **`DATAQUERY_CLIENT_SECRET`**: OAuth client secret (**required**)
+- **`DATAQUERY_OAUTH_ENABLED`**: Enable OAuth authentication (default: `true`)
+- **`DATAQUERY_OAUTH_TOKEN_URL`**: OAuth token endpoint URL (default: `https://authe.jpmorgan.com/as/token.oauth2`)
+- **`DATAQUERY_OAUTH_AUD`**: OAuth audience (default: `JPMC:URI:RS-06785-DataQueryExternalApi-PROD`)
 - **`DATAQUERY_GRANT_TYPE`**: OAuth grant type (default: `client_credentials`)
 
 #### Bearer Token (Alternative)
@@ -63,7 +63,7 @@ DATAQUERY_FILES_CONTEXT_PATH=/research/dataquery-authe/api/v2
 - **`DATAQUERY_POOL_MAXSIZE`**: Maximum connections in pool (default: `20`)
 
 ### Rate Limiting Configuration
-- **`DATAQUERY_REQUESTS_PER_MINUTE`**: Rate limit for requests per minute (default: `100`)
+- **`DATAQUERY_REQUESTS_PER_MINUTE`**: Rate limit for requests per minute (default: `300`)
 - **`DATAQUERY_BURST_CAPACITY`**: Burst capacity for rate limiting (default: `20`)
 
 ### Logging Configuration
@@ -95,12 +95,15 @@ The SDK comes with the following sensible defaults, so you only need to configur
 | Configuration | Default Value | Description |
 |---------------|---------------|-------------|
 | **API Configuration** | | |
+| `DATAQUERY_BASE_URL` | `https://api-developer.jpmorgan.com` | Main API base URL |
 | `DATAQUERY_API_VERSION` | `2.0.0` | API version |
-| `DATAQUERY_CONTEXT_PATH` | `` | API context path (empty by default) |
-| `DATAQUERY_FILES_BASE_URL` | `` | Optional separate base URL for file endpoints |
-| `DATAQUERY_FILES_CONTEXT_PATH` | `` | Optional context path for the files host |
+| `DATAQUERY_CONTEXT_PATH` | `/research/dataquery-authe/api/v2` | API context path |
+| `DATAQUERY_FILES_BASE_URL` | `https://api-strm-gw01.jpmchase.com` | Files API base URL |
+| `DATAQUERY_FILES_CONTEXT_PATH` | `/research/dataquery-authe/api/v2` | Files API context path |
 | **Authentication** | | |
 | `DATAQUERY_OAUTH_ENABLED` | `true` | OAuth authentication enabled by default |
+| `DATAQUERY_OAUTH_TOKEN_URL` | `https://authe.jpmorgan.com/as/token.oauth2` | OAuth token endpoint |
+| `DATAQUERY_OAUTH_AUD` | `JPMC:URI:RS-06785-DataQueryExternalApi-PROD` | OAuth audience |
 | `DATAQUERY_GRANT_TYPE` | `client_credentials` | OAuth grant type |
 | `DATAQUERY_TOKEN_REFRESH_THRESHOLD` | `300` | Token refresh threshold (5 minutes) |
 | **Connection** | | |
@@ -110,7 +113,7 @@ The SDK comes with the following sensible defaults, so you only need to configur
 | `DATAQUERY_POOL_CONNECTIONS` | `10` | Connection pool size |
 | `DATAQUERY_POOL_MAXSIZE` | `20` | Maximum connections per pool |
 | **Rate Limiting** | | |
-| `DATAQUERY_REQUESTS_PER_MINUTE` | `100` | Rate limit (requests per minute) |
+| `DATAQUERY_REQUESTS_PER_MINUTE` | `300` | Rate limit (requests per minute) |
 | `DATAQUERY_BURST_CAPACITY` | `20` | Burst capacity for rate limiting |
 | **Logging** | | |
 | `DATAQUERY_LOG_LEVEL` | `INFO` | Logging level |
@@ -152,15 +155,15 @@ Create a `.env` file in your project root:
 
 ```bash
 # .env
-# Required
-DATAQUERY_BASE_URL=https://api-developer.jpmorgan.com
-
-# OAuth Authentication (Recommended)
-DATAQUERY_OAUTH_ENABLED=true
-DATAQUERY_OAUTH_TOKEN_URL=https://api-developer.jpmorgan.com/oauth/token
+# Required - OAuth credentials
 DATAQUERY_CLIENT_ID=your_client_id_here
 DATAQUERY_CLIENT_SECRET=your_client_secret_here
-DATAQUERY_GRANT_TYPE=client_credentials
+
+# Optional - Override defaults only if needed
+# DATAQUERY_BASE_URL=https://api-developer.jpmorgan.com  # Pre-configured
+# DATAQUERY_CONTEXT_PATH=/research/dataquery-authe/api/v2  # Pre-configured
+# DATAQUERY_OAUTH_TOKEN_URL=https://authe.jpmorgan.com/as/token.oauth2  # Pre-configured
+# DATAQUERY_OAUTH_AUD=JPMC:URI:RS-06785-DataQueryExternalApi-PROD  # Pre-configured
 
 # Optional Configuration
 DATAQUERY_DOWNLOAD_DIR=./downloads
@@ -178,9 +181,10 @@ Configure the SDK programmatically:
 from dataquery import DataQuery
 from dataquery.models import ClientConfig
 
-# Minimal configuration - only base_url required, everything else uses defaults
+# Minimal configuration - only credentials required, everything else uses defaults
 config = ClientConfig(
-    base_url="https://api-developer.jpmorgan.com"
+    client_id="your_client_id",
+    client_secret="your_client_secret"
 )
 
 # Use with DataQuery
@@ -190,12 +194,12 @@ async with DataQuery(config=config) as dq:
 
 # Or override specific defaults
 config = ClientConfig(
-    base_url="https://api-developer.jpmorgan.com",
+    client_id="your_client_id",
+    client_secret="your_client_secret",
     timeout=300.0,  # Override default timeout
     log_level="DEBUG",  # Override default log level
-    oauth_enabled=True,  # Override default OAuth setting
-    client_id="your_client_id",
-    client_secret="your_client_secret"
+    base_url="https://your-custom-api.com",  # Override default base URL
+    context_path="/your/custom/path"  # Override default context path
 )
 ```
 
@@ -204,9 +208,9 @@ config = ClientConfig(
 ### Connection Settings
 
 ```python
-from dataquery.models import DataQueryConfig
+from dataquery.models import ClientConfig
 
-config = DataQueryConfig(
+config = ClientConfig(
     api_key="your-api-key",
     # Connection settings
     timeout=30.0,
@@ -311,9 +315,9 @@ async with DataQuery(config=config) as dq:
 ### HTTP Proxy
 
 ```python
-from dataquery.models import DataQueryConfig
+from dataquery.models import ClientConfig
 
-config = DataQueryConfig(
+config = ClientConfig(
     api_key="your-api-key",
     proxy_url="http://proxy.company.com:8080"
 )

@@ -32,15 +32,26 @@ from dataquery.exceptions import DataQueryError
 async def main() -> None:
     parser = argparse.ArgumentParser(description="Get group time series (lean)")
     parser.add_argument(
-        "--group-id", help="Group ID. If omitted, uses the first available group"
+        "--group-id",
+        help="Group ID. If omitted, uses the first available group",
+        required=True,
     )
     parser.add_argument(
         "--attributes",
         default="CLOSE",
         help="Comma-separated attributes (default: CLOSE)",
+        required=True,
     )
-    parser.add_argument("--start", help="Start date YYYYMMDD (default: 90 days ago)")
-    parser.add_argument("--end", help="End date YYYYMMDD (default: today)")
+    parser.add_argument(
+        "--start",
+        help="Start date YYYYMMDD (default: 90 days ago)",
+        required=True,
+    )
+    parser.add_argument(
+        "--end",
+        help="End date YYYYMMDD (default: today)",
+        required=True,
+    )
     parser.add_argument(
         "--frequency", default="FREQ_DAY", help="Frequency (default: FREQ_DAY)"
     )
@@ -88,10 +99,9 @@ async def main() -> None:
 
             resp = await dq.get_group_time_series_async(
                 group_id=group_id,
-                instruments=None,
                 attributes=attributes_list,
-                filters=None,
-                data="REFERENCE_DATA",
+                filter=None,
+                data="ALL",
                 format="JSON",
                 start_date=start_date,
                 end_date=end_date,
@@ -102,18 +112,14 @@ async def main() -> None:
                 page=args.page,
             )
 
-            series = getattr(resp, "series", []) or []
-            print(f"Series: {len(series)}")
-            for i, s in enumerate(series[: args.show], 1):
-                instrument = s.get("instrument", "")
-                attribute = s.get("attribute", "")
-                points = s.get("data", [])
-                print(f"{i}. {instrument} - {attribute} (points: {len(points)})")
-
-            if hasattr(resp, "pagination") and resp.pagination:
-                next_page = resp.pagination.get("next_page")
-                if next_page:
-                    print(f"Next page token: {next_page}")
+            instruments = getattr(resp, "instruments", []) or []
+            attributes = [
+                attr
+                for instrument in instruments
+                for attr in getattr(instrument, "attributes", [])
+            ]
+            time_series_list = [attr.time_series for attr in attributes]
+            print(f"time_series: {time_series_list}")
 
     except DataQueryError as e:
         print(f"Error: {e}")

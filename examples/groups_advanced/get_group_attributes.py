@@ -8,12 +8,11 @@ Defaults:
 
 Usage:
   python examples/groups_advanced/get_group_attributes.py \
-    [--group-id <id>] [--filters '{"key":"value"}'] [--page <token>] [--show 5]
+    [--group-id <id>] [--instrument-id <instrument>] [--page <token>] [--show 5]
 """
 
 import argparse
 import asyncio
-import json
 import sys
 from pathlib import Path
 
@@ -29,19 +28,14 @@ async def main() -> None:
     parser.add_argument(
         "--group-id", help="Group ID. If omitted, uses the first available group"
     )
-    parser.add_argument("--filters", help="JSON string for filters (optional)")
+    parser.add_argument(
+        "--instrument-id", help="Instrument ID to filter results (optional)"
+    )
     parser.add_argument("--page", help="Pagination token (optional)")
     parser.add_argument(
         "--show", type=int, default=5, help="How many attributes to print (default: 5)"
     )
     args = parser.parse_args()
-
-    filters_obj = None
-    if args.filters:
-        try:
-            filters_obj = json.loads(args.filters)
-        except json.JSONDecodeError:
-            print("Invalid JSON for --filters. Ignoring.")
 
     try:
         async with DataQuery() as dq:
@@ -55,7 +49,7 @@ async def main() -> None:
 
             resp = await dq.get_group_attributes_async(
                 group_id=group_id,
-                filters=filters_obj,
+                instrument_id=getattr(args, "instrument_id", None),
                 page=args.page,
             )
 

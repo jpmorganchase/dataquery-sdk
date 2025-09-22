@@ -1,5 +1,7 @@
 """Tests for custom exceptions."""
 
+import pytest
+
 from dataquery.exceptions import (
     AuthenticationError,
     AvailabilityError,

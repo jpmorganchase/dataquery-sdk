@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set
 
+from .config import EnvConfig
 from .models import DownloadOptions, DownloadProgress
 
 
@@ -41,7 +42,7 @@ class AutoDownloadManager:
         error_callback: Optional[Callable] = None,
         max_retries: int = 3,
         check_current_date_only: bool = True,
-        max_concurrent_downloads: int = 7,
+        max_concurrent_downloads: Optional[int] = None,
     ):
         """
         Initialize the AutoDownloadManager.
@@ -56,6 +57,7 @@ class AutoDownloadManager:
             error_callback: Optional callback for errors
             max_retries: Maximum retry attempts for failed downloads
             check_current_date_only: If True, only check files for current date
+            max_concurrent_downloads: Maximum concurrent downloads (uses SDK default if None)
         """
         self.client = client
         self.group_id = group_id
@@ -66,7 +68,12 @@ class AutoDownloadManager:
         self.error_callback = error_callback
         self.max_retries = max_retries
         self.check_current_date_only = check_current_date_only
-        self.max_concurrent_downloads = max_concurrent_downloads
+        # Use SDK default if not specified
+        self.max_concurrent_downloads = (
+            max_concurrent_downloads
+            if max_concurrent_downloads is not None
+            else EnvConfig.get_int("MAX_CONCURRENT_DOWNLOADS", "5")
+        )
 
         # Create destination directory if it doesn't exist
         self.destination_dir.mkdir(parents=True, exist_ok=True)
@@ -97,9 +104,9 @@ class AutoDownloadManager:
         # Download options
         # Note: destination_path is used by the client to treat this as a directory target
         self.download_options = DownloadOptions(
-            destination_path=str(self.destination_dir),
+            destination_path=self.destination_dir,
             overwrite_existing=False,  # Don't overwrite existing files
-            chunk_size_setting=8192,
+            chunk_size=8192,
         )
         # Backward-compat extra attribute used by tests; harmless extra field
         setattr(self.download_options, "output_dir", str(self.destination_dir))

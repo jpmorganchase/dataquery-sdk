@@ -33,14 +33,24 @@ async def main() -> None:
     parser.add_argument(
         "--instruments",
         help="Comma-separated instrument IDs. If omitted, auto-detect first 2 from first group",
+        required=True,
     )
     parser.add_argument(
         "--attributes",
         default="CLOSE",
         help="Comma-separated attributes (default: CLOSE)",
+        required=True,
     )
-    parser.add_argument("--start", help="Start date YYYYMMDD (default: 60 days ago)")
-    parser.add_argument("--end", help="End date YYYYMMDD (default: today)")
+    parser.add_argument(
+        "--start",
+        help="Start date YYYYMMDD",
+        required=True,
+    )
+    parser.add_argument(
+        "--end",
+        help="End date YYYYMMDD (default: today)",
+        required=True,
+    )
     parser.add_argument(
         "--frequency", default="FREQ_DAY", help="Frequency (default: FREQ_DAY)"
     )
@@ -84,13 +94,12 @@ async def main() -> None:
     try:
         async with DataQuery() as dq:
             if not instrument_ids:
-                groups = await dq.list_groups_async(limit=1)
+                groups = await dq.list_groups_async(limit=100)
                 if not groups:
                     print("No groups available")
                     return
-                instruments_resp = await dq.list_instruments_async(
-                    groups[0].group_id, limit=2
-                )
+                instruments_resp = await dq.list_instruments_async(groups[0].group_id)
+                print(instruments_resp)
                 instruments = getattr(instruments_resp, "instruments", []) or []
                 if not instruments:
                     print("No instruments found in the first group")
@@ -102,9 +111,9 @@ async def main() -> None:
                 ]
 
             resp = await dq.get_instrument_time_series_async(
-                instruments=instrument_ids,
+                instruments=instrument_ids[0:10],
                 attributes=attributes_list,
-                data="REFERENCE_DATA",
+                data="ALL",
                 format="JSON",
                 start_date=start_date,
                 end_date=end_date,
@@ -115,18 +124,16 @@ async def main() -> None:
                 page=args.page,
             )
 
-            series = getattr(resp, "series", []) or []
-            print(f"Series: {len(series)}")
-            for i, s in enumerate(series[: args.show], 1):
-                instrument = s.get("instrument", "")
-                attribute = s.get("attribute", "")
-                points = s.get("data", [])
-                print(f"{i}. {instrument} - {attribute} (points: {len(points)})")
-
-            if hasattr(resp, "pagination") and resp.pagination:
-                next_page = resp.pagination.get("next_page")
-                if next_page:
-                    print(f"Next page token: {next_page}")
+            instruments = getattr(resp, "instruments", []) or []
+            print(f"Series: {instruments}")
+            attributes = [
+                attr
+                for instrument in instruments
+                for attr in getattr(instrument, "attributes", [])
+            ]
+            print(f"attributes: {attributes}")
+            time_series_list = [attr.time_series for attr in attributes]
+            print(f"time_series: {time_series_list}")
 
     except DataQueryError as e:
         print(f"Error: {e}")

@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from dataquery.dataquery import DataQuery
 from dataquery.models import ClientConfig
@@ -10,6 +10,6 @@ def test_sync_wrapper_calls_run_async(monkeypatch):
         "dataquery.dataquery.EnvConfig.validate_config", lambda _cfg: None
     )
     dq = DataQuery(cfg)
-    with patch("dataquery.dataquery.DataQuery._run_async", return_value=[]) as ra:
+    with patch("dataquery.dataquery.DataQuery._run_sync", return_value=[]) as ra:
         dq.list_groups()
         ra.assert_called()

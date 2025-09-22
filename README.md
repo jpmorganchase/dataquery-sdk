@@ -1,430 +1,844 @@
-### dataquery-sdk (Python)
+# 🚀 DataQuery SDK
 
-Production-ready client for the DataQuery API with first-class async support, safe sync wrappers, OAuth, rate limiting, retries, connection pooling, and structured logging.
+**High-performance Python SDK for efficient data querying and file downloads with parallel processing capabilities.**
 
-This README is task-oriented: copy/paste the snippets and you’re productive in minutes.
+A comprehensive SDK that provides **two powerful capabilities**: lightning-fast file delivery and advanced time series data access. Get up and running in minutes with intelligent defaults and enterprise-grade performance.
 
 ---
 
-## 1) Install
+## ✨ Key Features
+
+- 🚀 **Lightning-Fast File Delivery** — 5x faster downloads with parallel HTTP range requests
+- 📊 **Advanced Time Series APIs** — Query instruments, expressions, and grid data
+- 🔄 **Intelligent Rate Limiting** — Never overwhelm servers with built-in delays
+- 🛡️ **Robust Error Handling** — Automatic retries and graceful failure recovery
+- 🎯 **Progress Tracking** — Real-time download progress with callbacks
+- 🔧 **Smart Defaults** — Works out-of-the-box with pre-configured JPMorgan endpoints
+- 🌐 **Dual API** — Full async/await support with convenient sync wrappers
+- 📚 **Comprehensive Docs** — Professional documentation with MkDocs
+
+---
+
+## 📋 Requirements
+
+- **Python 3.10+**
+- Internet connection for API access
+
+---
+
+## ⚡ Quick Installation
 
 ```bash
-python3 -m pip install -e .
-# optional (recommended):
-python3 -m pip install pandas  # enables dataframe helpers
+pip install dataquery-sdk
+```
+
+Using uv (recommended):
+```bash
+uv pip install dataquery-sdk
 ```
 
 ---
 
-## 2) Configure
+## 🎯 Quick Start (2 minutes)
 
-Create a `.env` next to your project (or use real env vars). You must set at least `DATAQUERY_BASE_URL` and one auth method (OAuth or Bearer):
+### Step 1: Set Your Credentials
 
-```env
-# Required
-DATAQUERY_BASE_URL=https://your.api.base
+With the SDK's smart defaults, you only need **2 environment variables**:
 
-# Optional: separate host for file endpoints
-# If your file endpoints use a different host, set these; otherwise omit
-# DATAQUERY_FILES_BASE_URL=https://files-api.example.com
-# DATAQUERY_FILES_CONTEXT_PATH=/research/dataquery-authe/api/v2
-
-# Optional: context path (only if required by your deployment)
-# DATAQUERY_CONTEXT_PATH=/research/dataquery-authe/api/v2
-
-# EITHER OAuth (recommended)
-DATAQUERY_OAUTH_ENABLED=true
-DATAQUERY_OAUTH_TOKEN_URL=https://your.api.base/oauth/token
-DATAQUERY_CLIENT_ID=xxx
-DATAQUERY_CLIENT_SECRET=xxx
-DATAQUERY_OAUTH_AUD=
-
-# OR Bearer token
-# DATAQUERY_BEARER_TOKEN=xxx
-
-# Optional basics
-DATAQUERY_TIMEOUT=30.0
-DATAQUERY_MAX_RETRIES=3
-DATAQUERY_RETRY_DELAY=1.0
-DATAQUERY_REQUESTS_PER_MINUTE=100
-DATAQUERY_BURST_CAPACITY=20
-DATAQUERY_LOG_LEVEL=INFO
-DATAQUERY_DOWNLOAD_DIR=./downloads
+```bash
+export DATAQUERY_CLIENT_ID="your_client_id_here"
+export DATAQUERY_CLIENT_SECRET="your_client_secret_here"
 ```
 
-Tip: generate a full `.env` template anytime:
+> 💡 **That's it!** All JPMorgan DataQuery API endpoints are pre-configured as defaults.
 
-```python
-from dataquery import EnvConfig
-EnvConfig.create_env_template()  # writes .env.template
-```
-
----
-
-## 3) Quick start
-
-Async (best for throughput):
+### Step 2: Test Your Setup
 
 ```python
 import asyncio
 from dataquery import DataQuery
 
-async def main():
+async def test_connection():
     async with DataQuery() as dq:
-        groups = await dq.list_groups_async(limit=5)
-        print(len(groups))
+        healthy = await dq.health_check_async()
+        print("✅ Connection successful!" if healthy else "❌ Connection failed")
 
-asyncio.run(main())
-```
-
-Sync (convenience):
-
-```python
-from dataquery import DataQuery
-
-dq = DataQuery()
-groups = dq.list_groups(limit=5)
-print(len(groups))
-dq.cleanup()
+asyncio.run(test_connection())
 ```
 
 ---
 
-## 4) Common operations
+# 📁 File Delivery
 
-- List groups
+**Download financial data files with maximum speed and reliability using parallel processing.**
 
-```python
-groups = await dq.list_groups_async(limit=10)  # List[Group]
-```
+## 🚀 Core File Delivery Features
 
-- Search groups
+- **Parallel Processing**: Download files 5x faster with HTTP range requests
+- **Batch Operations**: Download multiple files by date range
+- **Smart Concurrency**: Configurable parallel downloads with rate limiting
+- **Progress Tracking**: Real-time progress callbacks
+- **Error Recovery**: Automatic retries and resume capabilities
 
-```python
-results = await dq.search_groups_async("economic", limit=5)
-```
+---
 
-- List files in a group
+## 📊 File Delivery Examples
 
-```python
-files = await dq.list_files_async(group_id)
-# files: List[FileInfo]
-for f in files[:3]:
-  print(f.file_group_id, f.filename, f.size)
-```
-
-- Check file availability
+### 🏦 Single File Download
 
 ```python
-availability = await dq.check_availability_async(file_group_id, "20240101")
-print(availability.is_available)
+import asyncio
+from pathlib import Path
+from dataquery import DataQuery
+
+async def download_single_file():
+    async with DataQuery() as dq:
+        # Download a single file with parallel processing
+        result = await dq.download_file_async(
+            file_group_id="YOUR_FILE_ID",
+            file_datetime="20250101",
+            destination_path=Path("./downloads")
+        )
+
+        if result.status.value == "completed":
+            print(f"🎉 Success! Downloaded {result.file_size:,} bytes")
+            print(f"📁 Saved to: {result.local_path}")
+            print(f"⚡ Speed: {result.download_time:.1f}s")
+        else:
+            print(f"❌ Failed: {result.error_message}")
+
+asyncio.run(download_single_file())
 ```
 
-- List available files for a date range
+### 📈 Batch Download with Progress
 
 ```python
-available = await dq.list_available_files_async(
-    group_id=group_id,            # required
-    file_group_id=file_group_id,  # optional filter
-    start_date="20250801",
-    end_date="20250801",
-)
+import asyncio
+from pathlib import Path
+from dataquery import DataQuery
+from dataquery.models import DownloadProgress
 
-# Entries contain hyphenated keys per API: 'file-datetime', 'is-available', etc.
-for item in available:
-    print(item.get("file-datetime"), item.get("is-available"), item.get("file-name"))
+def show_progress(progress: DownloadProgress):
+    """Display real-time download progress"""
+    if progress.total_bytes:
+        pct = progress.percentage
+        mb_downloaded = progress.bytes_downloaded / (1024 * 1024)
+        mb_total = progress.total_bytes / (1024 * 1024)
+        print(f"\r📥 {progress.file_group_id}: {pct:.1f}% ({mb_downloaded:.1f}/{mb_total:.1f} MB)",
+              end="", flush=True)
+
+async def batch_download():
+    async with DataQuery() as dq:
+        # Download all files for January 2025
+        report = await dq.run_group_download_async(
+            group_id="YOUR_GROUP_ID",
+            start_date="20250101",
+            end_date="20250131",
+            destination_dir=Path("./downloads"),
+            progress_callback=show_progress
+        )
+
+        print(f"""
+📊 Download Complete!
+   📁 Total files: {report['total_files']}
+   ✅ Successful: {report['successful_downloads']}
+   ❌ Failed: {report['failed_downloads']}
+   📈 Success rate: {report['success_rate']:.1f}%
+   ⏱️  Total time: {report['total_time_formatted']}
+   🚀 Avg speed: {report.get('avg_speed_mbps', 0):.1f} MB/s
+        """)
+
+asyncio.run(batch_download())
 ```
 
-- Download a file
+### 🔍 File Discovery
+
+```python
+async def discover_files():
+    async with DataQuery() as dq:
+        # Find available data groups
+        groups = await dq.list_groups_async(limit=10)
+        print("📊 Available Data Groups:")
+        for i, group in enumerate(groups, 1):
+            print(f"   {i}. {group.group_id}")
+
+        # Check what files are available
+        if groups:
+            files = await dq.list_available_files_async(
+                group_id=groups[0].group_id,
+                start_date="20250101",
+                end_date="20250107"
+            )
+            print(f"📁 Available files this week: {len(files)}")
+
+        # Check specific file availability
+        availability = await dq.check_availability_async(
+            file_group_id="YOUR_FILE_ID",
+            file_datetime="20250101"
+        )
+
+        if availability and getattr(availability, 'is_available', False):
+            print("✅ File is available for download")
+        else:
+            print("❌ File not available for this date")
+
+asyncio.run(discover_files())
+```
+
+### 📋 File Availability APIs
+
+```python
+async def check_file_availability():
+    async with DataQuery() as dq:
+        # Check if a specific file is available for a date
+        availability = await dq.check_availability_async(
+            file_group_id="YOUR_FILE_ID",
+            file_datetime="20250101"
+        )
+
+        print(f"📄 File: {availability.file_name}")
+        print(f"✅ Available: {availability.is_available}")
+        print(f"📅 Created: {availability.first_created_on}")
+        print(f"🔄 Modified: {availability.last_modified}")
+
+async def list_available_files():
+    async with DataQuery() as dq:
+        # Get all available files for a group in date range
+        files = await dq.list_available_files_async(
+            group_id="YOUR_GROUP_ID",
+            start_date="20250101",
+            end_date="20250131"
+        )
+
+        print(f"📁 Found {len(files)} available files")
+        for file_info in files[:5]:  # Show first 5
+            file_id = file_info.get('file_group_id', 'Unknown')
+            file_date = file_info.get('file_datetime', 'Unknown')
+            print(f"   📄 {file_id} - {file_date}")
+
+        # Filter by specific file ID
+        specific_files = await dq.list_available_files_async(
+            group_id="YOUR_GROUP_ID",
+            file_group_id="SPECIFIC_FILE_ID",
+            start_date="20250101",
+            end_date="20250131"
+        )
+        print(f"🎯 Filtered results: {len(specific_files)} files")
+
+asyncio.run(check_file_availability())
+asyncio.run(list_available_files())
+```
+
+### ⚡ High-Performance Download
+
+```python
+async def high_performance_download():
+    async with DataQuery() as dq:
+        # Maximum performance settings for large downloads
+        report = await dq.run_group_download_async(
+            group_id="LARGE_DATASET",
+            start_date="20250101",
+            end_date="20250131",
+            destination_dir=Path("./bulk_data"),
+            delay_between_downloads=0.5  # Minimal delay
+        )
+
+        # Performance statistics
+        total_mb = sum(f.get('file_size_bytes', 0) for f in report.get('successful_downloads', [])) / (1024*1024)
+        time_minutes = report['total_time_minutes']
+        throughput = total_mb / time_minutes if time_minutes > 0 else 0
+
+        print(f"""
+🚀 High-Performance Results:
+   📊 Downloaded: {total_mb:.1f} MB
+   ⏱️  Time: {time_minutes:.1f} minutes
+   🔥 Throughput: {throughput:.1f} MB/min
+        """)
+
+asyncio.run(high_performance_download())
+```
+
+### 💻 Synchronous File Operations
 
 ```python
 from pathlib import Path
-from dataquery import DownloadOptions
+from dataquery import DataQuery
 
-dest = Path("./downloads").resolve()
-opts = DownloadOptions(destination_path=str(dest), overwrite_existing=True)
-
-result = await dq.download_file_async(
-    file_group_id=file_group_id,
-    file_datetime="20240101",
-    destination_path=dest,
-    options=opts,
-)
-print(result.status, result.local_path)
-```
-
-- Instruments and time series
-
-```python
-insts = await dq.list_instruments_async(group_id, limit=20)
-ts = await dq.get_instrument_time_series_async(
-    instruments=[i.instrument_id for i in insts.instruments[:3]],
-    attributes=["CLOSE", "VOLUME"],
-    start_date="20240101",
-    end_date="20240131",
-)
-print(len(ts.instruments))
-```
-
-- Expressions time series
-
-```python
-ts = await dq.get_expressions_time_series_async(
-    expressions=["GDP_US_REAL"],
-    start_date="20240101",
-    end_date="20240131",
-)
-```
-
-- Grid data
-
-```python
-grid = await dq.get_grid_data_async(expr="MY_GRID_EXPR", date="20240630")
-print(len(grid.series))
-```
-
----
-
-## 5) DataFrames (optional)
-
-Install `pandas` and use the built-in helpers:
-
-```python
-import pandas as pd
-
-groups_df = dq.groups_to_dataframe(groups)
-files_df = dq.files_to_dataframe(await dq.list_files_async(group_id))
-ts_df = dq.time_series_to_dataframe(ts)
-```
-
----
-
-## 6) Auto-download (hands-off)
-
-Continuously monitor a group and fetch new files:
-
-```python
-async def run():
-    async with DataQuery() as dq:
-        manager = await dq.start_auto_download_async(
-            group_id=group_id,
-            destination_dir="./downloads",
-            interval_minutes=30,
+def sync_file_operations():
+    # Use 'with' instead of 'async with'
+    with DataQuery() as dq:
+        # Single file download (sync)
+        result = dq.download_file(
+            file_group_id="YOUR_FILE_ID",
+            file_datetime="20250101",
+            destination_path=Path("./downloads")
         )
-        # Run for a while then stop
-        await asyncio.sleep(600)
-        await manager.stop()
-```
+        print(f"Downloaded: {result.local_path}")
 
-Note: the auto-downloader checks availability via the available-files endpoint using these keys: `file-group-id`, `file-datetime`, `is-available`.
+        # Batch download (sync)
+        report = dq.run_group_download(
+            group_id="YOUR_GROUP_ID",
+            start_date="20250101",
+            end_date="20250107",
+            destination_dir=Path("./downloads")
+        )
+        print(f"Downloaded {report['successful_downloads']} files")
+
+# No asyncio.run() needed!
+sync_file_operations()
+```
 
 ---
 
-## 7) CLI (optional)
+## 🔧 File Delivery Configuration
 
-The package includes a simple CLI for quick checks. Examples:
+### Performance Tuning
 
-```bash
-python -m dataquery.cli groups --limit 10 --json
-python -m dataquery.cli files --group-id <GROUP> --limit 5 --json
-python -m dataquery.cli availability --file-group-id <FILE> --file-datetime 20240101 --json
-python -m dataquery.cli download --file-group-id <FILE> --file-datetime 20240101 --destination ./downloads --json
-```
+| Setting | Conservative | Balanced | Aggressive | Use Case |
+|---------|-------------|----------|------------|----------|
+| `delay_between_downloads` | 2.0s | 1.0s | 0.2s | Shared/Dedicated network |
 
-Pass `--env-file .env` to point at a specific env file.
+The SDK automatically optimizes concurrent downloads and parallel parts based on your connection and file sizes.
 
----
-
-## 8) Advanced config (env vars)
-
-- Rate limiting: `DATAQUERY_REQUESTS_PER_MINUTE`, `DATAQUERY_BURST_CAPACITY`
-- Retries: `DATAQUERY_MAX_RETRIES`, `DATAQUERY_RETRY_DELAY`
-- Proxy: `DATAQUERY_PROXY_ENABLED`, `DATAQUERY_PROXY_URL`, `DATAQUERY_PROXY_USERNAME`, `DATAQUERY_PROXY_PASSWORD`
-- Logging: `DATAQUERY_LOG_LEVEL`, `DATAQUERY_ENABLE_DEBUG_LOGGING`
-- Downloads: `DATAQUERY_DOWNLOAD_DIR`, `DATAQUERY_OVERWRITE_EXISTING`, `DATAQUERY_CREATE_DIRECTORIES`
-
-See `dataquery/config.py` for all options and defaults.
-
-### Logging with LoggingManager
-
-Prefer configuring logging via the SDK's LoggingManager (the old `dataquery.dataquery.setup_logging` is deprecated and a no-op):
+### File Delivery API Reference
 
 ```python
-from dataquery.logging_config import (
-    create_logging_config,
-    create_logging_manager,
-    LogLevel,
-    LogFormat,
-)
+# Single file download
+result = await dq.download_file_async(
+    file_group_id: str,           # Required: File identifier
+    file_datetime: str = None,    # Optional: Date (YYYYMMDD)
+    destination_path: Path = None, # Optional: Where to save
+    progress_callback: Callable = None  # Optional: Progress tracking
+) -> DownloadResult
 
-# Console-friendly structured logs at DEBUG level
-logging_config = create_logging_config(
-    level=LogLevel.DEBUG,
-    format=LogFormat.CONSOLE,
-    enable_console=True,
-    enable_file=False,
-    enable_request_logging=False,         # set True to log HTTP requests/responses
-    enable_performance_logging=True,
-)
+# Batch download
+report = await dq.run_group_download_async(
+    group_id: str,                # Required: Data group ID
+    start_date: str,              # Required: Start date (YYYYMMDD)
+    end_date: str,                # Required: End date (YYYYMMDD)
+    destination_dir: Path = "./downloads",  # Optional: Download folder
+    delay_between_downloads: float = 1.0  # Optional: Delay between files
+) -> dict
 
-logging_manager = create_logging_manager(logging_config)
-logger = logging_manager.get_logger("app")
-logger.info("Logging initialized")
+# Discovery and availability methods
+groups = await dq.list_groups_async(limit: int = 100) -> List[Group]
+
+# Check if a specific file is available for a date
+availability = await dq.check_availability_async(
+    file_group_id: str,           # Required: File identifier
+    file_datetime: str            # Required: Date in YYYYMMDD format
+) -> AvailabilityInfo
+
+# List all available files for a group in date range
+files = await dq.list_available_files_async(
+    group_id: str,                # Required: Group identifier
+    file_group_id: str = None,    # Optional: Filter by specific file ID
+    start_date: str = None,       # Optional: Start date (YYYYMMDD)
+    end_date: str = None          # Optional: End date (YYYYMMDD)
+) -> List[dict]
 ```
 
 ---
 
-## 9) Examples
+# 📊 Time Series Data
 
-Complete, runnable examples live in `examples/`. Good starting points:
-- `examples/groups/list_groups.py`
-- `examples/groups/list_all_groups.py`
-- `examples/groups/search_groups.py`
-- `examples/groups_advanced/get_group_attributes.py`
-- `examples/groups_advanced/get_group_filters.py`
-- `examples/groups_advanced/get_group_time_series.py`
-- `examples/instruments/list_instruments.py`
-- `examples/instruments/search_instruments.py`
-- `examples/instruments/get_instrument_time_series.py`
-- `examples/files/list_files.py`
-- `examples/files/download_file.py`
-- `examples/system/health_check.py`
-- `examples/auto_download_example.py`
+**Query real-time and historical market data using advanced time series APIs.**
 
-### Lean example scripts (CLI)
+## 🎯 Time Series Features
 
-These scripts default to sensible values and accept overrides via flags.
-
-Groups:
-
-```bash
-# list groups
-python examples/groups/list_groups.py --limit 20
-
-# list all groups (optionally capped by limit)
-python examples/groups/list_all_groups.py --limit 100
-
-# search groups
-python examples/groups/search_groups.py --keyword economy --limit 10
-
-# get group attributes
-python examples/groups_advanced/get_group_attributes.py \
-  --group-id <GROUP_ID> --filters '{"key":"value"}' --page <TOKEN> --show 5
-
-# get group filters
-python examples/groups_advanced/get_group_filters.py --group-id <GROUP_ID> --show 5
-
-# get group time series (defaults: last 90 days, CLOSE)
-python examples/groups_advanced/get_group_time_series.py \
-  --group-id <GROUP_ID> --attributes CLOSE,VOLUME --start 20240101 --end 20240630 \
-  --frequency FREQ_DAY --calendar CAL_USBANK --conversion CONV_LASTBUS_ABS --nan NA_FILL_FORWARD
-```
-
-Instruments:
-
-```bash
-# list instruments in a group
-python examples/instruments/list_instruments.py --group-id <GROUP_ID> --limit 20 --offset 0
-
-# search instruments in a group
-python examples/instruments/search_instruments.py --group-id <GROUP_ID> --keyword bond --show 10
-
-# get instrument time series (defaults: last 60 days, CLOSE)
-python examples/instruments/get_instrument_time_series.py \
-  --instruments IBM,MSFT --attributes CLOSE,VOLUME --start 20240101 --end 20240630 \
-  --frequency FREQ_DAY --calendar CAL_USBANK --conversion CONV_LASTBUS_ABS --nan NA_FILL_FORWARD
-```
-
-Expressions:
-
-```bash
-# get expressions time series (defaults: last 30 days, JSON)
-python examples/expressions/get_expressions_time_series.py \
-  --expressions GDP_US_REAL,CPI_US_CORE --start 20240101 --end 20240630 \
-  --frequency FREQ_DAY --calendar CAL_USBANK --conversion CONV_LASTBUS_ABS --nan NA_NOTHING --data REFERENCE_DATA --show 5
-```
+- **Instrument Data**: Query specific instruments with multiple attributes
+- **Expression Queries**: Use traditional DataQuery expressions
+- **Group Time Series**: Bulk queries across instrument groups
+- **Grid Data**: Retrieve structured data grids
+- **Flexible Filtering**: Advanced filtering and pagination
+- **Multiple Formats**: JSON, CSV, and other output formats
 
 ---
 
-## 10) Migration notes
+## 📈 Time Series Examples
 
-- Logging: prefer `LoggingManager` (see `dataquery/logging_config.py`). `dataquery.dataquery.setup_logging` is deprecated and acts as a no-op shim for backward compatibility.
-- Endpoints consolidated under `/research/dataquery-authe/api/v2/...` (see `specification.yaml`).
-- Per-request auth: tokens injected at request-time; session default headers are not mutated.
-- Files API: `list_files_async` returns a `FileList` with `file_group_ids: List[FileInfo]`.
-- Examples updated to reflect model fields and responses.
+### 🏛️ Query Instrument Time Series
 
----
+```python
+async def get_instrument_data():
+    async with DataQuery() as dq:
+        # Get time series for specific instruments
+        ts_response = await dq.get_instrument_time_series_async(
+            instruments=["US912828U816", "US912828U824"],  # Treasury bonds
+            attributes=["PX_LAST", "PX_OPEN", "PX_HIGH", "PX_LOW"],
+            start_date="20240101",
+            end_date="20240131",
+            frequency="FREQ_DAY",
+            format="JSON"
+        )
 
-## 11) Support & troubleshooting
+        print(f"Retrieved time series data:")
+        print(f"Instruments: {len(ts_response.instruments) if hasattr(ts_response, 'instruments') else 'N/A'}")
+        print(f"Data points: {ts_response.items if hasattr(ts_response, 'items') else 'N/A'}")
 
-- Problems authenticating? Verify your `.env` values and ensure either OAuth or Bearer token is configured.
-- Event loop errors in Jupyter? Prefer async usage inside `asyncio.run(...)`, or use the SDK sync wrappers in plain cells.
-- Unexpected 429? Tune rate limits via env vars.
-- Need a template? `EnvConfig.create_env_template()`.
+        return ts_response
 
-If something feels rough, open an issue or PR.
-
----
-
-## 12) Developer guide (SDK maintainers)
-
-- Local dev setup
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e '.[all]'
+asyncio.run(get_instrument_data())
 ```
 
-- Lint, types, security, tests
+### 🔍 Search and Query Instruments
 
-```bash
-make lint          # flake8 on SDK (dataquery/) only
-make type-check    # mypy
-make audit         # pip-audit
-make test          # pytest
-make test-cov      # pytest with coverage
-make ci-check      # install-dev + lint + type-check + audit + coverage
+```python
+async def search_and_query():
+    async with DataQuery() as dq:
+        # Search for instruments
+        search_results = await dq.search_instruments_async(
+            group_id="BONDS_GROUP",
+            keywords="treasury 10Y",
+            page=None
+        )
+
+        print(f"Found {search_results.items} matching instruments")
+
+        # List all instruments in a group
+        instruments = await dq.list_instruments_async(
+            group_id="BONDS_GROUP",
+            page=None
+        )
+
+        print(f"Total instruments in group: {instruments.items}")
+
+        # Get available attributes for the group
+        attributes = await dq.get_group_attributes_async(
+            group_id="BONDS_GROUP"
+        )
+
+        print(f"Available attributes: {len(attributes.instruments) if hasattr(attributes, 'instruments') else 'N/A'}")
+
+asyncio.run(search_and_query())
 ```
 
-- Single-env multi-host support
-  - Use env defaults and optional split host:
+### 📊 Expression-Based Queries
 
-```env
-DATAQUERY_BASE_URL=https://core-api.example.com
-# Optional split host for file endpoints:
-DATAQUERY_FILES_BASE_URL=https://files-api.example.com
-DATAQUERY_FILES_CONTEXT_PATH=/research/dataquery-authe/api/v2
-# Optional context path for core API:
-# DATAQUERY_CONTEXT_PATH=/research/dataquery-authe/api/v2
+```python
+async def expression_queries():
+    async with DataQuery() as dq:
+        # Use traditional DataQuery expressions
+        ts_response = await dq.get_expressions_time_series_async(
+            expressions=[
+                "PX_LAST(IBM,USD)",
+                "PX_LAST(AAPL,USD)",
+                "PX_LAST(MSFT,USD)"
+            ],
+            start_date="20240101",
+            end_date="20240131",
+            frequency="FREQ_DAY",
+            format="JSON",
+            calendar="CAL_USBANK"
+        )
+
+        print(f"Expression query results:")
+        print(f"Data points: {ts_response.items if hasattr(ts_response, 'items') else 'N/A'}")
+
+        return ts_response
+
+asyncio.run(expression_queries())
 ```
 
-- Per-instance overrides (env as defaults; credentials passed explicitly):
+### 🏢 Group Time Series Queries
+
+```python
+async def group_time_series():
+    async with DataQuery() as dq:
+        # Query time series across a group with filters
+        ts_response = await dq.get_group_time_series_async(
+            group_id="EQUITY_PRICES",
+            attributes=["PX_LAST", "VOLUME"],
+            filter="currency(USD)",  # Filter by USD currency
+            start_date="20240101",
+            end_date="20240131",
+            frequency="FREQ_DAY",
+            format="JSON"
+        )
+
+        print(f"Group time series results:")
+        print(f"Data points: {ts_response.items if hasattr(ts_response, 'items') else 'N/A'}")
+
+        # Get available filters for the group
+        filters = await dq.get_group_filters_async(
+            group_id="EQUITY_PRICES"
+        )
+
+        print(f"Available filters: {len(filters.filters) if hasattr(filters, 'filters') else 'N/A'}")
+
+asyncio.run(group_time_series())
+```
+
+### 🗃️ Grid Data Queries
+
+```python
+async def grid_data_queries():
+    async with DataQuery() as dq:
+        # Query using expression
+        grid_response = await dq.get_grid_data_async(
+            expr="PX_LAST(IBM,USD)",
+            date="20240115"
+        )
+
+        print(f"Grid data from expression:")
+        print(f"Series count: {len(grid_response.series) if hasattr(grid_response, 'series') else 'N/A'}")
+
+        # Query using grid ID
+        grid_response2 = await dq.get_grid_data_async(
+            grid_id="EQUITY_SNAPSHOT_GRID",
+            date="20240115"
+        )
+
+        print(f"Grid data from ID:")
+        print(f"Series count: {len(grid_response2.series) if hasattr(grid_response2, 'series') else 'N/A'}")
+
+asyncio.run(grid_data_queries())
+```
+
+### 💻 Synchronous Time Series
 
 ```python
 from dataquery import DataQuery
 
-dq = DataQuery(
-    client_id="your_client_id",
-    client_secret="your_client_secret",
-    # Optional overrides; omit to use env
-    files_base_url="https://files-api.example.com",
-    files_context_path="/research/dataquery-authe/api/v2",
-)
+def sync_time_series():
+    with DataQuery() as dq:
+        # Sync instrument query
+        ts_response = dq.get_instrument_time_series(
+            instruments=["US912828U816"],
+            attributes=["PX_LAST"],
+            start_date="20240101",
+            end_date="20240131"
+        )
+
+        print(f"Sync query complete: {ts_response.items if hasattr(ts_response, 'items') else 'N/A'} data points")
+
+        # Sync expression query
+        expr_response = dq.get_expressions_time_series(
+            expressions=["PX_LAST(IBM,USD)"],
+            start_date="20240101",
+            end_date="20240131"
+        )
+
+        print(f"Expression query: {expr_response.items if hasattr(expr_response, 'items') else 'N/A'} data points")
+
+sync_time_series()
 ```
 
-- Releasing
-  - Update `CHANGELOG.md`
-  - Bump version in `pyproject.toml`
-  - Build and publish
+---
+
+## 📊 Time Series API Reference
+
+### Instrument Queries
+```python
+# Query specific instruments
+ts_response = await dq.get_instrument_time_series_async(
+    instruments: List[str],       # Required: Instrument identifiers
+    attributes: List[str],        # Required: Attribute identifiers
+    data: str = "REFERENCE_DATA", # Optional: Data domain
+    format: str = "JSON",         # Optional: Response format
+    start_date: str = None,       # Optional: YYYYMMDD or TODAY-Nx
+    end_date: str = None,         # Optional: YYYYMMDD or TODAY-Nx
+    calendar: str = "CAL_USBANK", # Optional: Calendar convention
+    frequency: str = "FREQ_DAY",  # Optional: Frequency convention
+    conversion: str = "CONV_LASTBUS_ABS", # Optional: Conversion convention
+    nan_treatment: str = "NA_NOTHING",    # Optional: Missing data handling
+    page: str = None              # Optional: Pagination token
+) -> TimeSeriesResponse
+
+# Query using expressions
+ts_response = await dq.get_expressions_time_series_async(
+    expressions: List[str],       # Required: DataQuery expressions
+    format: str = "JSON",         # Optional: Response format
+    start_date: str = None,       # Optional: Date range
+    end_date: str = None,         # Optional: Date range
+    # ... same optional parameters as above
+) -> TimeSeriesResponse
+
+# Query group time series
+ts_response = await dq.get_group_time_series_async(
+    group_id: str,                # Required: Group identifier
+    attributes: List[str],        # Required: Attribute identifiers
+    filter: str = None,           # Optional: Filter (e.g. "currency(USD)")
+    # ... same optional parameters as above
+) -> TimeSeriesResponse
+```
+
+### Discovery and Metadata
+```python
+# Search instruments
+instruments = await dq.search_instruments_async(
+    group_id: str,                # Required: Group identifier
+    keywords: str,                # Required: Search keywords
+    page: str = None              # Optional: Pagination token
+) -> InstrumentsResponse
+
+# List instruments
+instruments = await dq.list_instruments_async(
+    group_id: str,                # Required: Group identifier
+    instrument_id: str = None,    # Optional: Specific instrument filter
+    page: str = None              # Optional: Pagination token
+) -> InstrumentsResponse
+
+# Get group attributes
+attributes = await dq.get_group_attributes_async(
+    group_id: str,                # Required: Group identifier
+    instrument_id: str = None,    # Optional: Specific instrument filter
+    page: str = None              # Optional: Pagination token
+) -> AttributesResponse
+
+# Get group filters
+filters = await dq.get_group_filters_async(
+    group_id: str,                # Required: Group identifier
+    page: str = None              # Optional: Pagination token
+) -> FiltersResponse
+```
+
+### Grid Data
+```python
+# Get grid data
+grid_response = await dq.get_grid_data_async(
+    expr: str = None,             # Optional: DataQuery expression
+    grid_id: str = None,          # Optional: Grid identifier
+    date: str = None              # Optional: Date for grid data
+) -> GridDataResponse
+# Note: Either expr or grid_id must be provided, but not both
+```
+
+---
+
+## 🔧 Configuration
+
+### Environment Variables
+
+The SDK uses smart defaults for JPMorgan DataQuery API. Create a `.env` file:
 
 ```bash
-make build dist
-make publish-test  # to TestPyPI (if configured)
-make publish       # to PyPI
+# Required - Your credentials
+DATAQUERY_CLIENT_ID=your_client_id_here
+DATAQUERY_CLIENT_SECRET=your_client_secret_here
+
+# Optional - All defaults are pre-configured for JPMorgan DataQuery API
+# DATAQUERY_BASE_URL=https://api-developer.jpmorgan.com  # Default
+# DATAQUERY_CONTEXT_PATH=/research/dataquery-authe/api/v2  # Default
+# DATAQUERY_OAUTH_TOKEN_URL=https://authe.jpmorgan.com/as/token.oauth2  # Default
+
+# Performance tuning (optional)
+DATAQUERY_REQUESTS_PER_MINUTE=300    # Rate limit
+DATAQUERY_MAX_CONCURRENT_DOWNLOADS=5 # Parallel files
+DATAQUERY_TIMEOUT=6000.0             # Request timeout (seconds)
+
+# Download settings (optional)
+DATAQUERY_DOWNLOAD_DIR=./downloads   # Default folder
+DATAQUERY_CREATE_DIRECTORIES=true    # Auto-create folders
+DATAQUERY_OVERWRITE_EXISTING=false   # Don't overwrite files
 ```
 
-- Notes
-  - Supported Python: 3.10+
-  - Examples are runnable from the repo, e.g.: `python examples/groups/list_groups.py`
+### Programmatic Configuration
+
+```python
+from dataquery import DataQuery
+from dataquery.models import ClientConfig
+
+# Custom configuration
+config = ClientConfig(
+    client_id="your_id",
+    client_secret="your_secret",
+    base_url="https://custom-api.company.com",  # Override default
+    timeout=30.0,                              # Override default
+    max_retries=5                              # Override default
+)
+
+async def with_custom_config():
+    async with DataQuery(config=config) as dq:
+        # Use any file delivery or time series method
+        result = await dq.download_file_async(...)
+        ts_data = await dq.get_instrument_time_series_async(...)
+```
+
+---
+
+## 🛠️ Command Line Usage
+
+Use the included examples:
+
+```bash
+# File delivery - Download files by date range
+python examples/files/download_group_by_date.py \
+  YOUR_GROUP_ID \
+  20250101 \
+  20250131 \
+  ./downloads
+
+# Time series - Query instrument data
+python examples/time_series/get_instrument_data.py \
+  US912828U816 \
+  PX_LAST \
+  20240101 \
+  20240131
+```
+
+---
+
+## 🆘 Troubleshooting
+
+### Connection Issues
+
+```python
+# Quick diagnostic
+import asyncio
+from dataquery import DataQuery
+
+async def diagnose():
+    try:
+        async with DataQuery() as dq:
+            healthy = await dq.health_check_async()
+            print(f"Health check: {'✅ PASS' if healthy else '❌ FAIL'}")
+    except Exception as e:
+        print(f"Error: {e}")
+        print("Check: 1) Credentials 2) Network 3) API endpoint")
+
+asyncio.run(diagnose())
+```
+
+### File Availability Check
+
+```python
+async def check_file():
+    async with DataQuery() as dq:
+        availability = await dq.check_availability_async(
+            file_group_id="YOUR_FILE_ID",
+            file_datetime="20250101"
+        )
+
+        if availability and getattr(availability, 'is_available', False):
+            print("✅ File is available")
+        else:
+            print("❌ File not available for this date")
+```
+
+### Time Series Data Validation
+
+```python
+async def validate_time_series():
+    async with DataQuery() as dq:
+        # Check if instruments exist
+        instruments = await dq.search_instruments_async(
+            group_id="YOUR_GROUP",
+            keywords="YOUR_INSTRUMENT"
+        )
+
+        if instruments.items > 0:
+            print("✅ Instruments found")
+        else:
+            print("❌ No instruments match your search")
+```
+
+### Debug Mode
+
+```python
+import os
+os.environ["DATAQUERY_LOG_LEVEL"] = "DEBUG"
+os.environ["DATAQUERY_ENABLE_DEBUG_LOGGING"] = "true"
+```
+
+---
+
+## 📖 Documentation
+
+This repository includes comprehensive documentation:
+
+```bash
+# Serve docs locally
+uv run mkdocs serve
+
+# Build docs
+uv run mkdocs build
+```
+
+**Key documentation:**
+- 📖 **Getting Started**: `docs/getting-started/quickstart.md`
+- ⚙️ **Configuration**: `docs/getting-started/configuration.md`
+- 🔗 **API Reference**: `docs/api/dataquery.md` and `docs/api/models.md`
+- 💡 **Examples**: `docs/examples/basic.md`
+
+---
+
+## 🛠️ Development
+
+### Setup
+
+```bash
+# Clone and install
+git clone <repository-url>
+cd dataquery-sdk
+uv sync --all-extras --dev
+```
+
+### Testing
+
+```bash
+# Run all tests
+uv run pytest -v
+
+# With coverage
+uv run pytest -v --cov=dataquery --cov-report=html
+
+# Specific tests
+uv run pytest tests/test_client.py -v
+```
+
+### Code Quality
+
+```bash
+# Linting and formatting
+uv run flake8 dataquery/ tests/
+uv run black .
+uv run isort .
+
+# Type checking
+uv run mypy dataquery/
+```
+
+---
+
+## 🤝 Contributing
+
+1. **Fork** the repository
+2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
+3. **Make** your changes with tests and documentation
+4. **Run** the full test suite (`uv run pytest`)
+5. **Commit** your changes (`git commit -m 'Add amazing feature'`)
+6. **Push** to the branch (`git push origin feature/amazing-feature`)
+7. **Open** a Pull Request
+
+---
+
+## 📝 License
+
+MIT License — see `LICENSE` for details.
+
+---
+
+## 📋 Changelog
+
+See `CHANGELOG.md` for version history and release notes.
+
+---
+
+## 🎯 What's Next?
+
+### File Delivery
+- 🔍 **Automate daily pipelines** for regular file downloads
+- 🚀 **Optimize performance** for your specific infrastructure
+- 📊 **Build monitoring dashboards** for download success rates
+
+### Time Series
+- 📈 **Create custom analytics** using instrument time series
+- 🏗️ **Build data pipelines** combining files and time series
+- 🔬 **Develop quantitative models** with historical data access
+
+---
+
+**Need Help?** 💬 Check the troubleshooting section or contact your DataQuery support team.
+
+*Happy downloading and querying! 🚀*

@@ -118,6 +118,12 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Deploy MkDocs to GitHub Pages
+      run: |
+        uv run mkdocs gh-deploy --force --clean --message "docs: deploy ${{ steps.tag_name.outputs.current_version }}"
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
     - uses: actions/download-artifact@v4
       with:
         pattern: artifacts*
@@ -141,5 +147,5 @@ jobs:
     - name: publish to PyPI
       env:
         TWINE_USERNAME: __token__
-        TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        TWINE_PASSWORD: ${{ secrets.PYPI_API_JPMC_OSS}}
       run: uv run twine upload dist/*
