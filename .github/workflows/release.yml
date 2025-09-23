@@ -23,7 +23,7 @@ concurrency:
 env:
   UV_HTTP_TIMEOUT: 300
   PIP_DISABLE_PIP_VERSION_CHECK: 1
-  DOCS_PY_VERSION: 3.13
+  DOCS_PY_VERSION: 3.10
 
 
 jobs:
@@ -62,67 +62,67 @@ jobs:
               core.setFailed('No successful build for this commit/tag');
             }
 
-#  publish:
-#    needs: check-build
-#    if: ${{ needs.check-build.outputs.build-successful == 'true' }}
-#    runs-on: ubuntu-latest
-#
-#    steps:
-#    - name: Get version from tag
-#      id: tag_name
-#      run: |
-#        echo ::set-output name=current_version::${GITHUB_REF#refs/tags/v}
-#      shell: bash
-#
-#    # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-#    - name: Checkout main repo
-#      uses: actions/checkout@v4
-#      with:
-#        fetch-depth: 0
-#        token: ${{ secrets.GITHUB_TOKEN }}
-#
-#    - name: Get Changelog Entry
-#      id: changelog_reader
-#      uses: mindsers/changelog-reader-action@v2
-#      with:
-#        version: ${{ steps.tag_name.outputs.current_version }}
-#        path: CHANGELOG.md
-#
-#    - uses: actions/setup-python@v5
-#      with:
-#        python-version: ${{ env.DOCS_PY_VERSION }}
-#
-#    - name: Set up uv
-#      run: pip install uv
-#
-#    - name: Sync dependencies using uv
-#      run: |
-#        uv sync -p ${{ env.DOCS_PY_VERSION }} --all-extras
-#
-#    - name: Setup main repo deploy git user
-#      run: |
-#        git config --local user.email "github-actions[bot]@users.noreply.github.com"
-#        git config --local user.name "github-actions[bot]"
-#
-#    - uses: actions/download-artifact@v4
-#      with:
-#        pattern: artifacts*
-#        path: dist/
-#        merge-multiple: true
-#        github-token: ${{ secrets.GITHUB_TOKEN }}
-#        repository: ${{ github.repository }}
-#        run-id: ${{ needs.check-build.outputs.run_id }}
-#
-#
-#    - name: create github release
-#      id: create_release
-#      uses: softprops/action-gh-release@v2
-#      with:
-#        body: ${{ steps.changelog_reader.outputs.changes }}
-#        files: dist/*
-#        draft: ${{ contains(steps.tag_name.outputs.current_version, '.dev') }}
-#        prerelease: ${{ contains(steps.tag_name.outputs.current_version, '.dev') }}
-#        token: ${{ secrets.GITHUB_TOKEN }}
+  publish:
+    needs: check-build
+    if: ${{ needs.check-build.outputs.build-successful == 'true' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get version from tag
+        id: tag_name
+        run: |
+          echo ::set-output name=current_version::${GITHUB_REF#refs/tags/v}
+        shell: bash
+
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - name: Checkout main repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get Changelog Entry
+        id: changelog_reader
+        uses: mindsers/changelog-reader-action@v2
+        with:
+          version: ${{ steps.tag_name.outputs.current_version }}
+          path: CHANGELOG.md
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.DOCS_PY_VERSION }}
+
+      - name: Set up uv
+        run: pip install uv
+
+      - name: Sync dependencies using uv
+        run: |
+          uv sync -p ${{ env.DOCS_PY_VERSION }} --all-extras
+
+      - name: Setup main repo deploy git user
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: artifacts*
+          path: dist/
+          merge-multiple: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ needs.check-build.outputs.run_id }}
+
+
+      - name: create github release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: ${{ steps.changelog_reader.outputs.changes }}
+          files: dist/*
+          draft: ${{ contains(steps.tag_name.outputs.current_version, '.dev') }}
+          prerelease: ${{ contains(steps.tag_name.outputs.current_version, '.dev') }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 #
 #    - name: publish to PyPI
 #      env:
