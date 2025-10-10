@@ -1,823 +1,927 @@
-# 🚀 DataQuery SDK
+# DataQuery SDK
 
-**High-performance Python SDK for efficient data querying and file downloads with parallel processing capabilities.**
+Python SDK for J.P. Morgan DataQuery API - high-performance file downloads and time series data access.
 
-A comprehensive SDK that provides **two powerful capabilities**: lightning-fast file delivery and advanced time series data access. Get up and running in minutes with intelligent defaults and enterprise-grade performance.
+**Key capabilities:**
+- Parallel file downloads with progress tracking
+- Time series queries (expressions, instruments, groups)
+- OAuth 2.0 authentication with auto-refresh
+- Connection pooling and rate limiting
+- Pandas DataFrame integration
+
+## Table of Contents
+
+- [Quick Start](#quick-start)
+    - [Installation](#installation)
+    - [Set Credentials](#set-credentials)
+    - [Execution Modes](#execution-modes-async-and-sync)
+    - [Download Files](#download-jpmaqs-files-simplest)
+    - [Query Time Series](#query-time-series-and-convert-to-dataframe)
+    - [Discover Datasets](#discover-available-datasets)
+- [Common Use Cases](#common-use-cases)
+    - [File Downloads](#file-downloads)
+    - [Time Series Queries](#time-series-queries)
+- [Advanced Usage](#advanced-usage)
+- [API Reference](#api-reference)
+- [Configuration](#configuration)
+- [Error Handling](#error-handling)
+- [Examples & Recipes](#examples--recipes)
 
 ---
 
-## ✨ Key Features
+## Quick Start
 
-- 🚀 **Lightning-Fast File Delivery** — 5x faster downloads with parallel HTTP range requests
-- 📊 **Advanced Time Series APIs** — Query instruments, expressions, and grid data
-- 🔄 **Intelligent Rate Limiting** — Never overwhelm servers with built-in delays
-- 🛡️ **Robust Error Handling** — Automatic retries and graceful failure recovery
-- 🎯 **Progress Tracking** — Real-time download progress with callbacks
-- 🔧 **Smart Defaults** — Works out-of-the-box with pre-configured JPMorgan endpoints
-- 🌐 **Dual API** — Full async/await support with convenient sync wrappers
-- 📚 **Comprehensive Docs** — Professional documentation with MkDocs
-
----
-
-## 📋 Requirements
-
-- **Python 3.10+**
-- Internet connection for API access
-
----
-
-## ⚡ Quick Installation
+### Installation
 
 ```bash
 pip install dataquery-sdk
 ```
 
-Using uv (recommended):
-```bash
-uv pip install dataquery-sdk
-```
-
----
-
-## 🎯 Quick Start (2 minutes)
-
-### Step 1: Set Your Credentials
-
-With the SDK's smart defaults, you only need **2 environment variables**:
+### Set Credentials
 
 ```bash
-export DATAQUERY_CLIENT_ID="your_client_id_here"
-export DATAQUERY_CLIENT_SECRET="your_client_secret_here"
+export DATAQUERY_CLIENT_ID="your_client_id"
+export DATAQUERY_CLIENT_SECRET="your_client_secret"
 ```
 
-> 💡 **That's it!** All JPMorgan DataQuery API endpoints are pre-configured as defaults.
+### Execution Modes: Async and Sync
 
-### Step 2: Test Your Setup
+**Python scripts** can use either async or sync methods:
+- **Sync methods** (simpler): Use `with DataQuery()` and call methods without `await`
+- **Async methods** (requires `asyncio.run()`): Use `async with DataQuery()` and `await` method calls
 
-```python
-import asyncio
-from dataquery import DataQuery
+**Jupyter notebooks** must use async methods with `await` (event loop already running)
 
-async def test_connection():
-    async with DataQuery() as dq:
-        healthy = await dq.health_check_async()
-        print("✅ Connection successful!" if healthy else "❌ Connection failed")
-
-asyncio.run(test_connection())
-```
+> Performance is identical - sync methods are lightweight wrappers around async implementations.
 
 ---
 
-# 📁 File Delivery
+### Download JPMAQS Files (Simplest)
 
-**Download financial data files with maximum speed and reliability using parallel processing.**
-
-## 🚀 Core File Delivery Features
-
-- **Parallel Processing**: Download files 5x faster with HTTP range requests
-- **Batch Operations**: Download multiple files by date range
-- **Smart Concurrency**: Configurable parallel downloads with rate limiting
-- **Progress Tracking**: Real-time progress callbacks
-- **Error Recovery**: Automatic retries and resume capabilities
-
----
-
-## 📊 File Delivery Examples
-
-### 🏦 Single File Download
-
+**Jupyter Notebooks:**
 ```python
-import asyncio
-from pathlib import Path
 from dataquery import DataQuery
 
-async def download_single_file():
-    async with DataQuery() as dq:
-        # Download a single file with parallel processing
-        result = await dq.download_file_async(
-            file_group_id="YOUR_FILE_ID",
-            file_datetime="20250101",
-            destination_path=Path("./downloads")
-        )
-
-        if result.status.value == "completed":
-            print(f"🎉 Success! Downloaded {result.file_size:,} bytes")
-            print(f"📁 Saved to: {result.local_path}")
-            print(f"⚡ Speed: {result.download_time:.1f}s")
-        else:
-            print(f"❌ Failed: {result.error_message}")
-
-asyncio.run(download_single_file())
+# Download all files for January 2025
+async with DataQuery() as dq:
+    await dq.run_group_download_async(
+        group_id="JPMAQS_GENERIC_RETURNS",
+        start_date="20250101",
+        end_date="20250131",
+        destination_dir="./data"
+    )
 ```
 
-### 📈 Batch Download with Progress
+**Python Scripts (Sync):**
+```python
+from dataquery import DataQuery
 
+# Download all files for January 2025
+with DataQuery() as dq:
+    dq.run_group_download(
+        group_id="JPMAQS_GENERIC_RETURNS",
+        start_date="20250101",
+        end_date="20250131",
+        destination_dir="./data"
+    )
+```
+
+**Python Scripts (Async):**
 ```python
 import asyncio
-from pathlib import Path
 from dataquery import DataQuery
-from dataquery.models import DownloadProgress
 
-def show_progress(progress: DownloadProgress):
-    """Display real-time download progress"""
-    if progress.total_bytes:
-        pct = progress.percentage
-        mb_downloaded = progress.bytes_downloaded / (1024 * 1024)
-        mb_total = progress.total_bytes / (1024 * 1024)
-        print(f"\r📥 {progress.file_group_id}: {pct:.1f}% ({mb_downloaded:.1f}/{mb_total:.1f} MB)",
-              end="", flush=True)
-
-async def batch_download():
+async def main():
     async with DataQuery() as dq:
-        # Download all files for January 2025
-        report = await dq.run_group_download_async(
-            group_id="YOUR_GROUP_ID",
+        await dq.run_group_download_async(
+            group_id="JPMAQS_GENERIC_RETURNS",
             start_date="20250101",
             end_date="20250131",
-            destination_dir=Path("./downloads"),
-            progress_callback=show_progress
+            destination_dir="./data"
         )
 
-        print(f"""
-📊 Download Complete!
-   📁 Total files: {report['total_files']}
-   ✅ Successful: {report['successful_downloads']}
-   ❌ Failed: {report['failed_downloads']}
-   📈 Success rate: {report['success_rate']:.1f}%
-   ⏱️  Total time: {report['total_time_formatted']}
-   🚀 Avg speed: {report.get('avg_speed_mbps', 0):.1f} MB/s
-        """)
-
-asyncio.run(batch_download())
+asyncio.run(main())
 ```
 
-### 🔍 File Discovery
+All JPMAQS Generic Returns files for January are now in `./data/`.
 
+### Query Time Series and Convert to DataFrame
+
+**Jupyter Notebooks:**
 ```python
-async def discover_files():
-    async with DataQuery() as dq:
-        # Find available data groups
-        groups = await dq.list_groups_async(limit=10)
-        print("📊 Available Data Groups:")
-        for i, group in enumerate(groups, 1):
-            print(f"   {i}. {group.group_id}")
-
-        # Check what files are available
-        if groups:
-            files = await dq.list_available_files_async(
-                group_id=groups[0].group_id,
-                start_date="20250101",
-                end_date="20250107"
-            )
-            print(f"📁 Available files this week: {len(files)}")
-
-        # Check specific file availability
-        availability = await dq.check_availability_async(
-            file_group_id="YOUR_FILE_ID",
-            file_datetime="20250101"
-        )
-
-        if availability and getattr(availability, 'is_available', False):
-            print("✅ File is available for download")
-        else:
-            print("❌ File not available for this date")
-
-asyncio.run(discover_files())
-```
-
-### 📋 File Availability APIs
-
-```python
-async def check_file_availability():
-    async with DataQuery() as dq:
-        # Check if a specific file is available for a date
-        availability = await dq.check_availability_async(
-            file_group_id="YOUR_FILE_ID",
-            file_datetime="20250101"
-        )
-
-        print(f"📄 File: {availability.file_name}")
-        print(f"✅ Available: {availability.is_available}")
-        print(f"📅 Created: {availability.first_created_on}")
-        print(f"🔄 Modified: {availability.last_modified}")
-
-async def list_available_files():
-    async with DataQuery() as dq:
-        # Get all available files for a group in date range
-        files = await dq.list_available_files_async(
-            group_id="YOUR_GROUP_ID",
-            start_date="20250101",
-            end_date="20250131"
-        )
-
-        print(f"📁 Found {len(files)} available files")
-        for file_info in files[:5]:  # Show first 5
-            file_id = file_info.get('file_group_id', 'Unknown')
-            file_date = file_info.get('file_datetime', 'Unknown')
-            print(f"   📄 {file_id} - {file_date}")
-
-        # Filter by specific file ID
-        specific_files = await dq.list_available_files_async(
-            group_id="YOUR_GROUP_ID",
-            file_group_id="SPECIFIC_FILE_ID",
-            start_date="20250101",
-            end_date="20250131"
-        )
-        print(f"🎯 Filtered results: {len(specific_files)} files")
-
-asyncio.run(check_file_availability())
-asyncio.run(list_available_files())
-```
-
-### ⚡ High-Performance Download
-
-```python
-async def high_performance_download():
-    async with DataQuery() as dq:
-        # Maximum performance settings for large downloads
-        report = await dq.run_group_download_async(
-            group_id="LARGE_DATASET",
-            start_date="20250101",
-            end_date="20250131",
-            destination_dir=Path("./bulk_data"),
-            delay_between_downloads=0.5  # Minimal delay
-        )
-
-        # Performance statistics
-        total_mb = sum(f.get('file_size_bytes', 0) for f in report.get('successful_downloads', [])) / (1024*1024)
-        time_minutes = report['total_time_minutes']
-        throughput = total_mb / time_minutes if time_minutes > 0 else 0
-
-        print(f"""
-🚀 High-Performance Results:
-   📊 Downloaded: {total_mb:.1f} MB
-   ⏱️  Time: {time_minutes:.1f} minutes
-   🔥 Throughput: {throughput:.1f} MB/min
-        """)
-
-asyncio.run(high_performance_download())
-```
-
-### 💻 Synchronous File Operations
-
-```python
-from pathlib import Path
 from dataquery import DataQuery
 
-def sync_file_operations():
-    # Use 'with' instead of 'async with'
-    with DataQuery() as dq:
-        # Single file download (sync)
-        result = dq.download_file(
-            file_group_id="YOUR_FILE_ID",
-            file_datetime="20250101",
-            destination_path=Path("./downloads")
-        )
-        print(f"Downloaded: {result.local_path}")
+# Get time series data and convert to pandas DataFrame
+async with DataQuery() as dq:
+    result = await dq.get_expressions_time_series_async(
+        expressions=["DB(MTE,IRISH EUR 1.100 15-May-2029 LON,,IE00BH3SQ895,MIDPRC)"],
+        start_date="20240101",
+        end_date="20240131"
+    )
 
-        # Batch download (sync)
-        report = dq.run_group_download(
-            group_id="YOUR_GROUP_ID",
-            start_date="20250101",
-            end_date="20250107",
-            destination_dir=Path("./downloads")
-        )
-        print(f"Downloaded {report['successful_downloads']} files")
+    # Convert to DataFrame for analysis
+    df = dq.time_series_to_dataframe(result)
+    print(df.head())
+```
 
-# No asyncio.run() needed!
-sync_file_operations()
+**Python Scripts:**
+```python
+import asyncio
+from dataquery import DataQuery
+
+async def main():
+    async with DataQuery() as dq:
+        result = await dq.get_expressions_time_series_async(
+            expressions=["DB(MTE,IRISH EUR 1.100 15-May-2029 LON,,IE00BH3SQ895,MIDPRC)"],
+            start_date="20240101",
+            end_date="20240131"
+        )
+        df = dq.time_series_to_dataframe(result)
+        return df
+
+df = asyncio.run(main())
+print(df.head())
+```
+
+### Discover Available Datasets
+
+**Jupyter Notebooks:**
+```python
+from dataquery import DataQuery
+
+# List all available groups and convert to DataFrame
+async with DataQuery() as dq:
+    groups = await dq.list_groups_async(limit=100)
+
+    # Convert to DataFrame - generic method works with any response
+    df = dq.to_dataframe(groups)
+    print(df[['group_id', 'group_name', 'description']].head())
+```
+
+**Python Scripts:**
+```python
+from dataquery import DataQuery
+
+# Sync version
+with DataQuery() as dq:
+    groups = dq.list_groups(limit=100)
+
+    # Convert to DataFrame - generic method works with any response
+    df = dq.to_dataframe(groups)
+    print(df[['group_id', 'group_name', 'description']].head())
 ```
 
 ---
 
-## 🔧 File Delivery Configuration
+## Common Use Cases
 
-### Performance Tuning
+### File Downloads
 
-| Setting | Conservative | Balanced | Aggressive | Use Case |
-|---------|-------------|----------|------------|----------|
-| `delay_between_downloads` | 2.0s | 1.0s | 0.2s | Shared/Dedicated network |
-
-The SDK automatically optimizes concurrent downloads and parallel parts based on your connection and file sizes.
-
-### File Delivery API Reference
+#### Download All Files for Date Range (Recommended)
 
 ```python
-# Single file download
+# Jupyter notebooks - use async/await
+async with DataQuery() as dq:
+    results = await dq.run_group_download_async(
+        group_id="JPMAQS_GENERIC_RETURNS",
+        start_date="20250101",
+        end_date="20250131",
+        destination_dir="./data",
+        max_concurrent=3  # Download 3 files at once
+    )
+    print(f"Downloaded {results['successful']} files")
+```
+
+```python
+# Python scripts - use sync methods
+with DataQuery() as dq:
+    results = dq.run_group_download(
+        group_id="JPMAQS_GENERIC_RETURNS",
+        start_date="20250101",
+        end_date="20250131",
+        destination_dir="./data"
+    )
+```
+
+```python
+# Python scripts - async requires asyncio.run()
+import asyncio
+from dataquery import DataQuery
+
+async def download():
+    async with DataQuery() as dq:
+        return await dq.run_group_download_async(
+            group_id="JPMAQS_GENERIC_RETURNS",
+            start_date="20250101",
+            end_date="20250131",
+            destination_dir="./data",
+            max_concurrent=3
+        )
+
+results = asyncio.run(download())
+```
+
+**When to use:** You want all files for a file group within a date range.
+
+#### Download Single File
+
+```python
+async with DataQuery() as dq:
+    result = await dq.download_file_async(
+        file_group_id="JPMAQS_GENERIC_RETURNS",
+        file_datetime="20250115",  # Specific date
+        destination_path="./downloads"
+    )
+    print(f"Downloaded: {result.local_path}")
+```
+
+**When to use:** You need just one specific file.
+
+---
+
+### Time Series Queries
+
+#### Query by Expression (Fastest for known data)
+
+```python
+async with DataQuery() as dq:
+    result = await dq.get_expressions_time_series_async(
+        expressions=[
+            "DB(MTE,IRISH EUR 1.100 15-May-2029 LON,,IE00BH3SQ895,MIDPRC)",
+            "DB(MTE,IRISH EUR 2.400 15-May-2030 LON,,IE00BJ38CR43,MIDPRC)"
+        ],
+        start_date="20240101",
+        end_date="20240131"
+    )
+```
+
+**When to use:** You know the exact expression syntax (from DataQuery Web or documentation).
+
+#### Query by Instrument ID
+
+```python
+async with DataQuery() as dq:
+    result = await dq.get_instrument_time_series_async(
+        instruments=[
+            "477f892d3cc8745578887a92d35c2a3e-DQGNMTBNDFIM",
+            "67e1bfca56bdee7a0fd5fe4c62a1e0dc-DQGNMTBNDFIM"
+        ],
+        attributes=["MIDPRC", "REPO_1M"],
+        start_date="20240101",
+        end_date="20240131"
+    )
+```
+
+**When to use:** You have instrument IDs from a previous search or list.
+
+#### Query Entire Group with Filter
+
+```python
+async with DataQuery() as dq:
+    result = await dq.get_group_time_series_async(
+        group_id="FI_GO_BO_EA",
+        attributes=["MIDPRC", "REPO_1M"],
+        filter="country(IRL)",  # Ireland bonds only
+        start_date="20240101",
+        end_date="20240131"
+    )
+```
+
+**When to use:** You want all instruments in a dataset, optionally filtered by country/currency.
+
+#### Search for Instruments
+
+```python
+async with DataQuery() as dq:
+    # Find instruments matching keywords
+    results = await dq.search_instruments_async(
+        group_id="FI_GO_BO_EA",
+        keywords="irish"
+    )
+    print(f"Found {results.items} instruments")
+
+    # Use the results to query time series
+    instrument_ids = [inst.instrument_id for inst in results.instruments]
+    data = await dq.get_instrument_time_series_async(
+        instruments=instrument_ids[:5],  # First 5 results
+        attributes=["MIDPRC"],
+        start_date="20240101",
+        end_date="20240131"
+    )
+```
+
+**When to use:** You're discovering data and don't know instrument IDs yet.
+
+---
+
+## Advanced Usage
+
+### High-Performance File Downloads
+
+Use parallel HTTP range requests to download large files faster:
+
+```python
+async with DataQuery() as dq:
+    result = await dq.download_file_async(
+        file_group_id="JPMAQS_GENERIC_RETURNS",
+        file_datetime="20250115",
+        destination_path="./downloads",
+        num_parts=8,  # Split into 8 parallel chunks
+        progress_callback=lambda fid, p: print(f"{p.bytes_downloaded:,} bytes")
+    )
+```
+
+**Performance tuning:**
+```python
+# Download multiple files concurrently
+await dq.run_group_download_async(
+    group_id="JPMAQS_GENERIC_RETURNS",
+    start_date="20250101",
+    end_date="20250131",
+    destination_dir="./data",
+    max_concurrent=5,  # 5 files at once
+    num_parts=4        # Each file in 4 chunks = 20 total parallel requests
+)
+```
+
+**Optimal settings:**
+- `num_parts`: 2-8 (higher = faster on good connections)
+- `max_concurrent`: 3-5 (too high may hit rate limits)
+
+**Note:** Jupyter notebooks use `await` directly. Python scripts use sync methods or wrap async code in `asyncio.run()`.
+
+### Grid Data (Premium Datasets)
+
+```python
+async with DataQuery() as dq:
+    # Query grid data by expression
+    grid = await dq.get_grid_data_async(
+        expr="DBGRID(FXOVOL,FXO,CW,AUD,USD)",
+        date="20240216"
+    )
+```
+
+### DataFrame Conversion
+
+The SDK provides a universal `to_dataframe()` method that automatically handles any API response type:
+
+```python
+async with DataQuery() as dq:
+    # Generic to_dataframe() works with all response types
+    groups = await dq.list_groups_async(limit=100)
+    groups_df = dq.to_dataframe(groups)
+
+    # Time series
+    ts_data = await dq.get_expressions_time_series_async(
+        expressions=["DB(MTE,IRISH EUR 1.100 15-May-2029 LON,,IE00BH3SQ895,MIDPRC)"],
+        start_date="20240101",
+        end_date="20240131"
+    )
+    ts_df = dq.to_dataframe(ts_data)
+
+    # Instruments
+    instruments = await dq.list_instruments_async(group_id="FI_GO_BO_EA")
+    instruments_df = dq.to_dataframe(instruments.instruments)
+
+    # Files
+    files = await dq.list_available_files_async(
+        group_id="JPMAQS_GENERIC_RETURNS",
+        start_date="20250101",
+        end_date="20250131"
+    )
+    files_df = dq.to_dataframe(files)
+```
+
+**Advanced options:**
+```python
+# Include metadata fields
+df = dq.to_dataframe(groups, include_metadata=True)
+
+# Parse specific columns as dates
+df = dq.to_dataframe(files, date_columns=['last_modified', 'created_date'])
+
+# Convert specific columns to numeric
+df = dq.to_dataframe(files, numeric_columns=['file_size'])
+
+# Apply custom transformations
+df = dq.to_dataframe(
+    data,
+    custom_transformations={
+        'price': lambda x: float(x) if x else 0.0
+    }
+)
+```
+
+**Type-specific convenience methods** (same functionality as generic method):
+- `groups_to_dataframe(groups, include_metadata=False)`
+- `time_series_to_dataframe(time_series, include_metadata=False)`
+- `instruments_to_dataframe(instruments, include_metadata=False)`
+- `files_to_dataframe(files, include_metadata=False)`
+
+---
+
+## API Reference
+
+### File Download Methods
+
+#### `download_file_async()`
+
+Download a single file with optional parallel chunks.
+
+```python
 result = await dq.download_file_async(
-    file_group_id: str,           # Required: File identifier
-    file_datetime: str = None,    # Optional: Date (YYYYMMDD)
-    destination_path: Path = None, # Optional: Where to save
-    progress_callback: Callable = None  # Optional: Progress tracking
+    file_group_id: str,              # Required: File group identifier
+    file_datetime: str,              # Required: File date (YYYY-MM-DD)
+    destination_path: Path,          # Required: Where to save
+    num_parts: int = 1,              # Optional: Parallel chunks (1-10)
+    part_size_mb: int = 100,         # Optional: Chunk size in MB
+    progress_callback: Callable = None,  # Optional: Progress updates
+    overwrite: bool = False          # Optional: Overwrite existing
 ) -> DownloadResult
+```
 
-# Batch download
-report = await dq.run_group_download_async(
-    group_id: str,                # Required: Data group ID
-    start_date: str,              # Required: Start date (YYYYMMDD)
-    end_date: str,                # Required: End date (YYYYMMDD)
-    destination_dir: Path = "./downloads",  # Optional: Download folder
-    delay_between_downloads: float = 1.0  # Optional: Delay between files
-) -> dict
+**Returns:** `DownloadResult` with status, file size, download time, and local path.
 
-# Discovery and availability methods
-groups = await dq.list_groups_async(limit: int = 100) -> List[Group]
+#### `download_files_by_date_range_async()`
 
-# Check if a specific file is available for a date
-availability = await dq.check_availability_async(
-    file_group_id: str,           # Required: File identifier
-    file_datetime: str            # Required: Date in YYYYMMDD format
-) -> AvailabilityInfo
+Download all files in a date range.
 
-# List all available files for a group in date range
+```python
+results = await dq.download_files_by_date_range_async(
+    file_group_id: str,              # Required: File group identifier
+    start_date: str,                 # Required: Start date (YYYY-MM-DD)
+    end_date: str,                   # Required: End date (YYYY-MM-DD)
+    destination_path: Path,          # Required: Where to save
+    num_parts: int = 1,              # Optional: Parallel chunks per file
+    max_concurrent: int = 3,         # Optional: Concurrent downloads
+    progress_callback: Callable = None  # Optional: Progress updates
+) -> List[DownloadResult]
+```
+
+**Returns:** List of `DownloadResult` for each file.
+
+#### `list_available_files_async()`
+
+Check what files are available for a group and date range.
+
+```python
 files = await dq.list_available_files_async(
-    group_id: str,                # Required: Group identifier
-    file_group_id: str = None,    # Optional: Filter by specific file ID
-    start_date: str = None,       # Optional: Start date (YYYYMMDD)
-    end_date: str = None          # Optional: End date (YYYYMMDD)
+    group_id: str,                   # Required: Group identifier
+    start_date: str,                 # Required: Start date (YYYY-MM-DD)
+    end_date: str                    # Required: End date (YYYY-MM-DD)
 ) -> List[dict]
 ```
 
----
-
-# 📊 Time Series Data
-
-**Query real-time and historical market data using advanced time series APIs.**
-
-## 🎯 Time Series Features
-
-- **Instrument Data**: Query specific instruments with multiple attributes
-- **Expression Queries**: Use traditional DataQuery expressions
-- **Group Time Series**: Bulk queries across instrument groups
-- **Grid Data**: Retrieve structured data grids
-- **Flexible Filtering**: Advanced filtering and pagination
-- **Multiple Formats**: JSON, CSV, and other output formats
+**Returns:** List of dictionaries with `file_group_id`, `file_datetime`, and `file_size`.
 
 ---
 
-## 📈 Time Series Examples
+### Time Series Query Methods
 
-### 🏛️ Query Instrument Time Series
+#### `get_expressions_time_series_async()`
 
+Query using DataQuery expressions (fastest when you know the expression).
+
+**Minimal usage:**
 ```python
-async def get_instrument_data():
-    async with DataQuery() as dq:
-        # Get time series for specific instruments
-        ts_response = await dq.get_instrument_time_series_async(
-            instruments=["US912828U816", "US912828U824"],  # Treasury bonds
-            attributes=["PX_LAST", "PX_OPEN", "PX_HIGH", "PX_LOW"],
-            start_date="20240101",
-            end_date="20240131",
-            frequency="FREQ_DAY",
-            format="JSON"
-        )
-
-        print(f"Retrieved time series data:")
-        print(f"Instruments: {len(ts_response.instruments) if hasattr(ts_response, 'instruments') else 'N/A'}")
-        print(f"Data points: {ts_response.items if hasattr(ts_response, 'items') else 'N/A'}")
-
-        return ts_response
-
-asyncio.run(get_instrument_data())
+result = await dq.get_expressions_time_series_async(
+    expressions=["DB(MTE,IRISH EUR 1.100 15-May-2029 LON,,IE00BH3SQ895,MIDPRC)"],
+    start_date="20240101",
+    end_date="20240131"
+)
 ```
 
-### 🔍 Search and Query Instruments
-
+**Complete signature:**
 ```python
-async def search_and_query():
-    async with DataQuery() as dq:
-        # Search for instruments
-        search_results = await dq.search_instruments_async(
-            group_id="BONDS_GROUP",
-            keywords="treasury 10Y",
-            page=None
-        )
-
-        print(f"Found {search_results.items} matching instruments")
-
-        # List all instruments in a group
-        instruments = await dq.list_instruments_async(
-            group_id="BONDS_GROUP",
-            page=None
-        )
-
-        print(f"Total instruments in group: {instruments.items}")
-
-        # Get available attributes for the group
-        attributes = await dq.get_group_attributes_async(
-            group_id="BONDS_GROUP"
-        )
-
-        print(f"Available attributes: {len(attributes.instruments) if hasattr(attributes, 'instruments') else 'N/A'}")
-
-asyncio.run(search_and_query())
+result = await dq.get_expressions_time_series_async(
+    expressions: List[str],          # Required: List of expressions (max 20)
+    format: str = "JSON",            # Optional: Response format
+    start_date: str = None,          # Optional: YYYYMMDD or TODAY-1M
+    end_date: str = None,            # Optional: YYYYMMDD or TODAY
+    calendar: str = "CAL_USBANK",    # Optional: Calendar convention
+    frequency: str = "FREQ_DAY",     # Optional: FREQ_DAY, FREQ_WEEK, etc.
+    conversion: str = "CONV_LASTBUS_ABS",  # Optional: Conversion method
+    nan_treatment: str = "NA_NOTHING",     # Optional: NA_NOTHING, NA_LAST, etc.
+    data: str = "REFERENCE_DATA",    # Optional: Data domain
+    page: str = None                 # Optional: Pagination token
+) -> TimeSeriesResponse
 ```
 
-### 📊 Expression-Based Queries
-
-```python
-async def expression_queries():
-    async with DataQuery() as dq:
-        # Use traditional DataQuery expressions
-        ts_response = await dq.get_expressions_time_series_async(
-            expressions=[
-                "PX_LAST(IBM,USD)",
-                "PX_LAST(AAPL,USD)",
-                "PX_LAST(MSFT,USD)"
-            ],
-            start_date="20240101",
-            end_date="20240131",
-            frequency="FREQ_DAY",
-            format="JSON",
-            calendar="CAL_USBANK"
-        )
-
-        print(f"Expression query results:")
-        print(f"Data points: {ts_response.items if hasattr(ts_response, 'items') else 'N/A'}")
-
-        return ts_response
-
-asyncio.run(expression_queries())
-```
-
-### 🏢 Group Time Series Queries
-
-```python
-async def group_time_series():
-    async with DataQuery() as dq:
-        # Query time series across a group with filters
-        ts_response = await dq.get_group_time_series_async(
-            group_id="EQUITY_PRICES",
-            attributes=["PX_LAST", "VOLUME"],
-            filter="currency(USD)",  # Filter by USD currency
-            start_date="20240101",
-            end_date="20240131",
-            frequency="FREQ_DAY",
-            format="JSON"
-        )
-
-        print(f"Group time series results:")
-        print(f"Data points: {ts_response.items if hasattr(ts_response, 'items') else 'N/A'}")
-
-        # Get available filters for the group
-        filters = await dq.get_group_filters_async(
-            group_id="EQUITY_PRICES"
-        )
-
-        print(f"Available filters: {len(filters.filters) if hasattr(filters, 'filters') else 'N/A'}")
-
-asyncio.run(group_time_series())
-```
-
-### 🗃️ Grid Data Queries
-
-```python
-async def grid_data_queries():
-    async with DataQuery() as dq:
-        # Query using expression
-        grid_response = await dq.get_grid_data_async(
-            expr="PX_LAST(IBM,USD)",
-            date="20240115"
-        )
-
-        print(f"Grid data from expression:")
-        print(f"Series count: {len(grid_response.series) if hasattr(grid_response, 'series') else 'N/A'}")
-
-        # Query using grid ID
-        grid_response2 = await dq.get_grid_data_async(
-            grid_id="EQUITY_SNAPSHOT_GRID",
-            date="20240115"
-        )
-
-        print(f"Grid data from ID:")
-        print(f"Series count: {len(grid_response2.series) if hasattr(grid_response2, 'series') else 'N/A'}")
-
-asyncio.run(grid_data_queries())
-```
-
-### 💻 Synchronous Time Series
-
-```python
-from dataquery import DataQuery
-
-def sync_time_series():
-    with DataQuery() as dq:
-        # Sync instrument query
-        ts_response = dq.get_instrument_time_series(
-            instruments=["US912828U816"],
-            attributes=["PX_LAST"],
-            start_date="20240101",
-            end_date="20240131"
-        )
-
-        print(f"Sync query complete: {ts_response.items if hasattr(ts_response, 'items') else 'N/A'} data points")
-
-        # Sync expression query
-        expr_response = dq.get_expressions_time_series(
-            expressions=["PX_LAST(IBM,USD)"],
-            start_date="20240101",
-            end_date="20240131"
-        )
-
-        print(f"Expression query: {expr_response.items if hasattr(expr_response, 'items') else 'N/A'} data points")
-
-sync_time_series()
-```
+**Recommended parameters:**
+- `calendar="CAL_WEEKDAYS"` - For international coverage
+- `data="ALL"` - To include market data
 
 ---
 
-## 📊 Time Series API Reference
+#### `get_instrument_time_series_async()`
 
-### Instrument Queries
+Query specific instruments by their IDs.
+
+**Minimal usage:**
 ```python
-# Query specific instruments
-ts_response = await dq.get_instrument_time_series_async(
-    instruments: List[str],       # Required: Instrument identifiers
-    attributes: List[str],        # Required: Attribute identifiers
-    data: str = "REFERENCE_DATA", # Optional: Data domain
-    format: str = "JSON",         # Optional: Response format
-    start_date: str = None,       # Optional: YYYYMMDD or TODAY-Nx
-    end_date: str = None,         # Optional: YYYYMMDD or TODAY-Nx
-    calendar: str = "CAL_USBANK", # Optional: Calendar convention
-    frequency: str = "FREQ_DAY",  # Optional: Frequency convention
-    conversion: str = "CONV_LASTBUS_ABS", # Optional: Conversion convention
-    nan_treatment: str = "NA_NOTHING",    # Optional: Missing data handling
-    page: str = None              # Optional: Pagination token
-) -> TimeSeriesResponse
+result = await dq.get_instrument_time_series_async(
+    instruments=["477f892d3cc8745578887a92d35c2a3e-DQGNMTBNDFIM"],
+    attributes=["MIDPRC"],
+    start_date="20240101",
+    end_date="20240131"
+)
+```
 
-# Query using expressions
-ts_response = await dq.get_expressions_time_series_async(
-    expressions: List[str],       # Required: DataQuery expressions
-    format: str = "JSON",         # Optional: Response format
-    start_date: str = None,       # Optional: Date range
-    end_date: str = None,         # Optional: Date range
-    # ... same optional parameters as above
-) -> TimeSeriesResponse
-
-# Query group time series
-ts_response = await dq.get_group_time_series_async(
-    group_id: str,                # Required: Group identifier
-    attributes: List[str],        # Required: Attribute identifiers
-    filter: str = None,           # Optional: Filter (e.g. "currency(USD)")
-    # ... same optional parameters as above
+**Complete signature:**
+```python
+result = await dq.get_instrument_time_series_async(
+    instruments: List[str],          # Required: List of instrument IDs (max 20)
+    attributes: List[str],           # Required: List of attributes
+    data: str = "REFERENCE_DATA",    # Optional: Data domain
+    format: str = "JSON",            # Optional: Response format
+    start_date: str = None,          # Optional: YYYYMMDD or TODAY-2W
+    end_date: str = None,            # Optional: YYYYMMDD or TODAY
+    calendar: str = "CAL_USBANK",    # Optional: Calendar convention
+    frequency: str = "FREQ_DAY",     # Optional: Frequency
+    conversion: str = "CONV_LASTBUS_ABS",  # Optional: Conversion
+    nan_treatment: str = "NA_NOTHING",     # Optional: Missing data
+    page: str = None                 # Optional: Pagination token
 ) -> TimeSeriesResponse
 ```
 
-### Discovery and Metadata
+**When to use:** You have instrument IDs from search or list operations.
+
+---
+
+#### `get_group_time_series_async()`
+
+Query all instruments in a group, optionally with filters.
+
+**Minimal usage:**
 ```python
-# Search instruments
-instruments = await dq.search_instruments_async(
-    group_id: str,                # Required: Group identifier
-    keywords: str,                # Required: Search keywords
-    page: str = None              # Optional: Pagination token
+result = await dq.get_group_time_series_async(
+    group_id="FI_GO_BO_EA",
+    attributes=["MIDPRC"],
+    start_date="20240101",
+    end_date="20240131"
+)
+```
+
+**With filter:**
+```python
+result = await dq.get_group_time_series_async(
+    group_id="FI_GO_BO_EA",
+    attributes=["MIDPRC", "REPO_1M"],
+    filter="country(IRL)",           # Ireland bonds only
+    start_date="20240101",
+    end_date="20240131",
+    calendar="CAL_WEEKDAYS"
+)
+```
+
+**Complete signature:**
+```python
+result = await dq.get_group_time_series_async(
+    group_id: str,                   # Required: Group identifier
+    attributes: List[str],           # Required: List of attributes
+    filter: str = None,              # Optional: Filter expression
+    data: str = "REFERENCE_DATA",    # Optional: Data domain
+    format: str = "JSON",            # Optional: Response format
+    start_date: str = None,          # Optional: YYYYMMDD or TODAY-1M
+    end_date: str = None,            # Optional: YYYYMMDD or TODAY
+    calendar: str = "CAL_USBANK",    # Optional: Calendar
+    frequency: str = "FREQ_DAY",     # Optional: Frequency
+    conversion: str = "CONV_LASTBUS_ABS",  # Optional: Conversion
+    nan_treatment: str = "NA_NOTHING",     # Optional: Missing data
+    page: str = None                 # Optional: Pagination
+) -> TimeSeriesResponse
+```
+
+**Available filters:** Check with `get_group_filters_async()` - typically `country(CODE)` or `currency(CODE)`.
+
+---
+
+### Discovery Methods
+
+#### `search_instruments_async()`
+
+Search for instruments within a group by keywords.
+
+```python
+results = await dq.search_instruments_async(
+    group_id: str,                   # Required: Group to search
+    keywords: str,                   # Required: Search terms
+    page: str = None                 # Optional: Pagination token
 ) -> InstrumentsResponse
+```
 
-# List instruments
+#### `list_instruments_async()`
+
+List all instruments in a group (paginated).
+
+```python
 instruments = await dq.list_instruments_async(
-    group_id: str,                # Required: Group identifier
-    instrument_id: str = None,    # Optional: Specific instrument filter
-    page: str = None              # Optional: Pagination token
+    group_id: str,                   # Required: Group identifier
+    instrument_id: str = None,       # Optional: Specific instrument
+    page: str = None                 # Optional: Pagination token
 ) -> InstrumentsResponse
+```
 
-# Get group attributes
-attributes = await dq.get_group_attributes_async(
-    group_id: str,                # Required: Group identifier
-    instrument_id: str = None,    # Optional: Specific instrument filter
-    page: str = None              # Optional: Pagination token
+#### `list_groups_async()`
+
+List available data groups/datasets.
+
+```python
+groups = await dq.list_groups_async(
+    limit: int = 100                 # Optional: Results per page (100-1000)
+) -> List[Group]
+```
+
+**Note:** Minimum limit is 100 per API specification.
+
+#### `get_group_attributes_async()`
+
+Get available attributes for a group.
+
+```python
+attrs = await dq.get_group_attributes_async(
+    group_id: str,                   # Required: Group identifier
+    instrument_id: str = None,       # Optional: Specific instrument
+    page: str = None                 # Optional: Pagination token
 ) -> AttributesResponse
+```
 
-# Get group filters
+#### `get_group_filters_async()`
+
+Get available filter dimensions for a group.
+
+```python
 filters = await dq.get_group_filters_async(
-    group_id: str,                # Required: Group identifier
-    page: str = None              # Optional: Pagination token
+    group_id: str,                   # Required: Group identifier
+    page: str = None                 # Optional: Pagination token
 ) -> FiltersResponse
 ```
 
-### Grid Data
-```python
-# Get grid data
-grid_response = await dq.get_grid_data_async(
-    expr: str = None,             # Optional: DataQuery expression
-    grid_id: str = None,          # Optional: Grid identifier
-    date: str = None              # Optional: Date for grid data
-) -> GridDataResponse
-# Note: Either expr or grid_id must be provided, but not both
-```
-
 ---
 
-## 🔧 Configuration
+## Configuration
 
 ### Environment Variables
 
-The SDK uses smart defaults for JPMorgan DataQuery API. Create a `.env` file:
-
 ```bash
-# Required - Your credentials
-DATAQUERY_CLIENT_ID=your_client_id_here
-DATAQUERY_CLIENT_SECRET=your_client_secret_here
+# Required
+export DATAQUERY_CLIENT_ID="your_client_id"
+export DATAQUERY_CLIENT_SECRET="your_client_secret"
 
-# Optional - All defaults are pre-configured for JPMorgan DataQuery API
-# DATAQUERY_BASE_URL=https://api-developer.jpmorgan.com  # Default
-# DATAQUERY_CONTEXT_PATH=/research/dataquery-authe/api/v2  # Default
-# DATAQUERY_OAUTH_TOKEN_URL=https://authe.jpmorgan.com/as/token.oauth2  # Default
+# Optional - API endpoints (defaults shown)
+export DATAQUERY_BASE_URL="https://api-developer.jpmorgan.com"
+export DATAQUERY_CONTEXT_PATH="/research/dataquery-authe/api/v2"
+export DATAQUERY_FILES_BASE_URL="https://api-strm-gw01.jpmchase.com"
 
-# Performance tuning (optional)
-DATAQUERY_REQUESTS_PER_MINUTE=300    # Rate limit
-DATAQUERY_MAX_CONCURRENT_DOWNLOADS=5 # Parallel files
-DATAQUERY_TIMEOUT=6000.0             # Request timeout (seconds)
+# Optional - OAuth
+export DATAQUERY_OAUTH_TOKEN_URL="https://authe.jpmorgan.com/as/token.oauth2"
+export DATAQUERY_OAUTH_RESOURCE_ID="JPMC:URI:RS-06785-DataQueryExternalApi-PROD"
 
-# Download settings (optional)
-DATAQUERY_DOWNLOAD_DIR=./downloads   # Default folder
-DATAQUERY_CREATE_DIRECTORIES=true    # Auto-create folders
-DATAQUERY_OVERWRITE_EXISTING=false   # Don't overwrite files
+# Optional - Performance
+export DATAQUERY_MAX_RETRIES="3"
+export DATAQUERY_TIMEOUT="60"
+export DATAQUERY_RATE_LIMIT_RPM="300"  # Requests per minute
 ```
 
 ### Programmatic Configuration
 
 ```python
-from dataquery import DataQuery
-from dataquery.models import ClientConfig
+from dataquery import DataQuery, ClientConfig
 
-# Custom configuration
 config = ClientConfig(
-    client_id="your_id",
-    client_secret="your_secret",
-    base_url="https://custom-api.company.com",  # Override default
-    timeout=30.0,                              # Override default
-    max_retries=5                              # Override default
+    client_id="your_client_id",
+    client_secret="your_client_secret",
+    max_retries=3,
+    timeout=60.0,
+    rate_limit_rpm=300
 )
 
-async def with_custom_config():
-    async with DataQuery(config=config) as dq:
-        # Use any file delivery or time series method
-        result = await dq.download_file_async(...)
-        ts_data = await dq.get_instrument_time_series_async(...)
+async with DataQuery(config=config) as dq:
+    # Your code here
+    pass
+```
+
+### Performance Tuning
+
+**For file downloads:**
+```python
+# Optimal settings for most use cases
+num_parts=4                # 2-8 parallel chunks per file
+part_size_mb=50           # 25-100 MB chunks
+max_concurrent=3          # 1-5 concurrent file downloads
+```
+
+**For time series:**
+```python
+# Recommended date range
+start_date="TODAY-1Y"     # Max 1 year per request
+calendar="CAL_WEEKDAYS"   # International coverage
+data="ALL"                # Include market data
 ```
 
 ---
 
-## 🛠️ Command Line Usage
+## Date and Calendar Reference
 
-Use the included examples:
+### Date Formats
 
-```bash
-# File delivery - Download files by date range
-python examples/files/download_group_by_date.py \
-  YOUR_GROUP_ID \
-  20250101 \
-  20250131 \
-  ./downloads
-
-# Time series - Query instrument data
-python examples/time_series/get_instrument_data.py \
-  US912828U816 \
-  PX_LAST \
-  20240101 \
-  20240131
+**Absolute dates:**
+```python
+start_date="20240101"     # YYYYMMDD format
+end_date="20241231"
 ```
+
+**Relative dates:**
+```python
+start_date="TODAY"        # Today
+start_date="TODAY-1D"     # Yesterday
+start_date="TODAY-1W"     # 1 week ago
+start_date="TODAY-1M"     # 1 month ago
+start_date="TODAY-1Y"     # 1 year ago
+```
+
+### Calendar Conventions
+
+Choose based on your use case:
+
+| Calendar | Description | Use Case |
+|----------|-------------|----------|
+| `CAL_WEEKDAYS` | Monday-Friday (recommended for international) | Multi-country data |
+| `CAL_USBANK` | US banking days (default) | US-only data |
+| `CAL_WEEKDAY_NOHOLIDAY` | All weekdays | Generic business days |
+| `CAL_DEFAULT` | Calendar day | Include weekends |
+
+**30+ calendars supported.** See API documentation for complete list.
+
+### Frequency Conventions
+
+| Frequency | Description |
+|-----------|-------------|
+| `FREQ_DAY` | Daily (default) |
+| `FREQ_WEEK` | Weekly |
+| `FREQ_MONTH` | Monthly |
+| `FREQ_QUARTER` | Quarterly |
+| `FREQ_YEAR` | Annual |
 
 ---
 
-## 🆘 Troubleshooting
+## Error Handling
 
-### Connection Issues
+### Common Patterns
 
 ```python
-# Quick diagnostic
-import asyncio
-from dataquery import DataQuery
+from dataquery import DataQuery, DataQueryError
 
-async def diagnose():
+async def safe_query():
     try:
         async with DataQuery() as dq:
-            healthy = await dq.health_check_async()
-            print(f"Health check: {'✅ PASS' if healthy else '❌ FAIL'}")
+            result = await dq.get_expressions_time_series_async(
+                expressions=["DB(...)"],
+                start_date="20240101",
+                end_date="20240131"
+            )
+            return result
+    except DataQueryError as e:
+        print(f"DataQuery API error: {e}")
     except Exception as e:
-        print(f"Error: {e}")
-        print("Check: 1) Credentials 2) Network 3) API endpoint")
-
-asyncio.run(diagnose())
+        print(f"Unexpected error: {e}")
 ```
 
-### File Availability Check
+### Check Health
 
 ```python
-async def check_file():
+async with DataQuery() as dq:
+    if await dq.health_check_async():
+        print("API is healthy")
+    else:
+        print("API health check failed")
+```
+
+### Monitor Statistics
+
+```python
+async with DataQuery() as dq:
+    # Make some requests...
+    await dq.list_groups_async(limit=100)
+
+    # Get statistics
+    stats = dq.get_stats()
+    print(f"Total requests: {stats.get('total_requests', 0)}")
+    print(f"Success rate: {stats.get('success_rate', 0):.1f}%")
+```
+
+---
+
+## Examples & Recipes
+
+### Download and Process JPMAQS Data
+
+```python
+import asyncio
+from dataquery import DataQuery
+from pathlib import Path
+
+async def download_jpmaqs_month():
+    """Download and process a month of JPMAQS data"""
     async with DataQuery() as dq:
-        availability = await dq.check_availability_async(
-            file_group_id="YOUR_FILE_ID",
-            file_datetime="20250101"
+        results = await dq.download_files_by_date_range_async(
+            file_group_id="JPMAQS",
+            start_date="2025-01-01",
+            end_date="2025-01-31",
+            destination_path="./jpmaqs_data",
+            num_parts=4
         )
 
-        if availability and getattr(availability, 'is_available', False):
-            print("✅ File is available")
-        else:
-            print("❌ File not available for this date")
+        for result in results:
+            if result.status.value == "completed":
+                print(f"Downloaded {result.local_path.name}: {result.file_size:,} bytes")
+                # Process the file here
+            else:
+                print(f"Failed {result.file_id}: {result.error_message}")
+
+asyncio.run(download_jpmaqs_month())
 ```
 
-### Time Series Data Validation
+### Build Time Series for Portfolio
 
 ```python
-async def validate_time_series():
+async def get_portfolio_data(instrument_ids: list):
+    """Get time series data for a portfolio of instruments"""
     async with DataQuery() as dq:
-        # Check if instruments exist
-        instruments = await dq.search_instruments_async(
-            group_id="YOUR_GROUP",
-            keywords="YOUR_INSTRUMENT"
+        # Get 1 year of daily data
+        ts_data = await dq.get_instrument_time_series_async(
+            instruments=instrument_ids,
+            attributes=["MIDPRC", "REPO_1M"],
+            start_date="TODAY-1Y",
+            end_date="TODAY",
+            calendar="CAL_WEEKDAYS",
+            data="ALL"
         )
 
-        if instruments.items > 0:
-            print("✅ Instruments found")
-        else:
-            print("❌ No instruments match your search")
+        # Convert to DataFrame for analysis
+        df = dq.time_series_to_dataframe(ts_data)
+        return df
+
+# Usage
+portfolio_ids = [
+    "477f892d3cc8745578887a92d35c2a3e-DQGNMTBNDFIM",
+    "67e1bfca56bdee7a0fd5fe4c62a1e0dc-DQGNMTBNDFIM"
+]
+df = asyncio.run(get_portfolio_data(portfolio_ids))
+print(df.head())
 ```
 
-### Debug Mode
+### Discover and Query New Dataset
 
 ```python
-import os
-os.environ["DATAQUERY_LOG_LEVEL"] = "DEBUG"
-os.environ["DATAQUERY_ENABLE_DEBUG_LOGGING"] = "true"
+async def explore_dataset(group_id: str, keywords: str):
+    """Explore a dataset and get sample data"""
+    async with DataQuery() as dq:
+        # Search for instruments
+        search_results = await dq.search_instruments_async(
+            group_id=group_id,
+            keywords=keywords
+        )
+        print(f"Found {search_results.items} instruments matching '{keywords}'")
+
+        # Get first 5 instrument IDs
+        instrument_ids = [inst.instrument_id for inst in search_results.instruments[:5]]
+
+        # Get available attributes
+        attrs = await dq.get_group_attributes_async(group_id=group_id)
+        print(f"Available attributes: {len(attrs.instruments)} instruments")
+
+        # Query sample data
+        ts_data = await dq.get_instrument_time_series_async(
+            instruments=instrument_ids,
+            attributes=["MIDPRC"],  # Common attribute
+            start_date="TODAY-1W",
+            end_date="TODAY",
+            calendar="CAL_WEEKDAYS"
+        )
+
+        return ts_data
+
+# Usage
+data = asyncio.run(explore_dataset("FI_GO_BO_EA", "irish"))
 ```
 
 ---
 
-## 📖 Documentation
+## Requirements
 
-This repository includes comprehensive documentation:
-
-```bash
-# Serve docs locally
-uv run mkdocs serve
-
-# Build docs
-uv run mkdocs build
-```
-
-**Key documentation:**
-- 📖 **Getting Started**: `docs/getting-started/quickstart.md`
-- ⚙️ **Configuration**: `docs/getting-started/configuration.md`
-- 🔗 **API Reference**: `docs/api/dataquery.md` and `docs/api/models.md`
-- 💡 **Examples**: `docs/examples/basic.md`
+- **Python 3.10+** (Python 3.11+ recommended for better performance)
+- **Dependencies:** aiohttp, pydantic, structlog (auto-installed)
+- **Optional:** pandas (for DataFrame conversion)
 
 ---
 
-## 🛠️ Development
+## Support
 
-### Setup
-
-```bash
-# Clone and install
-git clone <repository-url>
-cd dataquery-sdk
-uv sync --all-extras --dev
-```
-
-### Testing
-
-```bash
-# Run all tests
-uv run pytest -v
-
-# With coverage
-uv run pytest -v --cov=dataquery --cov-report=html
-
-# Specific tests
-uv run pytest tests/test_client.py -v
-```
-
-### Code Quality
-
-```bash
-# Linting and formatting
-uv run flake8 dataquery/ tests/
-uv run black .
-uv run isort .
-
-# Type checking
-uv run mypy dataquery/
-```
+For issues, questions, or feature requests, contact DataQuery support at DataQuery_Support@jpmorgan.com
 
 ---
 
-## 🤝 Contributing
+## License
 
-1. **Fork** the repository
-2. **Create** a feature branch (`git checkout -b feature/amazing-feature`)
-3. **Make** your changes with tests and documentation
-4. **Run** the full test suite (`uv run pytest`)
-5. **Commit** your changes (`git commit -m 'Add amazing feature'`)
-6. **Push** to the branch (`git push origin feature/amazing-feature`)
-7. **Open** a Pull Request
-
----
-
-
----
-
-## 📋 Changelog
-
-See `CHANGELOG.md` for version history and release notes.
-
----
+See LICENSE file for details.
