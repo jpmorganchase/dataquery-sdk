@@ -123,9 +123,9 @@ jobs:
           draft: ${{ contains(steps.tag_name.outputs.current_version, '.dev') }}
           prerelease: ${{ contains(steps.tag_name.outputs.current_version, '.dev') }}
           token: ${{ secrets.GITHUB_TOKEN }}
-#
-#    - name: publish to PyPI
-#      env:
-#        TWINE_USERNAME: __token__
-#        TWINE_PASSWORD: ${{ secrets.PYPI_API_JPMC_OSS}}
-#      run: uv run twine upload dist/*
+
+      - name: publish to PyPI
+        env:
+         TWINE_USERNAME: __token__
+         TWINE_PASSWORD: ${{ secrets.PYPI_TEST_API_JPMC_OSS}}
+        run: uv run twine upload  --repository-url https://test.pypi.org/user/jpmc-oss-test  dist/*
