@@ -106,8 +106,6 @@ jobs:
             uv pip install "$pkg[all]" pytest --force-reinstall
             .venv/bin/pytest -v tests/ -s
           done
-          
-
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -115,3 +113,9 @@ jobs:
           path: |
             dist/*.tar.gz
             dist/*.whl
+
+      - name: publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TEST_API_JPMC_OSS}}
+        run: uv run twine upload  --repository-url https://test.pypi.org/user/jpmc-oss-test  dist/*

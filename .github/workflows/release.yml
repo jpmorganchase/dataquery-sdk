@@ -126,6 +126,6 @@ jobs:
 
       - name: publish to PyPI
         env:
-         TWINE_USERNAME: __token__
-         TWINE_PASSWORD: ${{ secrets.PYPI_TEST_API_JPMC_OSS}}
-        run: uv run twine upload  --repository-url https://test.pypi.org/user/jpmc-oss-test  dist/*
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: uv run twine upload dist/*
