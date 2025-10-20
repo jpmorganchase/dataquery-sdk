@@ -13,6 +13,7 @@ Quick Start:
 
 For more information, visit: https://github.com/dataquery/dataquery-sdk
 """
+
 __version__ = "0.0.3"
 __author__ = "DATAQUERY SDK Team"
 __email__ = "support@dataquery.com"
