@@ -1017,7 +1017,9 @@ class InstrumentWithAttributes(BaseModel):
         None, alias="instrument-isin", description="Instrument ISIN"
     )
     group: Optional[Dict[str, str]] = Field(None, description="Group information")
-    attributes: Optional[List[Attribute]] = Field(None, description="List of attributes")
+    attributes: Optional[List[Attribute]] = Field(
+        None, description="List of attributes"
+    )
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
