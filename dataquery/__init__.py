@@ -14,11 +14,11 @@ Quick Start:
 For more information, visit: https://github.com/dataquery/dataquery-sdk
 """
 
-__version__ = "0.0.7"
+__version__ = "0.0.8"
 __author__ = "DATAQUERY SDK Team"
-__email__ = "support@dataquery.com"
+__email__ = "dataquery@jpmorgan.com"
 __license__ = "MIT"
-__url__ = "https://github.com/dataquery/dataquery-sdk-python"
+__url__ = "https://github.com/jpmorganchase/dataquery-sdk"
 
 # Authentication imports
 from .auth import (
