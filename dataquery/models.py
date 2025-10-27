@@ -954,16 +954,16 @@ class Instrument(BaseModel):
 class Attribute(BaseModel):
     """Model representing an attribute measure for an instrument."""
 
-    attribute_id: str = Field(
-        ..., alias="attribute-id", description="Unique attribute measure identifier"
+    attribute_id: Optional[str] = Field(
+        None, alias="attribute-id", description="Unique attribute measure identifier"
     )
-    attribute_name: str = Field(
-        ..., alias="attribute-name", description="Attribute short name"
+    attribute_name: Optional[str] = Field(
+        None, alias="attribute-name", description="Attribute short name"
     )
-    expression: str = Field(
-        ..., description="Traditional DataQuery time-series identifier"
+    expression: Optional[str] = Field(
+        None, description="Traditional DataQuery time-series identifier"
     )
-    label: str = Field(..., description="Name of a time-series data set")
+    label: Optional[str] = Field(None, description="Name of a time-series data set")
     last_published: Optional[str] = Field(
         None, alias="last-published", description="Date/Time data was last published"
     )
@@ -1017,7 +1017,9 @@ class InstrumentWithAttributes(BaseModel):
         None, alias="instrument-isin", description="Instrument ISIN"
     )
     group: Optional[Dict[str, str]] = Field(None, description="Group information")
-    attributes: List[Attribute] = Field(..., description="List of attributes")
+    attributes: Optional[List[Attribute]] = Field(
+        None, description="List of attributes"
+    )
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 

@@ -11,3 +11,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Parallel file download functionality with HTTP range requests
 - Group download capabilities with intelligent rate limiting
 - Comprehensive test suite with coverage reporting
+## [0.0.8] - 2025-10-21
+- Made label and expression parameters optional in attribute api response 
+
