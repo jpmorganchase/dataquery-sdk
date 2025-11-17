@@ -1315,7 +1315,7 @@ class DataQuery:
 
             # Step 2: Prepare temp file with full size for random access writes
             temp_destination = destination.with_suffix(destination.suffix + ".part")
-            with open(temp_destination, "wb") as f:
+            with open(temp_destination, "wb", buffering=1024*1024) as f:  # 1MB buffer for network drives
                 f.truncate(total_bytes)
 
             # Step 3: Compute ranges for parallel download
@@ -1339,13 +1339,17 @@ class DataQuery:
 
             bytes_lock = asyncio.Lock()
             file_lock = asyncio.Lock()
-            shared_fh = open(temp_destination, "r+b")
+            # Open shared file handle with buffering for network drives
+            shared_fh = open(temp_destination, "r+b", buffering=1024*1024)  # 1MB buffer
 
             # Progress callback optimization: track last callback state
             last_callback_bytes = 0
             last_callback_time = time.time()
             callback_threshold_bytes = 1024 * 1024  # 1MB
             callback_threshold_time = 0.5  # 0.5 seconds
+
+            # Get the current event loop for async file I/O
+            loop = asyncio.get_running_loop()
 
             # Step 4: Download each range with global semaphore control
             async def download_range_with_global_semaphore(
@@ -1361,16 +1365,30 @@ class DataQuery:
                         "GET", url, params=params, headers=headers
                     ) as resp:
                         await self._client._handle_response(resp)
-                        # Stream and write to correct offset
+                        # Stream and write to correct offset with batching to reduce lock contention
                         current_pos = start_byte
-                        chunk_size = download_options.chunk_size or 8192
-                        async for chunk in resp.content.iter_chunked(chunk_size):
+                        chunk_size = download_options.chunk_size or 65536  # 64KB default for network drives
+
+                        # Write batching: accumulate chunks before writing to reduce lock contention
+                        write_buffer = bytearray()
+                        buffer_start_pos = current_pos
+                        batch_size_threshold = 1024 * 1024  # 1MB batch size
+
+                        async def flush_buffer():
+                            """Flush accumulated buffer to file"""
+                            nonlocal bytes_downloaded, last_callback_bytes, last_callback_time
+                            if not write_buffer:
+                                return
+
                             async with file_lock:
-                                shared_fh.seek(current_pos)
-                                shared_fh.write(chunk)
-                            current_pos += len(chunk)
+                                await loop.run_in_executor(
+                                    None, shared_fh.seek, buffer_start_pos
+                                )
+                                await loop.run_in_executor(None, shared_fh.write, bytes(write_buffer))
+
+                            buffer_bytes = len(write_buffer)
                             async with bytes_lock:
-                                bytes_downloaded += len(chunk)
+                                bytes_downloaded += buffer_bytes
                                 progress.update_progress(bytes_downloaded)
 
                                 # Optimized progress callback: only call every 1MB or 0.5s
@@ -1399,6 +1417,19 @@ class DataQuery:
                                         )
                                     last_callback_bytes = bytes_downloaded
                                     last_callback_time = current_time
+
+                        async for chunk in resp.content.iter_chunked(chunk_size):
+                            write_buffer.extend(chunk)
+                            current_pos += len(chunk)
+
+                            # Flush buffer when it reaches threshold
+                            if len(write_buffer) >= batch_size_threshold:
+                                await flush_buffer()
+                                write_buffer.clear()
+                                buffer_start_pos = current_pos
+
+                        # Flush any remaining data
+                        await flush_buffer()
 
             # Step 5: Execute all range downloads concurrently (each will acquire global semaphore)
             await asyncio.gather(

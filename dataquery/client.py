@@ -1142,7 +1142,7 @@ class DataQueryClient:
             if not isinstance(destination, Path):
                 raise ValueError(f"Invalid destination path: {destination}")
             temp_destination = destination.with_suffix(destination.suffix + ".part")
-            with open(temp_destination, "wb") as f:
+            with open(temp_destination, "wb", buffering=1024*1024) as f:  # 1MB buffer for network drives
                 f.truncate(total_bytes)
 
             # Compute ranges
@@ -1166,8 +1166,8 @@ class DataQueryClient:
 
             bytes_lock = asyncio.Lock()
             file_lock = asyncio.Lock()
-            # Open a single shared handle for all range writers
-            shared_fh = open(temp_destination, "r+b")
+            # Open a single shared handle for all range writers with buffering for network drives
+            shared_fh = open(temp_destination, "r+b", buffering=1024*1024)  # 1MB buffer
 
             # Progress callback optimization: track last callback state
             last_callback_bytes = 0
@@ -1186,18 +1186,30 @@ class DataQueryClient:
                     "GET", url, params=params, headers=headers
                 ) as resp:
                     await self._handle_response(resp)
-                    # Stream and write to correct offset
+                    # Stream and write to correct offset with batching to reduce lock contention
                     current_pos = start_byte
-                    chunk_size = options.chunk_size or 8192
-                    async for chunk in resp.content.iter_chunked(chunk_size):
+                    chunk_size = options.chunk_size or 65536  # 64KB default for network drives
+
+                    # Write batching: accumulate chunks before writing to reduce lock contention
+                    write_buffer = bytearray()
+                    buffer_start_pos = current_pos
+                    batch_size_threshold = 1024 * 1024  # 1MB batch size
+
+                    async def flush_buffer():
+                        """Flush accumulated buffer to file"""
+                        nonlocal bytes_downloaded, last_callback_bytes, last_callback_time
+                        if not write_buffer:
+                            return
+
                         async with file_lock:
                             await loop.run_in_executor(
-                                None, shared_fh.seek, current_pos
+                                None, shared_fh.seek, buffer_start_pos
                             )
-                            await loop.run_in_executor(None, shared_fh.write, chunk)
-                        current_pos += len(chunk)
+                            await loop.run_in_executor(None, shared_fh.write, bytes(write_buffer))
+
+                        buffer_bytes = len(write_buffer)
                         async with bytes_lock:
-                            bytes_downloaded += len(chunk)
+                            bytes_downloaded += buffer_bytes
                             progress.update_progress(bytes_downloaded)
 
                             # Optimized progress callback: only call every 1MB or 0.5s
@@ -1224,6 +1236,19 @@ class DataQueryClient:
                                     )
                                 last_callback_bytes = bytes_downloaded
                                 last_callback_time = current_time
+
+                    async for chunk in resp.content.iter_chunked(chunk_size):
+                        write_buffer.extend(chunk)
+                        current_pos += len(chunk)
+
+                        # Flush buffer when it reaches threshold
+                        if len(write_buffer) >= batch_size_threshold:
+                            await flush_buffer()
+                            write_buffer.clear()
+                            buffer_start_pos = current_pos
+
+                    # Flush any remaining data
+                    await flush_buffer()
 
             # Run all parts concurrently
             await asyncio.gather(*(download_range(s, e) for s, e in ranges))
@@ -1400,7 +1425,7 @@ class DataQueryClient:
                 temp_destination = destination.with_suffix(destination.suffix + ".part")
 
                 # Optimize chunk size based on file size
-                chunk_size = options.chunk_size or 8192
+                chunk_size = options.chunk_size or 65536  # 64KB default for network drives
                 if total_bytes > 0:
                     # Use larger chunks for bigger files, but cap at 1MB
                     optimal_chunk_size = min(
@@ -1414,7 +1439,7 @@ class DataQueryClient:
                 )  # Update every 1/4 chunk
                 last_progress_update = 0
 
-                with open(temp_destination, "wb") as f:
+                with open(temp_destination, "wb", buffering=1024*1024) as f:  # 1MB buffer for network drives
                     async for chunk in response.content.iter_chunked(chunk_size):
                         f.write(chunk)
                         bytes_downloaded += len(chunk)

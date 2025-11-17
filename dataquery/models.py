@@ -164,7 +164,7 @@ class ClientConfig(BaseModel):
     log_errors: bool = Field(default=True, description="Log errors")
     save_error_log: bool = Field(default=True, description="Save error log to file")
     use_async_downloads: bool = Field(default=True, description="Use async downloads")
-    chunk_size: int = Field(default=8192, description="Download chunk size in bytes")
+    chunk_size: int = Field(default=65536, description="Download chunk size in bytes (64KB default, optimized for network drives)")
 
     # Download Options
     enable_range_requests: bool = Field(
@@ -801,8 +801,8 @@ class DownloadOptions(BaseModel):
 
     # Download options
     chunk_size_setting: int = Field(
-        default=8192,
-        description="Chunk size for streaming downloads",
+        default=65536,
+        description="Chunk size for streaming downloads (64KB default, optimized for network drives)",
         alias="chunk_size",
     )
     max_retries: int = Field(default=3, description="Maximum number of retry attempts")
