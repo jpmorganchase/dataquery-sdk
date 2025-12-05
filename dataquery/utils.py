@@ -3,9 +3,9 @@ Utility functions for the DATAQUERY SDK.
 """
 
 import os
-from pathlib import Path
 import re
 import urllib.parse
+from pathlib import Path
 from typing import Any, List, Optional, Union
 
 import aiohttp

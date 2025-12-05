@@ -50,9 +50,6 @@ def setup_logging(log_level: str = "INFO") -> structlog.BoundLogger:
     )
 
 
-
-
-
 class ConfigManager:
     """Configuration manager for DATAQUERY SDK."""
 
@@ -1300,7 +1297,9 @@ class DataQuery:
 
             # Step 2: Prepare temp file with full size for random access writes
             temp_destination = destination.with_suffix(destination.suffix + ".part")
-            with open(temp_destination, "wb", buffering=1024 * 1024) as f:  # 1MB buffer for network drives
+            with open(
+                temp_destination, "wb", buffering=1024 * 1024
+            ) as f:  # 1MB buffer for network drives
                 f.truncate(total_bytes)
 
             # Step 3: Compute ranges for parallel download
@@ -1329,7 +1328,9 @@ class DataQuery:
             use_batching = download_options.enable_write_batching
 
             # Open shared file handle with buffering for network drives
-            shared_fh = open(temp_destination, "r+b", buffering=1024*1024)  # 1MB buffer
+            shared_fh = open(
+                temp_destination, "r+b", buffering=1024 * 1024
+            )  # 1MB buffer
 
             # Progress callback optimization: track last callback state
             last_callback_bytes = 0
@@ -1344,8 +1345,11 @@ class DataQuery:
             throttler = None
             if download_options.max_bandwidth_mbps:
                 from .models import BandwidthThrottler
+
                 throttler = BandwidthThrottler(
-                    max_bytes_per_second=int(download_options.max_bandwidth_mbps * 125000)
+                    max_bytes_per_second=int(
+                        download_options.max_bandwidth_mbps * 125000
+                    )
                 )
 
             # Step 4: Download each range with global semaphore control
@@ -1361,7 +1365,9 @@ class DataQuery:
                         await self._client._handle_response(resp)
                         # Stream and write to correct offset with batching to reduce lock contention
                         current_pos = start_byte
-                        chunk_size = download_options.chunk_size or 1024 * 1024  # 1MB default for better performance
+                        chunk_size = (
+                            download_options.chunk_size or 1024 * 1024
+                        )  # 1MB default for better performance
 
                         # Write batching: accumulate chunks before writing to reduce lock contention
                         write_buffer = bytearray()
@@ -1384,7 +1390,9 @@ class DataQuery:
                                 await loop.run_in_executor(
                                     None, shared_fh.seek, buffer_start_pos
                                 )
-                                await loop.run_in_executor(None, shared_fh.write, bytes(write_buffer))
+                                await loop.run_in_executor(
+                                    None, shared_fh.write, bytes(write_buffer)
+                                )
 
                             buffer_bytes = len(write_buffer)
                             async with bytes_lock:
@@ -1436,9 +1444,7 @@ class DataQuery:
                         await flush_buffer()
 
             # Step 5: Execute all range downloads concurrently (each will acquire global semaphore)
-            await asyncio.gather(
-                *(download_range(s, e) for s, e in ranges)
-            )
+            await asyncio.gather(*(download_range(s, e) for s, e in ranges))
 
             # Step 6: Finalize file
             try:
