@@ -48,6 +48,18 @@ def create_parser() -> argparse.ArgumentParser:
     )
     p_dl.add_argument("--group-id", default=None, help="Required with --watch")
     p_dl.add_argument("--json", action="store_true")
+    p_dl.add_argument("--num-parts", type=int, default=5, help="Number of parallel parts")
+    p_dl.add_argument("--chunk-size", type=int, default=None, help="Chunk size in bytes")
+
+    # download-group
+    p_dlg = subparsers.add_parser("download-group", help="Download all files in a group")
+    p_dlg.add_argument("--group-id", required=True)
+    p_dlg.add_argument("--start-date", required=True)
+    p_dlg.add_argument("--end-date", required=True)
+    p_dlg.add_argument("--destination", type=str, default="./downloads")
+    p_dlg.add_argument("--max-concurrent", type=int, default=3)
+    p_dlg.add_argument("--num-parts", type=int, default=5)
+    p_dlg.add_argument("--json", action="store_true")
 
     # config
     p_cfg = subparsers.add_parser("config", help="Config utilities")
@@ -156,14 +168,47 @@ async def cmd_download(args: argparse.Namespace) -> int:
             return 0
         # single download
         dest_path = Path(args.destination) if args.destination else None
+
+        # Configure download options
+        from dataquery.models import DownloadOptions
+
+        opts_kwargs = {"destination_path": dest_path}
+        if args.chunk_size is not None:
+            opts_kwargs["chunk_size"] = args.chunk_size
+            
+        options = DownloadOptions(**opts_kwargs)
+
         result = await dq.download_file_async(
-            args.file_group_id, args.file_datetime, dest_path, None
+            args.file_group_id,
+            args.file_datetime,
+            options=options,
+            num_parts=args.num_parts
         )
         if args.json:
             print(json.dumps(getattr(result, "model_dump")(), indent=2))
         else:
             print(f"Downloaded to {result.local_path}")
         return 0
+
+
+async def cmd_download_group(args: argparse.Namespace) -> int:
+    async with DataQuery(args.env_file) as dq:
+        results = await dq.run_group_download_async(
+            group_id=args.group_id,
+            start_date=args.start_date,
+            end_date=args.end_date,
+            destination_dir=args.destination,
+            max_concurrent=args.max_concurrent,
+            num_parts=args.num_parts
+        )
+        
+        if args.json:
+            print(json.dumps(results, indent=2))
+        else:
+            print(f"Downloaded {results.get('successful', 0)} files to {args.destination}")
+            if results.get('failed', 0) > 0:
+                print(f"Failed: {results.get('failed', 0)}")
+    return 0
 
 
 def cmd_config_show(args: argparse.Namespace) -> int:
@@ -232,6 +277,8 @@ def main() -> int:
         return asyncio.run(cmd_availability(args))
     if args.command == "download":
         return asyncio.run(cmd_download(args))
+    if args.command == "download-group":
+        return asyncio.run(cmd_download_group(args))
     if args.command == "config":
         return main_sync(args)
     if args.command == "auth" and args.auth_command == "test":

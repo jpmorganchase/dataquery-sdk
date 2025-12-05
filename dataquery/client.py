@@ -9,7 +9,7 @@ import time
 import urllib.parse
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import aiohttp
 import structlog
@@ -61,233 +61,29 @@ from .rate_limiter import (
     TokenBucketRateLimiter,
 )
 from .retry import RetryConfig, RetryManager, RetryStrategy
+from .utils import (
+    format_duration as _format_duration,
+    format_file_size as _format_file_size,
+    get_filename_from_response,
+    parse_content_disposition,
+    validate_attributes_list,
+    validate_date_format,
+    validate_file_datetime,
+    validate_instruments_list,
+    validate_required_param,
+)
 
 logger = structlog.get_logger(__name__)
 
 
 def format_file_size(size_bytes: int) -> str:
-    """Format file size with two decimal places (client-facing style).
-
-    This intentionally differs from `dataquery.utils.format_file_size`,
-    which formats with at most one decimal place. Tests that import
-    `format_file_size` from `dataquery.client` expect two decimals.
-    """
-    if size_bytes == 0:
-        return "0 B"
-
-    # Support negative values gracefully
-    sign = "-" if size_bytes < 0 else ""
-    size = float(abs(size_bytes))
-    units = ["B", "KB", "MB", "GB", "TB", "PB", "EB"]
-    unit_index = 0
-    while size >= 1024.0 and unit_index < len(units) - 1:
-        size /= 1024.0
-        unit_index += 1
-
-    # Always two decimals, including for bytes
-    return f"{sign}{size:.2f} {units[unit_index]}"
+    """Format file size with two decimal places (client-facing style)."""
+    return _format_file_size(size_bytes, precision=2, strict=True)
 
 
 def format_duration(seconds: float) -> str:
     """Compact duration formatter: seconds -> X.Ys, minutes -> X.Ym, hours -> X.Yh."""
-    if seconds == 0:
-        return "0s"
-
-    sign = "-" if seconds < 0 else ""
-    s = abs(seconds)
-    if s < 60:
-        return f"{sign}{s:.1f}s"
-    if s < 3600:
-        minutes = s / 60.0
-        return f"{sign}{minutes:.1f}m"
-    hours = s / 3600.0
-    return f"{sign}{hours:.1f}h"
-
-
-def parse_content_disposition(content_disposition: str) -> Optional[str]:
-    """
-    Parse Content-Disposition header to extract filename (including RFC 2231/5987 support).
-
-    Args:
-        content_disposition: The Content-Disposition header value
-
-    Returns:
-        The extracted filename or None if not found
-    """
-    if not content_disposition:
-        return None
-
-    # Try to find filename* (RFC 2231/5987)
-    filename_star_match = re.search(
-        r"filename\*=(?:UTF-8\'\')?([^;\r\n]+)", content_disposition, re.IGNORECASE
-    )
-    if filename_star_match:
-        filename = filename_star_match.group(1)
-        filename = urllib.parse.unquote(filename)
-        return filename.strip('"')
-
-    # Try to find filename="..."
-    filename_match = re.search(
-        r'filename="([^"]+)"', content_disposition, re.IGNORECASE
-    )
-    if filename_match:
-        return urllib.parse.unquote(filename_match.group(1))
-
-    # Try to find filename=...
-    filename_match2 = re.search(
-        r"filename=([^;\r\n]+)", content_disposition, re.IGNORECASE
-    )
-    if filename_match2:
-        return urllib.parse.unquote(filename_match2.group(1).strip('"'))
-
-    return None
-
-
-def get_filename_from_response(
-    response: aiohttp.ClientResponse,
-    file_group_id: str,
-    file_datetime: Optional[str] = None,
-) -> str:
-    """
-    Extract filename from response headers or generate a default one.
-
-    Args:
-        response: HTTP response object
-        file_group_id: File group ID for fallback filename
-        file_datetime: Optional file datetime for fallback filename
-
-    Returns:
-        Filename to use for the download
-    """
-    # Try to get filename from Content-Disposition header
-    content_disposition = response.headers.get("content-disposition")
-    if content_disposition:
-        filename = parse_content_disposition(content_disposition)
-        if filename:
-            # Sanitize to avoid path traversal or illegal characters
-            try:
-                safe_name = Path(filename).name
-                return safe_name
-            except Exception:
-                return filename
-
-    # Fallback: generate filename from file_group_id and datetime
-    filename = f"{file_group_id}"
-    if file_datetime:
-        filename += f"_{file_datetime}"
-
-    # Try to get extension from Content-Type header
-    content_type = response.headers.get("content-type", "")
-    if content_type:
-        # Extract extension from MIME type
-        mime_to_ext = {
-            "application/json": ".json",
-            "text/csv": ".csv",
-            "text/plain": ".txt",
-            "application/xml": ".xml",
-            "application/zip": ".zip",
-            "application/gzip": ".gz",
-            "application/x-tar": ".tar",
-            "application/pdf": ".pdf",
-            "image/png": ".png",
-            "image/jpeg": ".jpg",
-            "image/gif": ".gif",
-            "application/octet-stream": ".bin",
-        }
-
-        # Get base MIME type (remove parameters)
-        base_mime = content_type.split(";")[0].strip().lower()
-        if base_mime in mime_to_ext:
-            filename += mime_to_ext[base_mime]
-        else:
-            # Default extension for unknown types
-            filename += ".bin"
-    else:
-        # No content type, use default extension
-        filename += ".bin"
-
-    # Final sanitize fallback
-    try:
-        filename = Path(filename).name
-    except Exception:
-        pass
-    return filename
-
-
-def validate_file_datetime(file_datetime: str) -> None:
-    """
-    Validate file-datetime format: YYYYMMDD, YYYYMMDDTHHMM, or YYYYMMDDTHHMMSS.
-    Raises ValueError if invalid.
-    """
-    if not file_datetime:
-        return
-    patterns = [
-        r"^\d{8}$",  # YYYYMMDD
-        r"^\d{8}T\d{4}$",  # YYYYMMDDTHHMM
-        r"^\d{8}T\d{6}$",  # YYYYMMDDTHHMMSS
-    ]
-    if not any(re.match(p, file_datetime) for p in patterns):
-        raise ValueError(
-            f"Invalid file-datetime format: '{file_datetime}'. "
-            "Accepted formats: YYYYMMDD, YYYYMMDDTHHMM, YYYYMMDDTHHMMSS."
-        )
-
-
-def validate_date_format(date_str: str, param_name: str) -> None:
-    """
-    Validate date format for start-date and end-date parameters.
-
-    Args:
-        date_str: Date string to validate
-        param_name: Parameter name for error messages
-
-    Raises:
-        ValidationError: If date format is invalid
-    """
-    if not date_str:
-        return  # Optional parameter
-
-    # Valid formats: YYYYMMDD, TODAY, TODAY-Nx (where x is D/W/M/Y)
-    valid_patterns = [
-        r"^\d{8}$",  # YYYYMMDD
-        r"^TODAY$",  # TODAY
-        r"^TODAY-\d+[DWMY]$",  # TODAY-nX
-    ]
-
-    if not any(re.match(pattern, date_str) for pattern in valid_patterns):
-        raise ValidationError(
-            f"Invalid {param_name} format: {date_str}. "
-            f"Expected formats: YYYYMMDD, TODAY, or TODAY-Nx (where x is D/W/M/Y)"
-        )
-
-
-def validate_required_param(value: Any, param_name: str) -> None:
-    """Validate that a required parameter is provided."""
-    if value is None or (isinstance(value, str) and not value.strip()):
-        raise ValidationError(f"Required parameter '{param_name}' cannot be empty")
-
-
-def validate_instruments_list(instruments: List[str]) -> None:
-    """Validate instruments list parameter."""
-    if not instruments or not isinstance(instruments, list):
-        raise ValidationError("'instruments' must be a non-empty list")
-
-    if len(instruments) > 20:  # Per specification limit
-        raise ValidationError("Maximum 20 instrument IDs are supported per request")
-
-    for instrument in instruments:
-        if not isinstance(instrument, str) or not instrument.strip():
-            raise ValidationError("All instrument IDs must be non-empty strings")
-
-
-def validate_attributes_list(attributes: List[str]) -> None:
-    """Validate attributes list parameter."""
-    if not attributes or not isinstance(attributes, list):
-        raise ValidationError("Attributes list cannot be empty")
-
-    for attr in attributes:
-        if not isinstance(attr, str) or not attr.strip():
-            raise ValidationError("All attribute IDs must be non-empty strings")
+    return _format_duration(seconds, compact=True)
 
 
 class DataQueryClient:
@@ -1038,6 +834,78 @@ class DataQueryClient:
             )
             raise
 
+    def _prepare_download_params(
+        self,
+        file_group_id: str,
+        file_datetime: Optional[str],
+        options: Optional[DownloadOptions],
+        num_parts: Optional[int] = None,
+    ) -> Tuple[Dict[str, str], DownloadOptions, int]:
+        """Prepare and validate download parameters."""
+        if file_datetime:
+            validate_file_datetime(file_datetime)
+        if options is None:
+            options = DownloadOptions()
+
+        # Validate num_parts if provided
+        if num_parts is not None and (num_parts is None or num_parts <= 0):
+            num_parts = 5
+
+        params = {"file-group-id": file_group_id}
+        if file_datetime:
+            params["file-datetime"] = file_datetime
+
+        return params, options, num_parts if num_parts is not None else 5
+
+    def _resolve_destination(
+        self,
+        options: DownloadOptions,
+        file_group_id: str,
+        filename: Optional[str] = None,
+    ) -> Path:
+        """Resolve the final destination path for the file."""
+        if options.destination_path:
+            dest_path = Path(options.destination_path)
+            if dest_path.suffix:
+                # It's a full file path
+                destination = dest_path
+                destination_dir = dest_path.parent
+            else:
+                # It's a directory
+                destination_dir = dest_path
+                destination = destination_dir / (filename or f"{file_group_id}.bin")
+        else:
+            destination_dir = Path(self.config.download_dir)
+            destination = destination_dir / (filename or f"{file_group_id}.bin")
+
+        if options.create_directories:
+            destination_dir.mkdir(parents=True, exist_ok=True)
+
+        return destination
+
+    def _create_download_result(
+        self,
+        file_group_id: str,
+        destination: Optional[Path],
+        total_bytes: int,
+        bytes_downloaded: int,
+        start_time: float,
+        status: DownloadStatus,
+        error: Optional[Exception] = None,
+    ) -> DownloadResult:
+        """Create a DownloadResult object."""
+        return DownloadResult(
+            file_group_id=file_group_id,
+            group_id="",
+            local_path=destination
+            or (Path(self.config.download_dir) / f"{file_group_id}.tmp"),
+            file_size=total_bytes,
+            download_time=time.time() - start_time,
+            bytes_downloaded=bytes_downloaded,
+            status=status,
+            error_message=f"{type(error).__name__}: {error}" if error else None,
+        )
+
     async def download_file_async(
         self,
         file_group_id: str,
@@ -1059,37 +927,15 @@ class DataQueryClient:
         Returns:
             DownloadResult with download information
         """
-        if file_datetime:
-            validate_file_datetime(file_datetime)
-        if options is None:
-            options = DownloadOptions()
-        if num_parts is None or num_parts <= 0:
-            num_parts = 5
-
-        # Build base params
-        params = {"file-group-id": file_group_id}
-        if file_datetime:
-            params["file-datetime"] = file_datetime
-
-        # Determine destination directory like single download method
-        if options.destination_path:
-            dest_path = Path(options.destination_path)
-            if dest_path.suffix:
-                destination_dir = dest_path.parent
-            else:
-                destination_dir = dest_path
-        else:
-            destination_dir = Path(self.config.download_dir)
-
-        if options.create_directories:
-            destination_dir.mkdir(parents=True, exist_ok=True)
+        params, options, num_parts = self._prepare_download_params(
+            file_group_id, file_datetime, options, num_parts
+        )
 
         start_time = time.time()
         bytes_downloaded = 0
         destination: Optional[Path] = None
         temp_destination: Optional[Path] = None
         total_bytes: int = 0
-        shared_fh = None
 
         try:
             url = self._build_files_api_url("group/file/download")
@@ -1129,11 +975,12 @@ class DataQueryClient:
                         )
                 except Exception:
                     pass
-                # Determine filename from headers if available
+
+                # Determine filename and destination
                 filename = get_filename_from_response(
                     probe_resp, file_group_id, file_datetime
                 )
-                destination = destination_dir / filename
+                destination = self._resolve_destination(options, file_group_id, filename)
 
                 if destination.exists() and not options.overwrite_existing:
                     raise FileExistsError(f"File already exists: {destination}")
@@ -1142,7 +989,7 @@ class DataQueryClient:
             if not isinstance(destination, Path):
                 raise ValueError(f"Invalid destination path: {destination}")
             temp_destination = destination.with_suffix(destination.suffix + ".part")
-            with open(temp_destination, "wb") as f:
+            with open(temp_destination, "wb", buffering=1024 * 1024) as f:  # 1MB buffer for network drives
                 f.truncate(total_bytes)
 
             # Compute ranges
@@ -1164,11 +1011,6 @@ class DataQueryClient:
                 start_time=datetime.now(),
             )
 
-            bytes_lock = asyncio.Lock()
-            file_lock = asyncio.Lock()
-            # Open a single shared handle for all range writers
-            shared_fh = open(temp_destination, "r+b")
-
             # Progress callback optimization: track last callback state
             last_callback_bytes = 0
             last_callback_time = time.time()
@@ -1177,79 +1019,75 @@ class DataQueryClient:
 
             # Get the current event loop
             loop = asyncio.get_running_loop()
+            bytes_lock = asyncio.Lock()
 
             async def download_range(start_byte: int, end_byte: int):
                 nonlocal bytes_downloaded, last_callback_bytes, last_callback_time
                 headers = {"Range": f"bytes={start_byte}-{end_byte}"}
-                # each part request
-                async with await self._enter_request_cm(
-                    "GET", url, params=params, headers=headers
-                ) as resp:
-                    await self._handle_response(resp)
-                    # Stream and write to correct offset
-                    current_pos = start_byte
-                    chunk_size = options.chunk_size or 8192
-                    async for chunk in resp.content.iter_chunked(chunk_size):
-                        async with file_lock:
-                            await loop.run_in_executor(
-                                None, shared_fh.seek, current_pos
-                            )
-                            await loop.run_in_executor(None, shared_fh.write, chunk)
-                        current_pos += len(chunk)
-                        async with bytes_lock:
-                            bytes_downloaded += len(chunk)
-                            progress.update_progress(bytes_downloaded)
 
-                            # Optimized progress callback: only call every 1MB or 0.5s
-                            current_time = time.time()
-                            bytes_diff = bytes_downloaded - last_callback_bytes
-                            time_diff = current_time - last_callback_time
+                # Open a separate file handle for this part to avoid lock contention
+                # Use 'r+b' to write to the existing file without truncating
+                with open(temp_destination, "r+b") as part_fh:
+                    # each part request
+                    async with await self._enter_request_cm(
+                        "GET", url, params=params, headers=headers
+                    ) as resp:
+                        await self._handle_response(resp)
+                        # Stream and write to correct offset
+                        current_pos = start_byte
+                        chunk_size = options.chunk_size or 1048576  # 1MB default for better performance
 
-                            should_callback = (
-                                bytes_diff >= callback_threshold_bytes
-                                or time_diff >= callback_threshold_time
-                                or bytes_downloaded
-                                == total_bytes  # Always callback on completion
-                            )
+                        async for chunk in resp.content.iter_chunked(chunk_size):
+                            # Write directly to file at correct position
+                            # Since we have a private handle, we don't need a file lock
+                            # But we should still run IO in executor to avoid blocking the loop
+                            await loop.run_in_executor(None, part_fh.seek, current_pos)
+                            await loop.run_in_executor(None, part_fh.write, chunk)
 
-                            if should_callback:
-                                if progress_callback:
-                                    progress_callback(progress)
-                                elif options.show_progress:
-                                    self.logger.info(
-                                        "Download progress",
-                                        file=file_group_id,
-                                        percentage=f"{progress.percentage:.1f}%",
-                                        downloaded=format_file_size(bytes_downloaded),
-                                    )
-                                last_callback_bytes = bytes_downloaded
-                                last_callback_time = current_time
+                            chunk_len = len(chunk)
+                            current_pos += chunk_len
+
+                            async with bytes_lock:
+                                bytes_downloaded += chunk_len
+                                progress.update_progress(bytes_downloaded)
+
+                                # Optimized progress callback: only call every 1MB or 0.5s
+                                current_time = time.time()
+                                bytes_diff = bytes_downloaded - last_callback_bytes
+                                time_diff = current_time - last_callback_time
+
+                                should_callback = (
+                                    bytes_diff >= callback_threshold_bytes
+                                    or time_diff >= callback_threshold_time
+                                    or bytes_downloaded
+                                    == total_bytes  # Always callback on completion
+                                )
+
+                                if should_callback:
+                                    if progress_callback:
+                                        progress_callback(progress)
+                                    elif options.show_progress:
+                                        self.logger.info(
+                                            "Download progress",
+                                            file=file_group_id,
+                                            percentage=f"{progress.percentage:.1f}%",
+                                            downloaded=format_file_size(bytes_downloaded),
+                                        )
+                                    last_callback_bytes = bytes_downloaded
+                                    last_callback_time = current_time
 
             # Run all parts concurrently
             await asyncio.gather(*(download_range(s, e) for s, e in ranges))
-
-            # Ensure all data is flushed and handle is closed before rename
-            try:
-                async with file_lock:
-                    shared_fh.flush()
-            finally:
-                try:
-                    shared_fh.close()
-                except Exception:
-                    pass
             # Rename temp to final
             temp_destination.replace(destination)
 
-            download_time = time.time() - start_time
-            return DownloadResult(
-                file_group_id=file_group_id,
-                group_id="",
-                local_path=destination,
-                file_size=total_bytes,
-                download_time=download_time,
-                bytes_downloaded=bytes_downloaded,
-                status=DownloadStatus.COMPLETED,
-                error_message=None,
+            return self._create_download_result(
+                file_group_id,
+                destination,
+                total_bytes,
+                bytes_downloaded,
+                start_time,
+                DownloadStatus.COMPLETED,
             )
         except Exception as e:
             try:
@@ -1257,15 +1095,6 @@ class DataQueryClient:
                 if temp_destination and temp_destination.exists():
                     try:
                         # Ensure any open handle is closed
-                        if shared_fh:
-                            try:
-                                shared_fh.flush()
-                            except Exception:
-                                pass
-                            try:
-                                shared_fh.close()
-                            except Exception:
-                                pass
                         if (
                             total_bytes
                             and temp_destination.stat().st_size >= total_bytes
@@ -1273,15 +1102,13 @@ class DataQueryClient:
                             if destination is None:
                                 destination = temp_destination.with_suffix("")
                             temp_destination.replace(destination)
-                            return DownloadResult(
-                                file_group_id=file_group_id,
-                                group_id="",
-                                local_path=destination,
-                                file_size=total_bytes,
-                                download_time=time.time() - start_time,
-                                bytes_downloaded=max(bytes_downloaded, total_bytes),
-                                status=DownloadStatus.COMPLETED,
-                                error_message=None,
+                            return self._create_download_result(
+                                file_group_id,
+                                destination,
+                                total_bytes,
+                                max(bytes_downloaded, total_bytes),
+                                start_time,
+                                DownloadStatus.COMPLETED,
                             )
                         else:
                             temp_destination.unlink()
@@ -1289,16 +1116,14 @@ class DataQueryClient:
                         temp_destination.unlink()
             except Exception:
                 pass
-            return DownloadResult(
-                file_group_id=file_group_id,
-                group_id="",
-                local_path=destination
-                or (Path(self.config.download_dir) / f"{file_group_id}.tmp"),
-                file_size=0,
-                download_time=time.time() - start_time,
-                bytes_downloaded=bytes_downloaded,
-                status=DownloadStatus.FAILED,
-                error_message=f"{type(e).__name__}: {e}",
+            return self._create_download_result(
+                file_group_id,
+                destination,
+                0,
+                bytes_downloaded,
+                start_time,
+                DownloadStatus.FAILED,
+                e,
             )
 
     async def _download_file_single_stream(
@@ -1320,15 +1145,9 @@ class DataQueryClient:
         Returns:
             DownloadResult with download information
         """
-        if file_datetime:
-            validate_file_datetime(file_datetime)
-        if options is None:
-            options = DownloadOptions()
-
-        params = {"file-group-id": file_group_id}
-
-        if file_datetime:
-            params["file-datetime"] = file_datetime
+        params, options, _ = self._prepare_download_params(
+            file_group_id, file_datetime, options
+        )
 
         # Add range parameters if specified
         if options.range_header:
@@ -1338,22 +1157,6 @@ class DataQueryClient:
             headers = {"Range": f"bytes={options.range_start}-{range_end}"}
         else:
             headers = {}
-
-        # Determine destination directory
-        if options.destination_path:
-            # If destination_path is a file path, use its parent directory
-            dest_path = Path(options.destination_path)
-            if dest_path.suffix:  # Has file extension, treat as file path
-                destination_dir = dest_path.parent
-                # We'll get the filename from Content-Disposition header
-            else:  # No extension, treat as directory
-                destination_dir = dest_path
-        else:
-            destination_dir = Path(self.config.download_dir)
-
-        # Create directories if needed
-        if options.create_directories:
-            destination_dir.mkdir(parents=True, exist_ok=True)
 
         start_time = time.time()
         bytes_downloaded = 0
@@ -1372,7 +1175,7 @@ class DataQueryClient:
                 filename = get_filename_from_response(
                     response, file_group_id, file_datetime
                 )
-                destination = destination_dir / filename
+                destination = self._resolve_destination(options, file_group_id, filename)
 
                 # Check if file exists and handle overwrite
                 if (
@@ -1400,11 +1203,12 @@ class DataQueryClient:
                 temp_destination = destination.with_suffix(destination.suffix + ".part")
 
                 # Optimize chunk size based on file size
-                chunk_size = options.chunk_size or 8192
+                chunk_size = options.chunk_size or 1048576  # 1MB default for better performance
                 if total_bytes > 0:
-                    # Use larger chunks for bigger files, but cap at 1MB
+                    # Use larger chunks for bigger files, cap at 8MB for files >1GB
+                    max_chunk = 8 * 1024 * 1024 if total_bytes > 1024 * 1024 * 1024 else 1024 * 1024
                     optimal_chunk_size = min(
-                        max(chunk_size, total_bytes // 1000), 1024 * 1024
+                        max(chunk_size, total_bytes // 1000), max_chunk
                     )
                     chunk_size = optimal_chunk_size
 
@@ -1414,9 +1218,11 @@ class DataQueryClient:
                 )  # Update every 1/4 chunk
                 last_progress_update = 0
 
-                with open(temp_destination, "wb") as f:
+                # Dynamic buffer size based on chunk size (minimum 1MB, maximum 8MB)
+                buffer_size = min(max(chunk_size, 1024 * 1024), 8 * 1024 * 1024)
+                with open(temp_destination, "wb", buffering=buffer_size) as f:
                     async for chunk in response.content.iter_chunked(chunk_size):
-                        f.write(chunk)
+                        await asyncio.to_thread(f.write, chunk)
                         bytes_downloaded += len(chunk)
 
                         # Update progress less frequently for better performance
@@ -1441,24 +1247,16 @@ class DataQueryClient:
                 # Final progress update
                 progress.update_progress(bytes_downloaded)
 
-                download_time = time.time() - start_time
-
                 # Atomic rename to final destination after successful write
                 temp_destination.replace(destination)
 
-                return DownloadResult(
-                    file_group_id=file_group_id,
-                    group_id="",  # Not available in new API
-                    local_path=(
-                        destination
-                        if isinstance(destination, Path)
-                        else Path(self.config.download_dir) / f"{file_group_id}.tmp"
-                    ),
-                    file_size=bytes_downloaded,
-                    download_time=download_time,
-                    bytes_downloaded=bytes_downloaded,
-                    status=DownloadStatus.COMPLETED,
-                    error_message=None,
+                return self._create_download_result(
+                    file_group_id,
+                    destination,
+                    bytes_downloaded,
+                    bytes_downloaded,
+                    start_time,
+                    DownloadStatus.COMPLETED,
                 )
 
         except Exception as e:
@@ -1473,16 +1271,14 @@ class DataQueryClient:
             except Exception:
                 pass
 
-            return DownloadResult(
-                file_group_id=file_group_id,
-                group_id="",  # Not available in new API
-                local_path=destination
-                or Path(self.config.download_dir) / f"{file_group_id}.tmp",
-                file_size=0,
-                download_time=time.time() - start_time,
-                bytes_downloaded=bytes_downloaded,
-                status=DownloadStatus.FAILED,
-                error_message=f"{type(e).__name__}: {e}",
+            return self._create_download_result(
+                file_group_id,
+                destination,
+                0,
+                bytes_downloaded,
+                start_time,
+                DownloadStatus.FAILED,
+                e,
             )
 
     async def list_available_files_async(
@@ -1720,7 +1516,7 @@ class DataQueryClient:
             TimeSeriesResponse containing the time series data
         """
         params = {
-            "expressions": expressions,
+            "expressions": ",".join(expressions),
             "format": format,
             "calendar": calendar,
             "frequency": frequency,

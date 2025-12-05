@@ -130,13 +130,7 @@ Optional Environment Variables (only set if overriding defaults):
                 print("\n✅ Completed")
 
             # Display timing information
-            print(f"\n⏱️  Timing Information:")
-            print(f"   Total time: {report.get('total_time_formatted', 'N/A')}")
-            print(f"   Total time (seconds): {report.get('total_time_seconds', 'N/A')}")
-            if report.get("total_time_minutes", 0) >= 1:
-                print(
-                    f"   Total time (minutes): {report.get('total_time_minutes', 'N/A')}"
-                )
+            print(f"\n⏱️  Total time: {report.get('total_time_formatted', 'N/A')}")
 
             # Optional: show rate limiter / client stats
             try:
