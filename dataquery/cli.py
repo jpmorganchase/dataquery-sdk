@@ -178,11 +178,10 @@ async def cmd_download(args: argparse.Namespace) -> int:
         # Configure download options
         from dataquery.models import DownloadOptions
 
-        opts_kwargs = {"destination_path": dest_path}
-        if args.chunk_size is not None:
-            opts_kwargs["chunk_size"] = args.chunk_size
-
-        options = DownloadOptions(**opts_kwargs)
+        options = DownloadOptions(
+            destination_path=dest_path,
+            chunk_size=args.chunk_size if args.chunk_size is not None else 1048576,
+        )
 
         result = await dq.download_file_async(
             args.file_group_id,
