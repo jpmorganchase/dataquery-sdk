@@ -1703,6 +1703,7 @@ class TestDataQueryWorkflowMethods:
                 assert result["file_datetime"] == "20200101"
 
     @pytest.mark.asyncio
+    @pytest.mark.asyncio
     async def test_run_group_download_async(self):
         """Test run_group_download_async method."""
         config = ClientConfig(
@@ -1773,8 +1774,8 @@ class TestDataQueryWorkflowMethods:
                 assert result["total_files"] == 2
 
     @pytest.mark.asyncio
-    async def test_run_group_download_async(self):
-        """Test run_group_download_async method."""
+    async def test_run_group_download_async_complex(self):
+        """Test run_group_download_async method with complex scenario."""
         config = ClientConfig(
             base_url="https://api.example.com",
             oauth_enabled=False,
@@ -2011,8 +2012,8 @@ class TestDataQueryWorkflowMethods:
                     assert result == mock_result
                     mock_run_sync.assert_called_once()
 
-    def test_run_group_download_sync(self):
-        """Test run_group_download sync wrapper."""
+    def test_run_group_download_sync_mocked(self):
+        """Test run_group_download sync wrapper with mocked return."""
         config = ClientConfig(
             base_url="https://api.example.com",
             oauth_enabled=False,

@@ -6,243 +6,179 @@ This example demonstrates how to retrieve grid data using either expressions
 or grid IDs. Grid data provides structured, tabular data that can be used
 for analysis and reporting.
 
-Key features demonstrated:
-- Grid data retrieval using expressions
-- Grid data retrieval using grid IDs
-- Parameter configuration for grid queries
-- Data formatting and display options
+Usage:
+    python get_grid_data.py [--mode {async,sync,compare}] [--expression EXPR] [--grid-id ID]
 """
 
+import argparse
 import asyncio
 import sys
-from datetime import datetime, timedelta
+import time
+from datetime import datetime
 from pathlib import Path
 
 # Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.append(str(Path(__file__).parent.parent.parent))
 
-from dataquery import DataQuery
-from dataquery.exceptions import AuthenticationError, DataQueryError, NotFoundError
+from dataquery import DataQuery  # noqa: E402
+from dataquery.exceptions import AuthenticationError, NotFoundError  # noqa: E402
 
 
-async def async_example():
+def parse_args():
+    parser = argparse.ArgumentParser(description="Get Grid Data Example")
+    parser.add_argument(
+        "--mode",
+        choices=["async", "sync", "compare"],
+        default="async",
+        help="Execution mode"
+    )
+    parser.add_argument(
+        "--expression",
+        default="GDP_QUARTERLY_COMPARISON",
+        help="Expression to query (for async mode)"
+    )
+    parser.add_argument(
+        "--grid-id",
+        default="ECONOMIC_INDICATORS_GRID",
+        help="Grid ID to query (for sync mode)"
+    )
+    return parser.parse_args()
+
+
+async def async_example(expression: str):
     """Demonstrate async grid data retrieval using expressions."""
-    print("🔄 Async Example: Getting Grid Data with Expressions")
+    print(f"\n[Async] Getting Grid Data for Expression: {expression}")
 
     try:
         async with DataQuery() as dq:
-            # Example expression for grid data
-            expression = "GDP_QUARTERLY_COMPARISON"  # Replace with actual expression
-
-            print(f"📊 Requesting grid data for expression: {expression}")
-
             # Calculate date range
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=365)  # Last year
+            end_dt = datetime.now()
 
             # Get grid data using expression
+            start_time = time.time()
             grid_response = await dq.get_grid_data_async(
-                expr=expression, grid_id=None, date=end_date.strftime("%Y%m%d")
+                expr=expression, grid_id=None, date=end_dt.strftime("%Y%m%d")
             )
+            elapsed = time.time() - start_time
 
-            print(f"✅ Retrieved grid data successfully")
-            print(f"📊 Response type: {type(grid_response)}")
+            print(f"[Success] Retrieved data in {elapsed:.2f}s")
 
             # Display grid data information
             if hasattr(grid_response, "series") and grid_response.series:
-                print(f"📋 Grid series: {len(grid_response.series)}")
+                print(f"[Info] Series count: {len(grid_response.series)}")
                 first = grid_response.series[0]
                 print(f"   Expression: {first.expr}")
                 if first.records:
                     print(f"   Records: {len(first.records)} (showing up to 3)")
                     for rec in first.records[:3]:
-                        print(f"     - {list(rec.items())[:5]}")
+                        # Format record for display
+                        formatted_rec = {k: v for k, v in list(rec.items())[:3]}
+                        print(f"     - {formatted_rec}...")
             else:
-                print("ℹ️  No grid data available for this expression")
-
-            # Check for pagination
-            if hasattr(grid_response, "pagination") and grid_response.pagination:
-                pagination = grid_response.pagination
-                print(f"\n📄 Pagination:")
-                print(f"   Has more data: {pagination.get('has_next', False)}")
-                print(f"   Next page: {pagination.get('next_page', 'None')}")
+                print("[Info] No grid data available for this expression")
 
             return grid_response
 
-    except AuthenticationError as e:
-        print(f"❌ Authentication failed: {e}")
-        print("💡 Please check your API credentials in the .env file")
-        return None
-    except NotFoundError as e:
-        print(f"❌ Expression not found: {e}")
-        print("💡 Please verify the expression name is correct")
-        return None
-    except DataQueryError as e:
-        print(f"❌ API error: {e}")
-        return None
+    except AuthenticationError:
+        print("[Error] Authentication failed. Check your credentials.")
+    except NotFoundError:
+        print(f"[Error] Expression '{expression}' not found.")
     except Exception as e:
-        print(f"❌ Unexpected error: {e}")
-        return None
+        print(f"[Error] Unexpected error: {e}")
 
 
-def sync_example():
+def sync_example(grid_id: str):
     """Demonstrate synchronous grid data retrieval using grid ID."""
-    print("\n🔄 Sync Example: Getting Grid Data with Grid ID")
+    print(f"\n[Sync] Getting Grid Data for Grid ID: {grid_id}")
 
     try:
         dq = DataQuery()
 
-        # Example grid ID (replace with actual grid ID from your API)
-        grid_id = "ECONOMIC_INDICATORS_GRID"
-
-        print(f"📊 Requesting grid data for Grid ID: {grid_id}")
-
-        # Get grid data using grid ID
+        start_time = time.time()
         grid_response = dq.get_grid_data(expr=None, grid_id=grid_id, date="20240630")
+        elapsed = time.time() - start_time
+
+        print(f"[Success] Retrieved data in {elapsed:.2f}s")
 
         if hasattr(grid_response, "series") and grid_response.series:
-            print(f"✅ Retrieved grid data successfully")
-            print(f"📋 Series count: {len(grid_response.series)}")
+            print(f"[Info] Series count: {len(grid_response.series)}")
             first = grid_response.series[0]
             print(f"   First series expr: {first.expr}")
             print(f"   Records: {len(first.records or [])}")
         else:
-            print("ℹ️  No grid data available for this grid ID")
+            print("[Info] No grid data available for this grid ID")
 
         return grid_response
 
     except Exception as e:
-        print(f"❌ Error: {e}")
-        return None
+        print(f"[Error] Error: {e}")
     finally:
         dq.cleanup()
 
 
 def comparison_example():
     """Demonstrate comparison between expression and grid ID approaches."""
-    print("\n🔄 Advanced Example: Expression vs Grid ID Comparison")
+    print("\n[Compare] Expression vs Grid ID Comparison")
 
+    test_cases = [
+        {"name": "Expression", "expr": "MARKET_OVERVIEW_DAILY", "grid_id": None},
+        {"name": "Grid ID", "expr": None, "grid_id": "MARKET_OVERVIEW_GRID"},
+    ]
+
+    dq = DataQuery()
     try:
-        dq = DataQuery()
+        print(f"{'Type':<15} {'Status':<10} {'Time':<10} {'Rows':<10}")
+        print("-" * 50)
 
-        # Test both expression and grid ID approaches
-        test_cases = [
-            {
-                "name": "Expression Approach",
-                "expr": "MARKET_OVERVIEW_DAILY",
-                "grid_id": None,
-            },
-            {
-                "name": "Grid ID Approach",
-                "expr": None,
-                "grid_id": "MARKET_OVERVIEW_GRID",
-            },
-        ]
-
-        results = {}
-
-        for test_case in test_cases:
-            name = test_case["name"]
-            print(f"\n🧪 Testing {name}...")
-
+        for case in test_cases:
             try:
-                start_time = datetime.now()
-
-                grid_response = dq.get_grid_data(
-                    expr=test_case["expr"],
-                    grid_id=test_case["grid_id"],
+                start_time = time.time()
+                resp = dq.get_grid_data(
+                    expr=case["expr"],
+                    grid_id=case["grid_id"],
                     data="REFERENCE_DATA",
                     format="JSON",
-                    start_date="20240101",
-                    end_date="20240131",  # Smaller date range for comparison
+                    end_date="20240131",
                     calendar="CAL_USBANK",
                     frequency="FREQ_DAY",
                     conversion="CONV_LASTBUS_ABS",
                 )
+                elapsed = time.time() - start_time
 
-                end_time = datetime.now()
-                response_time = (end_time - start_time).total_seconds()
+                rows = 0
+                if hasattr(resp, "grid_data") and resp.grid_data:
+                    rows = len(resp.grid_data.get("rows", []))
 
-                # Analyze response
-                if hasattr(grid_response, "grid_data") and grid_response.grid_data:
-                    grid_data = grid_response.grid_data
-                    column_count = len(grid_data.get("columns", []))
-                    row_count = len(grid_data.get("rows", []))
-
-                    results[name] = {
-                        "success": True,
-                        "response_time": response_time,
-                        "columns": column_count,
-                        "rows": row_count,
-                        "total_cells": column_count * row_count,
-                    }
-
-                    print(f"   ✅ Success in {response_time:.2f}s")
-                    print(f"   📊 {column_count} columns, {row_count} rows")
-                else:
-                    results[name] = {"success": False, "error": "No data returned"}
-                    print(f"   ℹ️  No data returned")
+                print(f"{case['name']:<15} {'Success':<10} {elapsed:<10.2f} {rows:<10}")
 
             except Exception as e:
-                results[name] = {"success": False, "error": str(e)}
-                print(f"   ❌ Error: {e}")
+                print(f"{case['name']:<15} {'Failed':<10} {'-':<10} {str(e)[:20]}")
 
-        # Compare results
-        print(f"\n📊 Comparison Results:")
-        for name, result in results.items():
-            print(f"\n   {name}:")
-            if result["success"]:
-                print(f"      ✅ Successful")
-                print(f"      ⏱️  Response time: {result['response_time']:.2f}s")
-                print(
-                    f"      📊 Data: {result['columns']} cols × {result['rows']} rows"
-                )
-                print(f"      📈 Total cells: {result['total_cells']}")
-            else:
-                print(f"      ❌ Failed: {result['error']}")
-
-        return results
-
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        return None
     finally:
         dq.cleanup()
 
 
 async def main():
-    """Run all examples."""
+    args = parse_args()
+
     print("=" * 60)
-    print("📊 DataQuery SDK - Grid Data Examples")
+    print("DataQuery SDK - Grid Data Example")
     print("=" * 60)
 
-    # Run async example with expressions
-    await async_example()
-
-    # Run sync example with grid ID
-    sync_example()
-
-    # Run comparison example
-    comparison_example()
+    if args.mode == "async":
+        await async_example(args.expression)
+    elif args.mode == "sync":
+        # Run sync example in a thread to avoid blocking if this were a larger app
+        # But for this script, direct call is fine, or wrap in to_thread
+        await asyncio.to_thread(sync_example, args.grid_id)
+    elif args.mode == "compare":
+        await asyncio.to_thread(comparison_example)
 
     print("\n" + "=" * 60)
-    print("✅ All examples completed!")
-    print(
-        "💡 Tip: Use expressions for dynamic queries, grid IDs for predefined data sets"
-    )
-    print("=" * 60)
 
 
 if __name__ == "__main__":
-    # Check if we're in an async context
     try:
         asyncio.run(main())
-    except RuntimeError as e:
-        if "asyncio.run() cannot be called from a running event loop" in str(e):
-            # We're already in an async context, just await
-            import nest_asyncio
-
-            nest_asyncio.apply()
-            asyncio.run(main())
-        else:
-            raise
+    except KeyboardInterrupt:
+        print("\n[Info] Operation cancelled.")

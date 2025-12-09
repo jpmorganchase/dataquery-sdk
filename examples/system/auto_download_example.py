@@ -15,14 +15,14 @@ import sys
 from pathlib import Path
 
 # Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # noqa: E402
 
-from dataquery import DataQuery
-from dataquery.exceptions import AuthenticationError
+from dataquery import DataQuery  # noqa: E402
+from dataquery.exceptions import AuthenticationError  # noqa: E402
 
 
 async def main():
-    print("🚀 dataquery-sdk - Lean Auto-Download Example")
+    print("[Start] dataquery-sdk - Lean Auto-Download Example")
     print("=" * 60)
     print("This script will watch a group and download available files.")
     print("Press Ctrl+C to stop.\n")
@@ -31,7 +31,7 @@ async def main():
         # Prompt inputs
         group_id = input("Enter group ID to watch: ").strip()
         if not group_id:
-            print("❌ Group ID is required")
+            print("[Error] Group ID is required")
             return
         destination = (
             input("Destination directory [./downloads]: ").strip() or "./downloads"
@@ -39,7 +39,7 @@ async def main():
         try:
             interval = int(input("Check interval in minutes [30]: ").strip() or "30")
         except ValueError:
-            print("❌ Invalid interval; must be an integer")
+            print("[Error] Invalid interval; must be an integer")
             return
         only_today_raw = input("Check only today? (Y/n) [Y]: ").strip().lower()
         check_current_date_only = only_today_raw in ("", "y", "yes")
@@ -47,7 +47,7 @@ async def main():
         # Run watcher
         async with DataQuery() as dq:
             print(
-                f"👀 Watching group '{group_id}' every {interval} min; saving to: {destination}"
+                f"[Info] Watching group '{group_id}' every {interval} min; saving to: {destination}"
             )
             manager = await dq.start_auto_download_async(
                 group_id=group_id,
@@ -59,17 +59,17 @@ async def main():
                 while True:
                     await asyncio.sleep(60)
             except KeyboardInterrupt:
-                print("\n⚠️  Stopping watcher...")
+                print("\n[Warning]  Stopping watcher...")
                 await manager.stop()
                 stats = manager.get_stats()
                 print(
-                    f"✅ Stopped. Files downloaded: {stats.get('files_downloaded')} | Failures: {stats.get('download_failures')}"
+                    f"[Success] Stopped. Files downloaded: {stats.get('files_downloaded')} | Failures: {stats.get('download_failures')}"
                 )
     except AuthenticationError as e:
-        print(f"❌ Authentication failed: {e}")
-        print("💡 Check your credentials in .env file")
+        print(f"[Error] Authentication failed: {e}")
+        print("[Tip] Check your credentials in .env file")
     except Exception as e:
-        print(f"❌ Unexpected error: {e}")
+        print(f"[Error] Unexpected error: {e}")
 
 
 if __name__ == "__main__":

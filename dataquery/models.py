@@ -2,10 +2,14 @@
 Data models for the DATAQUERY SDK based on the OpenAPI specification.
 """
 
+import asyncio
+import math
+import time
+from dataclasses import dataclass, field as dc_field
 from datetime import date, datetime, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, cast
+from typing import Any, Dict, List, Optional, Tuple, Union, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -164,7 +168,10 @@ class ClientConfig(BaseModel):
     log_errors: bool = Field(default=True, description="Log errors")
     save_error_log: bool = Field(default=True, description="Save error log to file")
     use_async_downloads: bool = Field(default=True, description="Use async downloads")
-    chunk_size: int = Field(default=65536, description="Download chunk size in bytes (64KB default, optimized for network drives)")
+    chunk_size: int = Field(
+        default=1048576,
+        description="Download chunk size in bytes (1MB default, optimized for large files)",
+    )
 
     # Download Options
     enable_range_requests: bool = Field(
@@ -291,7 +298,10 @@ class ClientConfig(BaseModel):
         if not self.files_base_url:
             return None
         if self.files_context_path:
-            return f"{self.files_base_url}{self.files_context_path}"
+            return (
+                f"{self.files_base_url}"
+                f"{self.files_context_path}"
+            )
         return self.files_base_url
 
 
@@ -801,8 +811,8 @@ class DownloadOptions(BaseModel):
 
     # Download options
     chunk_size_setting: int = Field(
-        default=65536,
-        description="Chunk size for streaming downloads (64KB default, optimized for network drives)",
+        default=1048576,
+        description="Chunk size for streaming downloads (1MB default, optimized for large files)",
         alias="chunk_size",
     )
     max_retries: int = Field(default=3, description="Maximum number of retry attempts")
@@ -822,13 +832,28 @@ class DownloadOptions(BaseModel):
         default=None, description="End byte position for range download (inclusive)"
     )
     range_header: Optional[str] = Field(
-        default=None, description="Custom range header (e.g., 'bytes=0-1023')"
+        default=None,
+        description="Custom range header (e.g., 'bytes=0-1023')",
     )
 
     # Progress tracking
     show_progress: bool = Field(default=True, description="Show download progress")
     progress_callback: Optional[Any] = Field(
         default=None, description="Custom progress callback function"
+    )
+
+    # Enterprise optimizations
+    enable_write_batching: bool = Field(
+        default=True, description="Enable write batching for better performance"
+    )
+    write_batch_size: int = Field(
+        default=4 * 1024 * 1024, description="Write batch size in bytes (4MB default)"
+    )
+    enable_adaptive_chunks: bool = Field(
+        default=False, description="Enable adaptive chunk sizing based on network conditions"
+    )
+    max_bandwidth_mbps: Optional[float] = Field(
+        default=None, description="Maximum bandwidth limit in Mbps (None = unlimited)"
     )
 
     model_config = ConfigDict(extra="allow")  # Allow extra fields from API
@@ -866,11 +891,11 @@ class DownloadOptions(BaseModel):
         try:
             value_int = int(value)
         except Exception:
-            value_int = 8192
+            value_int = 1048576
         if value_int <= 0:
-            value_int = 8192
-        if value_int > 1024 * 1024:
-            value_int = 1024 * 1024
+            value_int = 1048576
+        if value_int > 8 * 1024 * 1024:
+            value_int = 8 * 1024 * 1024
         return value_int
 
     @field_validator("chunk_size_setting")
@@ -1303,3 +1328,93 @@ class TimeSeriesParameters(BaseModel):
     )
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+
+# Enterprise Download Optimizations
+
+
+@dataclass
+class AdaptiveChunkSizer:
+    """Dynamically adjusts chunk size based on network conditions."""
+
+    window_size: int = 10
+    bandwidth_history: List[float] = dc_field(default_factory=list)
+    latency_history: List[float] = dc_field(default_factory=list)
+
+    def calculate_optimal_chunk_size(
+        self, file_size: int, current_bandwidth_mbps: float, current_latency_ms: float
+    ) -> int:
+        """Calculate optimal chunk size based on network conditions."""
+        self.bandwidth_history.append(current_bandwidth_mbps)
+        self.latency_history.append(current_latency_ms)
+        self.bandwidth_history = self.bandwidth_history[-self.window_size:]
+        self.latency_history = self.latency_history[-self.window_size:]
+
+        avg_bandwidth = sum(self.bandwidth_history) / len(self.bandwidth_history) if self.bandwidth_history else 1.0
+        avg_latency = sum(self.latency_history) / len(self.latency_history) if self.latency_history else 100.0
+
+        base_chunk = 1024 * 1024
+        bandwidth_factor = min(8.0, 1.0 + math.log10(max(1, avg_bandwidth)))
+        latency_factor = min(4.0, 1.0 + math.log10(max(10, avg_latency) / 10))
+
+        if file_size > 1024 * 1024 * 1024:
+            size_factor = 2.0
+        elif file_size > 100 * 1024 * 1024:
+            size_factor = 1.5
+        else:
+            size_factor = 1.0
+
+        optimal_chunk = int(base_chunk * bandwidth_factor * latency_factor * size_factor)
+        return max(256 * 1024, min(16 * 1024 * 1024, optimal_chunk))
+
+    def update_metrics(self, bytes_transferred: int, time_elapsed: float):
+        """Update bandwidth and latency measurements."""
+        if time_elapsed > 0:
+            bandwidth_mbps = (bytes_transferred * 8) / (time_elapsed * 1000000)
+            bytes_mb = bytes_transferred / (1024 * 1024)
+            latency_ms = (time_elapsed * 1000) / max(1, bytes_mb)
+            self.bandwidth_history.append(bandwidth_mbps)
+            self.latency_history.append(min(latency_ms, 1000))
+
+
+@dataclass
+class DownloadCheckpoint:
+    """Checkpoint for resumable downloads (future feature)."""
+    file_group_id: str
+    file_datetime: Optional[str]
+    total_bytes: int
+    completed_ranges: List[Tuple[int, int]]
+    checkpoint_time: datetime
+    destination_path: Optional[Path] = None
+
+
+class BandwidthThrottler:
+    """Throttle download bandwidth to prevent network saturation."""
+
+    def __init__(self, max_bytes_per_second: Optional[int] = None):
+        self.max_bytes_per_second = max_bytes_per_second
+        self.bytes_transferred = 0
+        self.window_start = time.time()
+        self.window_size = 1.0
+        self.lock = asyncio.Lock()
+
+    async def throttle(self, bytes_to_transfer: int) -> None:
+        """Sleep if necessary to maintain bandwidth limit."""
+        if not self.max_bytes_per_second:
+            return
+
+        async with self.lock:
+            current_time = time.time()
+            window_elapsed = current_time - self.window_start
+
+            if window_elapsed >= self.window_size:
+                self.bytes_transferred = 0
+                self.window_start = current_time
+                window_elapsed = 0
+
+            self.bytes_transferred += bytes_to_transfer
+            expected_time = self.bytes_transferred / self.max_bytes_per_second
+
+            if expected_time > window_elapsed:
+                sleep_time = expected_time - window_elapsed
+                await asyncio.sleep(sleep_time)

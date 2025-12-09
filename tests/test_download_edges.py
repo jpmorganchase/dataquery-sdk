@@ -1,5 +1,4 @@
 import asyncio
-import json
 from pathlib import Path
 
 import pytest
@@ -49,9 +48,6 @@ class FakeResponse:
         self._chunks = body_chunks or [b"abc"]
         self.url = "https://api.example.com/group/file/download"
 
-    async def json(self):
-        return {}
-
     class content:
         def __init__(self, outer):
             self._outer = outer
@@ -92,6 +88,8 @@ def make_client(tmp_path) -> DataQueryClient:
     async def _noop(*args, **kwargs):
         return None
 
+    # Create dummy content
+    dummy_content = b"x" * (1024 * 1024)  # 1MB
     # Avoid real IO
     client._ensure_connected = _noop  # type: ignore
     client._ensure_authenticated = _noop  # type: ignore

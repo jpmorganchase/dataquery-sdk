@@ -13,7 +13,7 @@ from typing import Any, Callable, Dict, List, Optional, Union
 import structlog
 from dotenv import load_dotenv
 
-from .client import DataQueryClient, format_file_size
+from .client import DataQueryClient
 from .config import EnvConfig
 from .exceptions import ConfigurationError
 from .models import (
@@ -30,6 +30,7 @@ from .models import (
     InstrumentsResponse,
     TimeSeriesResponse,
 )
+from .utils import format_file_size
 
 # Load environment variables from .env file
 load_dotenv()
@@ -47,29 +48,6 @@ def setup_logging(log_level: str = "INFO") -> structlog.BoundLogger:
         deprecated_setup_logging=True,
         level=log_level,
     )
-
-
-"""
-Note: format_file_size, format_duration, and ensure_directory are imported from
-utils to maintain a single source of truth for these helpers across the SDK.
-"""
-
-
-def get_download_paths() -> Dict[str, Path]:
-    """Get download paths from environment variables with defaults."""
-    base_download_dir = EnvConfig.get_path("DOWNLOAD_DIR", "./downloads")
-
-    return {
-        "base": base_download_dir,
-        "workflow": base_download_dir
-        / (EnvConfig.get_env_var("WORKFLOW_DIR", "workflow") or "workflow"),
-        "groups": base_download_dir
-        / (EnvConfig.get_env_var("GROUPS_DIR", "groups") or "groups"),
-        "availability": base_download_dir
-        / (EnvConfig.get_env_var("AVAILABILITY_DIR", "availability") or "availability"),
-        "default": base_download_dir
-        / (EnvConfig.get_env_var("DEFAULT_DIR", "files") or "files"),
-    }
 
 
 class ConfigManager:
@@ -139,7 +117,6 @@ class DataQuery:
     This class serves as the primary interface for the DATAQUERY SDK,
     encapsulating the client and providing high-level operations for
     listing, searching, downloading, and managing data files.
-
     Supports both async and sync operations with proper event loop management.
     """
 
@@ -222,6 +199,10 @@ class DataQuery:
         """Sync context manager entry."""
         self.connect()
         return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Sync context manager exit."""
+        self.close()
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit."""
@@ -1315,7 +1296,7 @@ class DataQuery:
 
             # Step 2: Prepare temp file with full size for random access writes
             temp_destination = destination.with_suffix(destination.suffix + ".part")
-            with open(temp_destination, "wb", buffering=1024*1024) as f:  # 1MB buffer for network drives
+            with open(temp_destination, "wb", buffering=1024 * 1024) as f:  # 1MB buffer for network drives
                 f.truncate(total_bytes)
 
             # Step 3: Compute ranges for parallel download
@@ -1339,8 +1320,12 @@ class DataQuery:
 
             bytes_lock = asyncio.Lock()
             file_lock = asyncio.Lock()
+
+            # Use write batching if enabled (enterprise optimization)
+            use_batching = download_options.enable_write_batching
+
             # Open shared file handle with buffering for network drives
-            shared_fh = open(temp_destination, "r+b", buffering=1024*1024)  # 1MB buffer
+            shared_fh = open(temp_destination, "r+b", buffering=1024 * 1024)  # 1MB buffer
 
             # Progress callback optimization: track last callback state
             last_callback_bytes = 0
@@ -1351,11 +1336,16 @@ class DataQuery:
             # Get the current event loop for async file I/O
             loop = asyncio.get_running_loop()
 
+            # Initialize bandwidth throttler if configured
+            throttler = None
+            if download_options.max_bandwidth_mbps:
+                from .models import BandwidthThrottler
+                throttler = BandwidthThrottler(
+                    max_bytes_per_second=int(download_options.max_bandwidth_mbps * 125000)
+                )
+
             # Step 4: Download each range with global semaphore control
-            async def download_range_with_global_semaphore(
-                start_byte: int, end_byte: int
-            ):
-                nonlocal bytes_downloaded, last_callback_bytes, last_callback_time
+            async def download_range(start_byte: int, end_byte: int):
                 headers = {"Range": f"bytes={start_byte}-{end_byte}"}
 
                 assert self._client is not None  # Already checked above
@@ -1367,12 +1357,18 @@ class DataQuery:
                         await self._client._handle_response(resp)
                         # Stream and write to correct offset with batching to reduce lock contention
                         current_pos = start_byte
-                        chunk_size = download_options.chunk_size or 65536  # 64KB default for network drives
+                        chunk_size = download_options.chunk_size or 1024 * 1024  # 1MB default for better performance
 
                         # Write batching: accumulate chunks before writing to reduce lock contention
                         write_buffer = bytearray()
                         buffer_start_pos = current_pos
-                        batch_size_threshold = 1024 * 1024  # 1MB batch size
+
+                        # Determine batch size threshold
+                        if use_batching:
+                            batch_size_threshold = download_options.write_batch_size
+                        else:
+                            # No batching, write immediately
+                            batch_size_threshold = chunk_size
 
                         async def flush_buffer():
                             """Flush accumulated buffer to file"""
@@ -1419,6 +1415,10 @@ class DataQuery:
                                     last_callback_time = current_time
 
                         async for chunk in resp.content.iter_chunked(chunk_size):
+                            # Apply bandwidth throttling if configured
+                            if throttler:
+                                await throttler.throttle(len(chunk))
+
                             write_buffer.extend(chunk)
                             current_pos += len(chunk)
 
@@ -1433,7 +1433,7 @@ class DataQuery:
 
             # Step 5: Execute all range downloads concurrently (each will acquire global semaphore)
             await asyncio.gather(
-                *(download_range_with_global_semaphore(s, e) for s, e in ranges)
+                *(download_range(s, e) for s, e in ranges)
             )
 
             # Step 6: Finalize file
