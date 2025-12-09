@@ -11,7 +11,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # noqa: E402
 
 from dataquery import DataQuery  # noqa: E402
-from dataquery.exceptions import AuthenticationError, NotFoundError  # noqa: E402, NotFoundError
+from dataquery.exceptions import (  # noqa: E402, NotFoundError
+    AuthenticationError,
+    NotFoundError,
+)
 
 
 async def main():

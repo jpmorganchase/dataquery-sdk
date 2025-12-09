@@ -48,7 +48,7 @@ class FakeResponse:
         self._chunks = body_chunks or [b"abc"]
         self.url = "https://api.example.com/group/file/download"
 
-    class content:
+    class ContentIterator:
         def __init__(self, outer):
             self._outer = outer
 
@@ -58,7 +58,7 @@ class FakeResponse:
 
     @property
     def content(self):
-        return FakeResponse.content(self)
+        return FakeResponse.ContentIterator(self)
 
 
 class FakeCtx:

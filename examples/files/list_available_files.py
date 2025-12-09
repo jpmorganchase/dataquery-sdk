@@ -27,22 +27,13 @@ def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="List available files by date range")
     parser.add_argument(
-        "--group-id",
-        required=True,
-        help="ID of the group to list files from"
+        "--group-id", required=True, help="ID of the group to list files from"
     )
+    parser.add_argument("--file-group-id", help="Optional file group ID to filter by")
     parser.add_argument(
-        "--file-group-id",
-        help="Optional file group ID to filter by"
+        "--start-date", help="Start date (YYYYMMDD). Defaults to 7 days ago."
     )
-    parser.add_argument(
-        "--start-date",
-        help="Start date (YYYYMMDD). Defaults to 7 days ago."
-    )
-    parser.add_argument(
-        "--end-date",
-        help="End date (YYYYMMDD). Defaults to today."
-    )
+    parser.add_argument("--end-date", help="End date (YYYYMMDD). Defaults to today.")
     return parser.parse_args()
 
 

@@ -25,29 +25,26 @@ def simple_progress_callback(progress: DownloadProgress):
     """Callback to display download progress."""
     pct = f"{progress.percentage:.1f}%" if progress.total_bytes else "..."
     # Use \r to overwrite the line for a clean progress bar
-    print(f"\r[Progress] {pct} ({progress.bytes_downloaded:,} bytes)", end="", flush=True)
+    print(
+        f"\r[Progress] {pct} ({progress.bytes_downloaded:,} bytes)", end="", flush=True
+    )
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Download File Example")
     parser.add_argument(
-        "--file-group-id",
-        required=True,
-        help="ID of the file group to download"
+        "--file-group-id", required=True, help="ID of the file group to download"
     )
     parser.add_argument(
-        "--date",
-        help="File date (YYYYMMDD, YYYYMMDDTHHMM, etc.). Optional."
+        "--date", help="File date (YYYYMMDD, YYYYMMDDTHHMM, etc.). Optional."
     )
     parser.add_argument(
         "--dest",
         default="./downloads",
-        help="Destination directory. Defaults to ./downloads"
+        help="Destination directory. Defaults to ./downloads",
     )
     parser.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Overwrite existing file if it exists"
+        "--overwrite", action="store_true", help="Overwrite existing file if it exists"
     )
     return parser.parse_args()
 
@@ -85,7 +82,7 @@ async def main():
                 if result.speed_mbps:
                     print(f"[Speed] Speed: {result.speed_mbps:.2f} MB/s")
             else:
-                error_msg = getattr(result, 'error_message', 'Unknown error')
+                error_msg = getattr(result, "error_message", "Unknown error")
                 print(f"[Error] Download failed: {error_msg}")
 
     except Exception as e:

@@ -25,13 +25,15 @@ async def test_cmd_download_with_performance_args():
     )
 
     mock_dq_instance = AsyncMock()
-    mock_dq_instance.download_file_async.return_value = MagicMock(local_path="/tmp/test/file")
+    mock_dq_instance.download_file_async.return_value = MagicMock(
+        local_path="/tmp/test/file"
+    )
 
     with patch("dataquery.cli.DataQuery") as MockDQ:
         MockDQ.return_value.__aenter__.return_value = mock_dq_instance
-        
+
         await cmd_download(args)
-        
+
         mock_dq_instance.download_file_async.assert_called_once()
         call_args = mock_dq_instance.download_file_async.call_args
         assert call_args[0] == ("test_file", "20240101")
@@ -58,19 +60,19 @@ async def test_cmd_download_group():
     mock_dq_instance.run_group_download_async.return_value = {
         "successful": 10,
         "failed": 0,
-        "results": []
+        "results": [],
     }
 
     with patch("dataquery.cli.DataQuery") as MockDQ:
         MockDQ.return_value.__aenter__.return_value = mock_dq_instance
-        
+
         await cmd_download_group(args)
-        
+
         mock_dq_instance.run_group_download_async.assert_called_once_with(
             group_id="test_group",
             start_date="20240101",
             end_date="20240131",
             destination_dir="/tmp/downloads",
             max_concurrent=5,
-            num_parts=4
+            num_parts=4,
         )

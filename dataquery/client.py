@@ -1,4 +1,3 @@
-
 """
 Main client for the DATAQUERY SDK.
 """
@@ -60,9 +59,9 @@ from .rate_limiter import (
     TokenBucketRateLimiter,
 )
 from .retry import RetryConfig, RetryManager, RetryStrategy
+from .utils import format_duration as _format_duration
+from .utils import format_file_size as _format_file_size
 from .utils import (
-    format_duration as _format_duration,
-    format_file_size as _format_file_size,
     get_filename_from_response,
     validate_attributes_list,
     validate_date_format,
@@ -977,7 +976,9 @@ class DataQueryClient:
                 filename = get_filename_from_response(
                     probe_resp, file_group_id, file_datetime
                 )
-                destination = self._resolve_destination(options, file_group_id, filename)
+                destination = self._resolve_destination(
+                    options, file_group_id, filename
+                )
 
                 if destination.exists() and not options.overwrite_existing:
                     raise FileExistsError(f"File already exists: {destination}")
@@ -986,7 +987,9 @@ class DataQueryClient:
             if not isinstance(destination, Path):
                 raise ValueError(f"Invalid destination path: {destination}")
             temp_destination = destination.with_suffix(destination.suffix + ".part")
-            with open(temp_destination, "wb", buffering=1024 * 1024) as f:  # 1MB buffer for network drives
+            with open(
+                temp_destination, "wb", buffering=1024 * 1024
+            ) as f:  # 1MB buffer for network drives
                 f.truncate(total_bytes)
 
             # Compute ranges
@@ -1032,7 +1035,9 @@ class DataQueryClient:
                         await self._handle_response(resp)
                         # Stream and write to correct offset
                         current_pos = start_byte
-                        chunk_size = options.chunk_size or 1048576  # 1MB default for better performance
+                        chunk_size = (
+                            options.chunk_size or 1048576
+                        )  # 1MB default for better performance
 
                         async for chunk in resp.content.iter_chunked(chunk_size):
                             # Write directly to file at correct position
@@ -1068,7 +1073,9 @@ class DataQueryClient:
                                             "Download progress",
                                             file=file_group_id,
                                             percentage=f"{progress.percentage:.1f}%",
-                                            downloaded=format_file_size(bytes_downloaded),
+                                            downloaded=format_file_size(
+                                                bytes_downloaded
+                                            ),
                                         )
                                     last_callback_bytes = bytes_downloaded
                                     last_callback_time = current_time
@@ -1172,7 +1179,9 @@ class DataQueryClient:
                 filename = get_filename_from_response(
                     response, file_group_id, file_datetime
                 )
-                destination = self._resolve_destination(options, file_group_id, filename)
+                destination = self._resolve_destination(
+                    options, file_group_id, filename
+                )
 
                 # Check if file exists and handle overwrite
                 if (
@@ -1200,10 +1209,16 @@ class DataQueryClient:
                 temp_destination = destination.with_suffix(destination.suffix + ".part")
 
                 # Optimize chunk size based on file size
-                chunk_size = options.chunk_size or 1048576  # 1MB default for better performance
+                chunk_size = (
+                    options.chunk_size or 1048576
+                )  # 1MB default for better performance
                 if total_bytes > 0:
                     # Use larger chunks for bigger files, cap at 8MB for files >1GB
-                    max_chunk = 8 * 1024 * 1024 if total_bytes > 1024 * 1024 * 1024 else 1024 * 1024
+                    max_chunk = (
+                        8 * 1024 * 1024
+                        if total_bytes > 1024 * 1024 * 1024
+                        else 1024 * 1024
+                    )
                     optimal_chunk_size = min(
                         max(chunk_size, total_bytes // 1000), max_chunk
                     )

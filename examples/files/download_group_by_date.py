@@ -103,7 +103,7 @@ async def main():
                 sorted_files = sorted(
                     timing.get("file_times", []),
                     key=lambda x: x.get("download_time_seconds", 0),
-                    reverse=True
+                    reverse=True,
                 )
                 for f in sorted_files[:5]:
                     fid = f.get("file_group_id")

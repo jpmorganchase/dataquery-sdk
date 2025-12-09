@@ -30,17 +30,17 @@ def parse_args():
         "--mode",
         choices=["async", "sync", "compare"],
         default="async",
-        help="Execution mode"
+        help="Execution mode",
     )
     parser.add_argument(
         "--expression",
         default="GDP_QUARTERLY_COMPARISON",
-        help="Expression to query (for async mode)"
+        help="Expression to query (for async mode)",
     )
     parser.add_argument(
         "--grid-id",
         default="ECONOMIC_INDICATORS_GRID",
-        help="Grid ID to query (for sync mode)"
+        help="Grid ID to query (for sync mode)",
     )
     return parser.parse_args()
 

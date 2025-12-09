@@ -5,7 +5,8 @@ Data models for the DATAQUERY SDK based on the OpenAPI specification.
 import asyncio
 import math
 import time
-from dataclasses import dataclass, field as dc_field
+from dataclasses import dataclass
+from dataclasses import field as dc_field
 from datetime import date, datetime, timedelta
 from enum import Enum
 from pathlib import Path
@@ -298,10 +299,7 @@ class ClientConfig(BaseModel):
         if not self.files_base_url:
             return None
         if self.files_context_path:
-            return (
-                f"{self.files_base_url}"
-                f"{self.files_context_path}"
-            )
+            return f"{self.files_base_url}" f"{self.files_context_path}"
         return self.files_base_url
 
 
@@ -850,7 +848,8 @@ class DownloadOptions(BaseModel):
         default=4 * 1024 * 1024, description="Write batch size in bytes (4MB default)"
     )
     enable_adaptive_chunks: bool = Field(
-        default=False, description="Enable adaptive chunk sizing based on network conditions"
+        default=False,
+        description="Enable adaptive chunk sizing based on network conditions",
     )
     max_bandwidth_mbps: Optional[float] = Field(
         default=None, description="Maximum bandwidth limit in Mbps (None = unlimited)"
@@ -1347,11 +1346,19 @@ class AdaptiveChunkSizer:
         """Calculate optimal chunk size based on network conditions."""
         self.bandwidth_history.append(current_bandwidth_mbps)
         self.latency_history.append(current_latency_ms)
-        self.bandwidth_history = self.bandwidth_history[-self.window_size:]
-        self.latency_history = self.latency_history[-self.window_size:]
+        self.bandwidth_history = self.bandwidth_history[-self.window_size :]
+        self.latency_history = self.latency_history[-self.window_size :]
 
-        avg_bandwidth = sum(self.bandwidth_history) / len(self.bandwidth_history) if self.bandwidth_history else 1.0
-        avg_latency = sum(self.latency_history) / len(self.latency_history) if self.latency_history else 100.0
+        avg_bandwidth = (
+            sum(self.bandwidth_history) / len(self.bandwidth_history)
+            if self.bandwidth_history
+            else 1.0
+        )
+        avg_latency = (
+            sum(self.latency_history) / len(self.latency_history)
+            if self.latency_history
+            else 100.0
+        )
 
         base_chunk = 1024 * 1024
         bandwidth_factor = min(8.0, 1.0 + math.log10(max(1, avg_bandwidth)))
@@ -1364,7 +1371,9 @@ class AdaptiveChunkSizer:
         else:
             size_factor = 1.0
 
-        optimal_chunk = int(base_chunk * bandwidth_factor * latency_factor * size_factor)
+        optimal_chunk = int(
+            base_chunk * bandwidth_factor * latency_factor * size_factor
+        )
         return max(256 * 1024, min(16 * 1024 * 1024, optimal_chunk))
 
     def update_metrics(self, bytes_transferred: int, time_elapsed: float):
@@ -1380,6 +1389,7 @@ class AdaptiveChunkSizer:
 @dataclass
 class DownloadCheckpoint:
     """Checkpoint for resumable downloads (future feature)."""
+
     file_group_id: str
     file_datetime: Optional[str]
     total_bytes: int
