@@ -992,7 +992,7 @@ class Attribute(BaseModel):
         None, alias="last-published", description="Date/Time data was last published"
     )
     message: Optional[str] = Field(None, description="Attribute level user message")
-    time_series: Optional[List[List[Union[str, float]]]] = Field(
+    time_series: Optional[List[List[Union[str, float, None]]]] = Field(
         None, alias="time-series", description="Time series data"
     )
 
