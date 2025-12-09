@@ -127,7 +127,8 @@ async def test_run_download_async_report_from_result():
     with patch.object(dq, "download_file_async", new=AsyncMock(return_value=result)):
         report = await dq.run_download_async("fg", "20240101")
         assert report["download_successful"] is True
-        assert report["local_path"].endswith("/tmp/x")
+        # Use Path comparison for cross-platform compatibility
+        assert Path(report["local_path"]) == Path("/tmp/x")
         assert report["file_size"] == result.file_size
 
 

@@ -1,4 +1,5 @@
 import argparse
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -123,7 +124,9 @@ async def test_cli_download_single_json(monkeypatch, tmp_path, capsys):
     rc = await cli.cmd_download(args)
     out = capsys.readouterr().out
     assert rc == 0
-    assert str(dest) in out
+    # Parse JSON output and compare paths properly
+    json_output = json.loads(out)
+    assert json_output["local_path"] == str(dest)
 
 
 def test_cli_config_show_and_validate(monkeypatch, capsys, tmp_path):

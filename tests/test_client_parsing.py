@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from dataquery.client import get_filename_from_response, parse_content_disposition
+from dataquery.utils import get_filename_from_response, parse_content_disposition
 
 
 def test_parse_content_disposition_variants():
