@@ -69,10 +69,6 @@ async def main():
             print(f"{'File Name':<40} {'Date':<10} {'Size':<15}")
             print("-" * 60)
 
-            for f in files[:20]:
-                size_str = f"{f.get('file_size', 0):,} bytes"
-                print(f"{f.file_name:<40} {f.file_date:<10} {size_str:<15}")
-
             if len(files) > 20:
                 print(f"... and {len(files) - 20} more")
 

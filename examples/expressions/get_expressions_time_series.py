@@ -88,12 +88,21 @@ async def main() -> None:
                 page=None,
             )
 
-            series = getattr(resp, "series", []) or []
-            print(f"Series: {len(series)}")
-            for i, s in enumerate(series[: args.show], 1):
-                expr = s.get("expression", "")
-                points = s.get("data", [])
-                print(f"{i}. {expr} (points: {len(points)})")
+            # Extract time series from instruments -> attributes -> time_series
+            print(f"Total Instruments: {len(resp.instruments)}")
+            series_count = 0
+            for instrument in resp.instruments[: args.show]:
+                if instrument.attributes:
+                    for attr in instrument.attributes:
+                        series_count += 1
+                        expr = attr.expression or attr.attribute_name or "N/A"
+                        time_series = attr.time_series or []
+                        print(
+                            f"{series_count}. {expr} (data points: {len(time_series)})"
+                        )
+                        # Show first few data points as sample
+                        if time_series:
+                            print(f"   Sample data (first 5): {time_series[:5]}")
 
     except DataQueryError as e:
         print(f"Error: {e}")
