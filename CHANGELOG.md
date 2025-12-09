@@ -13,4 +13,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comprehensive test suite with coverage reporting
 ## [0.0.8] - 2025-10-21
 - Made label and expression parameters optional in attribute api response 
-
+## [0.0.9] - 2025-12-09
+- Perfomance optimizations
