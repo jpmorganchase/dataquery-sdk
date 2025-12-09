@@ -8,38 +8,41 @@ import sys
 from pathlib import Path
 
 # Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # noqa: E402
 
-from dataquery import DataQuery
-from dataquery.exceptions import AuthenticationError, NotFoundError
+from dataquery import DataQuery  # noqa: E402
+from dataquery.exceptions import (  # noqa: E402, NotFoundError
+    AuthenticationError,
+    NotFoundError,
+)
 
 
 async def main():
-    print("🚀 Check Availability (lean)")
+    print("[Start] Check Availability (lean)")
     file_group_id = input("Enter file_group_id: ").strip()
     if not file_group_id:
-        print("❌ file_group_id is required")
+        print("[Error] file_group_id is required")
         return
     date = input("Enter date (YYYYMMDD): ").strip()
     if not date:
-        print("❌ date is required")
+        print("[Error] date is required")
         return
     try:
         async with DataQuery() as dq:
             try:
                 availability = await dq.check_availability_async(file_group_id, date)
             except NotFoundError:
-                print("📭 Not found")
+                print("[Info] Not found")
                 return
             if availability:
                 has = bool(getattr(availability, "is_available", False))
-                print("✅ Available" if has else "❌ Not available")
+                print("[Success] Available" if has else "[Error] Not available")
             else:
-                print("❌ Not available")
+                print("[Error] Not available")
     except AuthenticationError as e:
-        print(f"❌ Authentication failed: {e}")
+        print(f"[Error] Authentication failed: {e}")
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"[Error] Error: {e}")
 
 
 if __name__ == "__main__":

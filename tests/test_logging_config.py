@@ -335,7 +335,9 @@ class TestLoggingManager:
     def test_setup_file_logging(self, manager):
         """Test file logging setup."""
         manager.config.enable_file = True
-        manager.config.log_file = Path("/tmp/test.log")
+        # Use temp directory that works on all platforms
+        temp_dir = Path(tempfile.gettempdir())
+        manager.config.log_file = temp_dir / "test.log"
 
         with patch("logging.handlers.RotatingFileHandler") as mock_handler:
             with patch("logging.getLogger") as mock_get_logger:

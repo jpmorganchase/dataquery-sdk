@@ -9,12 +9,10 @@ from dataquery.client import (
     format_duration,
     format_file_size,
     get_filename_from_response,
-    parse_content_disposition,
     validate_attributes_list,
     validate_date_format,
     validate_file_datetime,
     validate_instruments_list,
-    validate_required_param,
 )
 from dataquery.exceptions import (
     AuthenticationError,
@@ -23,6 +21,7 @@ from dataquery.exceptions import (
     RateLimitError,
     ValidationError,
 )
+from dataquery.utils import parse_content_disposition, validate_required_param
 
 
 class StubRateLimiter:

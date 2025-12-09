@@ -122,7 +122,7 @@ The SDK comes with the following sensible defaults, so you only need to configur
 | `DATAQUERY_DOWNLOAD_DIR` | `./downloads` | Default download directory |
 | `DATAQUERY_CREATE_DIRECTORIES` | `true` | Create directories automatically |
 | `DATAQUERY_OVERWRITE_EXISTING` | `false` | Don't overwrite existing files |
-| `DATAQUERY_CHUNK_SIZE` | `8192` | Download chunk size (8KB) |
+| `DATAQUERY_CHUNK_SIZE` | `1048576` | Download chunk size (1MB) |
 | `DATAQUERY_ENABLE_RANGE_REQUESTS` | `true` | Enable HTTP range requests |
 | `DATAQUERY_SHOW_PROGRESS` | `true` | Show download progress |
 | **Batch Downloads** | | |
@@ -241,7 +241,7 @@ options = DownloadOptions(
     overwrite_existing=False,
     
     # Download behavior
-    chunk_size=8192,
+    chunk_size=1048576,
     max_retries=3,
     retry_delay=1.0,
     timeout=600.0,

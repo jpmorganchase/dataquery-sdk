@@ -65,7 +65,7 @@ async def download_with_options():
         destination_path=Path("./downloads"),
         create_directories=True,
         overwrite_existing=False,
-        chunk_size=16384,  # 16KB chunks
+        chunk_size=2097152,  # 2MB chunks for large files
         max_retries=3,
         show_progress=True
     )

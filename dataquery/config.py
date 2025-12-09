@@ -78,7 +78,7 @@ class EnvConfig:
         "LOG_ERRORS": "true",
         "SAVE_ERROR_LOG": "true",
         "USE_ASYNC_DOWNLOADS": "true",
-        "CHUNK_SIZE": "8192",
+        "CHUNK_SIZE": "1048576",  # 1MB default for better performance with large files
         # Download Options
         "ENABLE_RANGE_REQUESTS": "true",
         "SHOW_PROGRESS": "true",
@@ -341,7 +341,7 @@ class EnvConfig:
     def get_download_options(cls) -> Dict[str, Any]:
         """Get download options from environment variables."""
         return {
-            "chunk_size": cls.get_int("CHUNK_SIZE", "8192"),
+            "chunk_size": cls.get_int("CHUNK_SIZE", "1048576"),
             "max_retries": cls.get_int("MAX_RETRIES", "3"),
             "retry_delay": cls.get_float("RETRY_DELAY", "1.0"),
             "timeout": cls.get_float("TIMEOUT", "600.0"),
@@ -368,7 +368,7 @@ class EnvConfig:
             "log_errors": cls.get_bool("LOG_ERRORS"),
             "save_error_log": cls.get_bool("SAVE_ERROR_LOG"),
             "use_async_downloads": cls.get_bool("USE_ASYNC_DOWNLOADS"),
-            "chunk_size": cls.get_int("CHUNK_SIZE", "8192"),
+            "chunk_size": cls.get_int("CHUNK_SIZE", "1048576"),
         }
 
     @classmethod
@@ -519,7 +519,7 @@ class EnvConfig:
 {cls.PREFIX}LOG_ERRORS=true
 {cls.PREFIX}SAVE_ERROR_LOG=true
 {cls.PREFIX}USE_ASYNC_DOWNLOADS=true
-{cls.PREFIX}CHUNK_SIZE=8192
+{cls.PREFIX}CHUNK_SIZE=1048576
 
 # Download Options
 {cls.PREFIX}ENABLE_RANGE_REQUESTS=true

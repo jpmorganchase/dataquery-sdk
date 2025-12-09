@@ -4,54 +4,33 @@ This file combines all client tests for maximum coverage and maintainability.
 """
 
 import asyncio
-import json
-import shutil
-import tempfile
-from datetime import datetime, timedelta
-from pathlib import Path
-from typing import Any, Dict, List
-from unittest.mock import AsyncMock, MagicMock, Mock, call, patch
+from unittest.mock import AsyncMock, Mock, patch
 
-import aiohttp
 import pytest
 
 from dataquery.client import (
     DataQueryClient,
     format_file_size,
     get_filename_from_response,
-    parse_content_disposition,
     validate_attributes_list,
     validate_date_format,
     validate_file_datetime,
 )
 from dataquery.exceptions import (
     AuthenticationError,
-    AvailabilityError,
     ConfigurationError,
-    DownloadError,
     NetworkError,
     NotFoundError,
     RateLimitError,
     ValidationError,
 )
 from dataquery.models import (
-    AttributesResponse,
-    AvailabilityInfo,
     ClientConfig,
     DownloadOptions,
-    DownloadProgress,
-    DownloadResult,
     DownloadStatus,
-    FileInfo,
     FileList,
-    FiltersResponse,
-    GridDataResponse,
-    Group,
-    GroupList,
-    InstrumentsResponse,
-    OAuthToken,
-    TimeSeriesResponse,
 )
+from dataquery.utils import parse_content_disposition
 
 
 # ===== Merged from test_client_additional.py =====

@@ -8,17 +8,17 @@ import sys
 from pathlib import Path
 
 # Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # noqa: E402
 
-from dataquery import DataQuery
-from dataquery.exceptions import AuthenticationError, NotFoundError
+from dataquery import DataQuery  # noqa: E402
+from dataquery.exceptions import AuthenticationError, NotFoundError  # noqa: E402
 
 
 async def main():
-    print("🚀 List Files (lean)")
+    print("[Start] List Files (lean)")
     group_id = input("Enter group ID: ").strip()
     if not group_id:
-        print("❌ Group ID is required")
+        print("[Error] Group ID is required")
         return
     specific = input("Filter by file_group_id (optional): ").strip() or None
     try:
@@ -29,7 +29,8 @@ async def main():
                 if hasattr(files, "__len__")
                 else getattr(files, "file_count", 0)
             )
-            print(f"✅ Files: {count}")
+
+            print(f"[Success] Files: {count}")
             for i, fi in enumerate(
                 (
                     files[:20]
@@ -43,13 +44,13 @@ async def main():
                 ftype = (
                     ", ".join(ftypes) if isinstance(ftypes, list) else (ftypes or "")
                 )
-                print(f"{i}. {fid} {('('+ftype+')') if ftype else ''}")
+                print(f"{i}. {fid} {('(' + ftype + ')') if ftype else ''}")
     except NotFoundError:
-        print("📭 Group or file not found")
+        print("[Info] Group or file not found")
     except AuthenticationError as e:
-        print(f"❌ Authentication failed: {e}")
+        print(f"[Error] Authentication failed: {e}")
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"[Error] Error: {e}")
 
 
 if __name__ == "__main__":

@@ -1,9 +1,8 @@
 import asyncio
 import os
 import tempfile
-from datetime import datetime
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, mock_open, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -12,18 +11,14 @@ from dataquery.dataquery import (
     ConfigManager,
     DataQuery,
     ProgressTracker,
-    get_download_paths,
     setup_logging,
 )
-from dataquery.exceptions import ConfigurationError
 from dataquery.models import (
     Attribute,
     AttributesResponse,
     AvailabilityInfo,
     ClientConfig,
-    DateRange,
     DownloadOptions,
-    DownloadProgress,
     DownloadResult,
     DownloadStatus,
     FileInfo,
@@ -37,7 +32,7 @@ from dataquery.models import (
     InstrumentWithAttributes,
     TimeSeriesResponse,
 )
-from dataquery.utils import ensure_directory
+from dataquery.utils import ensure_directory, get_download_paths
 
 
 class TestUtilityFunctions:
@@ -1703,6 +1698,7 @@ class TestDataQueryWorkflowMethods:
                 assert result["file_datetime"] == "20200101"
 
     @pytest.mark.asyncio
+    @pytest.mark.asyncio
     async def test_run_group_download_async(self):
         """Test run_group_download_async method."""
         config = ClientConfig(
@@ -1773,8 +1769,8 @@ class TestDataQueryWorkflowMethods:
                 assert result["total_files"] == 2
 
     @pytest.mark.asyncio
-    async def test_run_group_download_async(self):
-        """Test run_group_download_async method."""
+    async def test_run_group_download_async_complex(self):
+        """Test run_group_download_async method with complex scenario."""
         config = ClientConfig(
             base_url="https://api.example.com",
             oauth_enabled=False,
@@ -2011,8 +2007,8 @@ class TestDataQueryWorkflowMethods:
                     assert result == mock_result
                     mock_run_sync.assert_called_once()
 
-    def test_run_group_download_sync(self):
-        """Test run_group_download sync wrapper."""
+    def test_run_group_download_sync_mocked(self):
+        """Test run_group_download sync wrapper with mocked return."""
         config = ClientConfig(
             base_url="https://api.example.com",
             oauth_enabled=False,
