@@ -65,13 +65,13 @@ DataQuery SDK provides several model classes for configuration and data handling
 | `destination_path` | `Optional[Path]` | `None` | — | Download destination path |
 | `create_directories` | `bool` | `True` | `DATAQUERY_CREATE_DIRECTORIES` | Create directories if they don't exist |
 | `overwrite_existing` | `bool` | `False` | `DATAQUERY_OVERWRITE_EXISTING` | Overwrite existing files |
-| `chunk_size` | `int` | `8192` | — | Download chunk size in bytes |
+| `chunk_size` | `int` | `1048576` | — | Download chunk size in bytes (1MB default) |
 | `max_retries` | `int` | `3` | `DATAQUERY_MAX_RETRIES` | Maximum number of retries |
 | `show_progress` | `bool` | `True` | — | Show progress during download |
 | `enable_range_requests` | `bool` | `True` | — | Enable HTTP range requests for parallel downloads |
 
 !!! tip "Performance Optimization"
-    Use larger `chunk_size` values (e.g., 65536) for better performance with large files.
+    The default 1MB chunk size is optimized for large files. For files >1GB, you can use even larger values (e.g., 2-8MB) for better performance. The SDK automatically optimizes chunk sizes based on file size.
 
 ## :material-check-circle: DownloadResult
 
@@ -140,7 +140,7 @@ DataQuery SDK provides several model classes for configuration and data handling
         destination_path=Path("./downloads"),
         create_directories=True,
         overwrite_existing=False,
-        chunk_size=65536,  # 64KB chunks for better performance
+        chunk_size=4194304,  # 4MB chunks for large files (3GB+)
         max_retries=3,
         enable_range_requests=True,
         show_progress=True
@@ -219,7 +219,7 @@ DataQuery SDK provides several model classes for configuration and data handling
     - **Authentication**: `oauth_enabled=True`, `grant_type="client_credentials"`
     - **Connection**: `timeout=6000.0`, `max_retries=3`, `retry_delay=1.0`
     - **Rate Limiting**: `requests_per_minute=300`, `burst_capacity=20`
-    - **Downloads**: `download_dir="./downloads"`, `chunk_size=8192`, `show_progress=True`
+    - **Downloads**: `download_dir="./downloads"`, `chunk_size=1048576`, `show_progress=True`
     - **Security**: `mask_secrets=True`, `token_storage_enabled=False`
 
     And many more!
