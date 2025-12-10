@@ -15,3 +15,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Made label and expression parameters optional in attribute api response 
 ## [0.0.9] - 2025-12-09
 - Perfomance optimizations
+## [0.1.0] - 2025-12-10
+Time serires data made optional
