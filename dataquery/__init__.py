@@ -14,7 +14,7 @@ Quick Start:
 For more information, visit: https://github.com/dataquery/dataquery-sdk
 """
 
-__version__ = "0.0.9"
+__version__ = "0.1.0"
 __author__ = "DATAQUERY SDK Team"
 __email__ = "dataquery@jpmorgan.com"
 __license__ = "MIT"
