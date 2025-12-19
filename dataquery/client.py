@@ -550,7 +550,26 @@ class DataQueryClient:
             raise NetworkError("Failed to establish connection")
 
         try:
-            return await self.session.request(method, url, **kwargs)
+            response = await self.session.request(method, url, **kwargs)
+
+            # Check for retryable server errors (5xx) - these should trigger retry
+            if response.status >= 500:
+                error_body = None
+                try:
+                    text = await response.text()
+                    error_body = text[:500] if text else None
+                except Exception:
+                    pass
+                raise NetworkError(
+                    f"Server error: {response.status}",
+                    status_code=response.status,
+                    details={"url": url, "body": error_body},
+                )
+
+            return response
+        except NetworkError:
+            # Re-raise NetworkError to trigger retry
+            raise
         except Exception:
             # For proxy-auth related tests, construct BasicAuth so tests see it was used
             if self.config.proxy_enabled and self.config.has_proxy_credentials:
@@ -932,6 +951,15 @@ class DataQueryClient:
         destination: Optional[Path] = None
         temp_destination: Optional[Path] = None
         total_bytes: int = 0
+
+        # Check if range downloads are disabled - use single stream instead
+        if not self.config.enable_range_downloads:
+            return await self._download_file_single_stream(
+                file_group_id=file_group_id,
+                file_datetime=file_datetime,
+                options=options,
+                progress_callback=progress_callback,
+            )
 
         try:
             url = self._build_files_api_url("group/file/download")

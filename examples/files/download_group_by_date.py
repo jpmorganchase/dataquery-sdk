@@ -38,6 +38,30 @@ async def main():
     parser.add_argument("start_date", help="Start date in YYYYMMDD format")
     parser.add_argument("end_date", help="End date in YYYYMMDD format")
     parser.add_argument("destination", help="Destination directory for downloads")
+    parser.add_argument(
+        "--max-concurrent",
+        type=int,
+        default=5,
+        help="Max concurrent file downloads (default: 5)",
+    )
+    parser.add_argument(
+        "--num-parts",
+        type=int,
+        default=5,
+        help="Number of parallel parts per file (default: 5)",
+    )
+    parser.add_argument(
+        "--delay",
+        type=float,
+        default=1.0,
+        help="Delay between downloads in seconds (default: 1.0)",
+    )
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=3,
+        help="Max retry attempts for failed downloads (default: 3)",
+    )
 
     args = parser.parse_args()
 
@@ -62,6 +86,8 @@ async def main():
     print(f"Group Download: {args.group_id}")
     print(f"Range: {args.start_date} to {args.end_date}")
     print(f"Destination: {dest_path}")
+    print(f"Parallel: {args.max_concurrent} files × {args.num_parts} parts = {args.max_concurrent * args.num_parts} concurrent requests")
+    print(f"Max Retries: {args.max_retries}")
     print("=" * 60)
 
     try:
@@ -71,6 +97,10 @@ async def main():
                 start_date=args.start_date,
                 end_date=args.end_date,
                 destination_dir=dest_path,
+                max_concurrent=args.max_concurrent,
+                num_parts=args.num_parts,
+                delay_between_downloads=args.delay,
+                max_retries=args.max_retries,
                 progress_callback=progress_callback,
             )
 
@@ -86,6 +116,9 @@ async def main():
             print(f"Total Files: {report.get('total_files', 0)}")
             print(f"Successful:  {report.get('successful_downloads', 0)}")
             print(f"Failed:      {report.get('failed_downloads', 0)}")
+
+            if report.get("retries_attempted", 0) > 0:
+                print(f"Retries:     {report.get('retries_attempted', 0)}/{report.get('max_retries', 3)}")
 
             if report.get("total_time_seconds"):
                 print(f"Total Time:  {report.get('total_time_seconds'):.2f}s")

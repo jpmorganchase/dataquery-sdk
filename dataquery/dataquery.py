@@ -861,6 +861,7 @@ class DataQuery:
         num_parts: int = 5,
         progress_callback: Optional[Callable] = None,
         delay_between_downloads: float = 1.0,
+        max_retries: int = 3,
     ) -> dict:
         """
         Download all files in a group for a date range using parallel HTTP range requests.
@@ -878,6 +879,7 @@ class DataQuery:
             num_parts: Number of HTTP range parts per file (default 5)
             progress_callback: Optional progress callback for individual parts aggregation
             delay_between_downloads: Delay in seconds between starting each file download (default 1.0)
+            max_retries: Maximum number of retry attempts for failed downloads (default 3)
 
         Returns:
             Dictionary with download results and statistics
@@ -1071,6 +1073,66 @@ class DataQuery:
                 else:
                     failed.append(file_info)
 
+            # Retry failed downloads
+            retry_count = 0
+            while failed and retry_count < max_retries:
+                retry_count += 1
+                logger.info(
+                    f"Retrying failed downloads (attempt {retry_count}/{max_retries})",
+                    failed_count=len(failed),
+                )
+
+                # Wait before retry with exponential backoff
+                retry_delay = delay_between_downloads * (2 ** (retry_count - 1))
+                await asyncio.sleep(retry_delay)
+
+                # Create retry tasks for failed files
+                retry_tasks = []
+                for i, file_info in enumerate(failed):
+                    delay_seconds = i * intelligent_delay
+                    task = download_file_with_flattened_concurrency(
+                        file_info, delay_seconds
+                    )
+                    retry_tasks.append(task)
+
+                retry_results = await asyncio.gather(
+                    *retry_tasks, return_exceptions=True
+                )
+
+                # Process retry results
+                still_failed = []
+                for file_info, result in zip(failed, retry_results):
+                    if isinstance(result, BaseException):
+                        still_failed.append(file_info)
+                    elif (
+                        result
+                        and hasattr(result, "status")
+                        and hasattr(result, "file_group_id")
+                        and result.status.value == "completed"
+                    ):
+                        successful.append(result)
+                        logger.info(
+                            f"Retry succeeded for file",
+                            file_group_id=file_info.get(
+                                "file-group-id", file_info.get("file_group_id")
+                            ),
+                            attempt=retry_count,
+                        )
+                    else:
+                        still_failed.append(file_info)
+
+                failed = still_failed
+
+                if not failed:
+                    logger.info("All failed downloads recovered after retries")
+                    break
+
+            if failed:
+                logger.warning(
+                    f"Some downloads failed after {max_retries} retries",
+                    failed_count=len(failed),
+                )
+
             # Calculate total operation time
             operation_end_time = time.time()
             total_time_seconds = operation_end_time - operation_start_time
@@ -1120,6 +1182,8 @@ class DataQuery:
                 "total_files": len(filtered_files),
                 "successful_downloads": len(successful),
                 "failed_downloads": len(failed),
+                "retries_attempted": retry_count,
+                "max_retries": max_retries,
                 "success_rate": (
                     (len(successful) / len(filtered_files)) * 100
                     if filtered_files
@@ -1220,6 +1284,15 @@ class DataQuery:
 
             if num_parts is None or num_parts <= 0:
                 num_parts = 5
+
+            # Check if range downloads are disabled - use single stream instead
+            if not self._client.config.enable_range_downloads:
+                return await self._client.download_file_async(
+                    file_group_id=file_group_id,
+                    file_datetime=file_datetime,
+                    options=DownloadOptions(destination_path=dest_path),
+                    progress_callback=progress_callback,
+                )
 
             # Build params for API call
             params = {"file-group-id": file_group_id}

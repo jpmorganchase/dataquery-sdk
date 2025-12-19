@@ -169,6 +169,10 @@ class ClientConfig(BaseModel):
     log_errors: bool = Field(default=True, description="Log errors")
     save_error_log: bool = Field(default=True, description="Save error log to file")
     use_async_downloads: bool = Field(default=True, description="Use async downloads")
+    enable_range_downloads: bool = Field(
+        default=False,
+        description="Enable parallel range downloads (HEAD request + byte ranges). Set to True for faster large file downloads.",
+    )
     chunk_size: int = Field(
         default=1048576,
         description="Download chunk size in bytes (1MB default, optimized for large files)",

@@ -78,6 +78,7 @@ class EnvConfig:
         "LOG_ERRORS": "true",
         "SAVE_ERROR_LOG": "true",
         "USE_ASYNC_DOWNLOADS": "true",
+        "ENABLE_RANGE_DOWNLOADS": "false",
         "CHUNK_SIZE": "1048576",  # 1MB default for better performance with large files
         # Download Options
         "ENABLE_RANGE_REQUESTS": "true",
@@ -136,6 +137,7 @@ class EnvConfig:
         "download_dir": "DATAQUERY_DOWNLOAD_DIR",
         "create_directories": "DATAQUERY_CREATE_DIRECTORIES",
         "overwrite_existing": "DATAQUERY_OVERWRITE_EXISTING",
+        "enable_range_downloads": "DATAQUERY_ENABLE_RANGE_DOWNLOADS",
     }
 
     @classmethod
@@ -319,6 +321,7 @@ class EnvConfig:
                 log_errors=cls.get_bool("LOG_ERRORS"),
                 save_error_log=cls.get_bool("SAVE_ERROR_LOG"),
                 use_async_downloads=cls.get_bool("USE_ASYNC_DOWNLOADS"),
+                enable_range_downloads=cls.get_bool("ENABLE_RANGE_DOWNLOADS"),
                 chunk_size=cls.get_int("CHUNK_SIZE"),
                 # Download Options
                 enable_range_requests=cls.get_bool("ENABLE_RANGE_REQUESTS"),
