@@ -298,13 +298,9 @@ class DataQueryClient:
             # Optimize timeout configuration
             timeout = aiohttp.ClientTimeout(
                 total=self.config.timeout,
-                connect=min(
-                    300.0, self.config.timeout * 0.5
-                ),  # 50% of total timeout for connect
-                sock_read=min(
-                    300.0, self.config.timeout * 0.5
-                ),  # 50% for read operations
-            )
+                connect=300.0, 
+                sock_read= self.config.timeout 
+           )
 
             # Optimize connector configuration for better performance
             connector = aiohttp.TCPConnector(

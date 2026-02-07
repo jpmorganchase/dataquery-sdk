@@ -96,12 +96,12 @@ class ClientConfig(BaseModel):
     pool_connections: int = Field(default=10, description="Number of connection pools")
     pool_maxsize: int = Field(default=20, description="Maximum connections per pool")
 
-    # Rate limiting
+    # Rate limiting - Full 25 TPS capacity (1500 requests per minute)
     requests_per_minute: int = Field(
-        default=100, description="Requests per minute limit"
+        default=1500, description="Requests per minute limit (25 TPS)"
     )
     burst_capacity: int = Field(
-        default=20, description="Burst capacity for rate limiting"
+        default=25, description="Burst capacity for rate limiting"
     )
 
     # Proxy configuration

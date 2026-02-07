@@ -77,7 +77,7 @@ async def test_run_group_download_async_filters_availability(monkeypatch):
             dq = DataQuery()
             await dq.connect_async()
             # Mock the internal method that group download actually calls
-            dq._download_file_parallel_flattened = AsyncMock(
+            dq._download_file_parallel = AsyncMock(
                 return_value=mock_download_result
             )
 

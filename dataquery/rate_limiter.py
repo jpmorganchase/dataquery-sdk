@@ -66,8 +66,8 @@ class QueuedRequest:
 class RateLimitConfig:
     """Configuration for rate limiting."""
 
-    requests_per_minute: int = 300  # Exactly 5 requests per second (200ms per request)
-    burst_capacity: int = 1  # No burst allowed per specification
+    requests_per_minute: int = 1500  # Full 25 TPS capacity (25 * 60 = 1500)
+    burst_capacity: int = 25  # Allow 25 concurrent requests
     window_size_seconds: int = 60
     retry_after_header: str = "Retry-After"
     enable_rate_limiting: bool = True

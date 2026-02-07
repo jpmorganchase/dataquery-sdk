@@ -356,7 +356,7 @@ class DataQuery:
             options = DownloadOptions(
                 destination_path=destination_path,
                 create_directories=True,
-                overwrite_existing=False,
+                overwrite_existing=True,
                 chunk_size=8192,
                 max_retries=3,
                 retry_delay=1.0,
@@ -857,10 +857,10 @@ class DataQuery:
         start_date: str,
         end_date: str,
         destination_dir: Path = Path("./downloads"),
-        max_concurrent: int = 5,
+        max_concurrent: int = 25,  # Full 25 TPS capacity
         num_parts: int = 5,
         progress_callback: Optional[Callable] = None,
-        delay_between_downloads: float = 1.0,
+        delay_between_downloads: float = 0.04,  # 25 TPS (1/25 = 0.04s)
         max_retries: int = 3,
     ) -> dict:
         """
@@ -878,7 +878,7 @@ class DataQuery:
             max_concurrent: Maximum concurrent files (multiplied by num_parts for total concurrency)
             num_parts: Number of HTTP range parts per file (default 5)
             progress_callback: Optional progress callback for individual parts aggregation
-            delay_between_downloads: Delay in seconds between starting each file download (default 1.0)
+            delay_between_downloads: Delay in seconds between starting each file download (default 0.04s for 25 TPS)
             max_retries: Maximum number of retry attempts for failed downloads (default 3)
 
         Returns:
@@ -981,7 +981,7 @@ class DataQuery:
             )
 
             # Create all download tasks with flattened concurrency and staggered delays
-            async def download_file_with_flattened_concurrency(
+            async def download_file_concurrent(
                 file_info, delay_seconds: float = 0.0
             ):
                 file_group_id = file_info.get(
@@ -1009,7 +1009,7 @@ class DataQuery:
                 try:
                     # Use the client's parallel download method but with our global semaphore
                     # We need to modify the client call to use our flattened concurrency
-                    result = await self._download_file_parallel_flattened(
+                    result = await self._download_file_parallel(
                         file_group_id=file_group_id,
                         file_datetime=file_datetime,
                         dest_path=dest_path,
@@ -1038,7 +1038,7 @@ class DataQuery:
             for i, file_info in enumerate(filtered_files):
                 # Calculate intelligent delay: combines base delay with rate limit protection
                 delay_seconds = i * intelligent_delay
-                task = download_file_with_flattened_concurrency(
+                task = download_file_concurrent(
                     file_info, delay_seconds
                 )
                 download_tasks.append(task)
@@ -1090,7 +1090,7 @@ class DataQuery:
                 retry_tasks = []
                 for i, file_info in enumerate(failed):
                     delay_seconds = i * intelligent_delay
-                    task = download_file_with_flattened_concurrency(
+                    task = download_file_concurrent(
                         file_info, delay_seconds
                     )
                     retry_tasks.append(task)
@@ -1238,7 +1238,7 @@ class DataQuery:
             )
             raise
 
-    async def _download_file_parallel_flattened(
+    async def _download_file_parallel(
         self,
         file_group_id: str,
         file_datetime: Optional[str],
@@ -1694,8 +1694,7 @@ class DataQuery:
                 final_intelligent_delay=intelligent_delay,
             )
 
-            # Add some safety margin (10%)
-            intelligent_delay *= 1.1
+            # No safety margin - use full 25 TPS capacity
 
             logger.info(
                 "Calculated intelligent delay for rate limit protection",

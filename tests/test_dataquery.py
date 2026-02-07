@@ -1818,7 +1818,7 @@ class TestDataQueryWorkflowMethods:
                 )
                 mock_client.download_file_async.return_value = mock_download_result
 
-                # Mock HTTP request methods used by _download_file_parallel_flattened
+                # Mock HTTP request methods used by _download_file_parallel
                 mock_response = AsyncMock()
                 mock_response.headers = {
                     "content-range": "bytes 0-1023/1024",
