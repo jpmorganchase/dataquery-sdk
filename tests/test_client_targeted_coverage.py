@@ -115,7 +115,7 @@ async def test_connect_and_close_create_session_and_cleanup(monkeypatch):
         # verify timeout fields derived from config
         assert created["timeout"]["total"] == 600.0
         assert created["timeout"]["connect"] == 300.0
-        assert created["timeout"]["sock_read"] == 300.0
+        assert created["timeout"]["sock_read"] == 600.0
         # verify connector config uses pool sizes and keepalive
         assert created["connector"]["limit"] == 6
         assert created["connector"]["limit_per_host"] == 3

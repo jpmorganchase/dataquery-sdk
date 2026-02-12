@@ -9,7 +9,7 @@ from dataquery.models import ClientConfig
 def test_dataframe_nested_list_and_metadata(monkeypatch):
     try:
         import pandas as pd  # noqa: F401
-    except Exception:  # pragma: no cover
+    except ImportError:  # pragma: no cover
         pytest.skip("pandas not available")
 
     c = DataQueryClient(ClientConfig(base_url="https://api.example.com"))

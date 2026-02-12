@@ -35,7 +35,6 @@ class EnvConfig:
         "OAUTH_TOKEN_URL": "https://authe.jpmorgan.com/as/token.oauth2",
         "CLIENT_ID": None,
         "CLIENT_SECRET": None,
-        # scope removed
         "OAUTH_AUD": "JPMC:URI:RS-06785-DataQueryExternalApi-PROD",
         "GRANT_TYPE": "client_credentials",
         # Bearer Token Configuration
@@ -108,7 +107,6 @@ class EnvConfig:
         "oauth_token_url": "DATAQUERY_OAUTH_TOKEN_URL",
         "client_id": "DATAQUERY_CLIENT_ID",
         "client_secret": "DATAQUERY_CLIENT_SECRET",
-        # scope removed
         "aud": "DATAQUERY_OAUTH_AUD",
         "grant_type": "DATAQUERY_OAUTH_GRANT_TYPE",
         # Bearer Token Configuration
@@ -278,7 +276,6 @@ class EnvConfig:
                 oauth_token_url=oauth_token_url,
                 client_id=cls.get_env_var("CLIENT_ID"),
                 client_secret=cls.get_env_var("CLIENT_SECRET"),
-                # scope removed
                 aud=cls.get_env_var("OAUTH_AUD"),
                 grant_type=cls.get_env_var("GRANT_TYPE") or "client_credentials",
                 # Bearer token configuration

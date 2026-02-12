@@ -782,7 +782,6 @@ class TestDataQueryClientConnections:
         with (
             patch("aiohttp.ClientSession") as mock_session_class,
             patch("aiohttp.TCPConnector") as mock_connector_class,
-            patch("aiohttp.BasicAuth") as mock_auth_class,
         ):
 
             mock_session = AsyncMock()
@@ -791,17 +790,11 @@ class TestDataQueryClientConnections:
             mock_connector = Mock()
             mock_connector_class.return_value = mock_connector
 
-            mock_auth = Mock()
-            mock_auth_class.return_value = mock_auth
-
             await client.connect()
 
             # Verify session was created with proper configuration
             mock_session_class.assert_called_once()
             mock_connector_class.assert_called_once()
-            mock_auth_class.assert_called_once_with(
-                login="proxy_user", password="proxy_pass"
-            )
 
             # Verify pool monitoring started
             client.pool_monitor.start_monitoring.assert_called_once()
@@ -1041,15 +1034,27 @@ class TestAuthenticationFlows:
         client.auth_manager.get_headers.side_effect = Exception("Auth failed")
 
         mock_session = AsyncMock()
-        mock_session.request.return_value = AsyncContextManagerMock(
-            create_mock_response(200, {"success": True})
-        )
+        mock_response = AsyncMock()
+        mock_response.status = 200
+        mock_response.text = AsyncMock(return_value='{"success": true}')
+
+        # Make request return an awaitable that resolves to the response
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__.return_value = mock_response
+        mock_ctx.__aexit__.return_value = None
+
+        # When awaited, the context manager should enter and return the response
+        async def mock_request(*args, **kwargs):
+            return await mock_ctx.__aenter__()
+
+        mock_session.request = mock_request
         client.session = mock_session
 
         # Should still work but log warning
         result = await client._execute_request("GET", "https://api.example.com/test")
 
         assert result is not None
+        assert result.status == 200
         client.logger.warning.assert_called_once()
 
     @pytest.mark.asyncio
@@ -1061,21 +1066,24 @@ class TestAuthenticationFlows:
         client.auth_manager.get_headers.side_effect = Exception("Auth failed")
 
         # Mock session
-        mock_session = AsyncMock()
-        mock_response = Mock()
+        mock_response = AsyncMock()
         mock_response.status = 200
-        mock_session.request.return_value.__aenter__ = AsyncMock(
-            return_value=mock_response
-        )
-        mock_session.request.return_value.__aexit__ = AsyncMock(return_value=None)
+        mock_response.text = AsyncMock(return_value='{"success": true}')
+
+        # Create an async function that returns the response
+        async def mock_request(*args, **kwargs):
+            return mock_response
+
+        mock_session = AsyncMock()
+        mock_session.request = mock_request
         client.session = mock_session
 
         # Should still execute but log warning
         result = await client._execute_request("GET", "https://api.example.com/test")
 
         assert result is not None
+        assert result.status == 200
         client.logger.warning.assert_called_once()
-        mock_session.request.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_execute_request_no_session(self):

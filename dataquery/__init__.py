@@ -43,7 +43,7 @@ from .connection_pool import (
 )
 
 # Core imports
-from .dataquery import DataQuery, setup_logging
+from .dataquery import DataQuery
 from .exceptions import (
     AuthenticationError,
     AvailabilityError,
@@ -52,6 +52,7 @@ from .exceptions import (
     DateRangeError,
     DownloadError,
     FileNotFoundError,
+    FileNotFoundInGroupError,
     FileTypeError,
     GroupNotFoundError,
     NetworkError,
@@ -124,7 +125,6 @@ from .utils import (
 __all__ = [
     # Core
     "DataQuery",
-    "setup_logging",
     # Models
     "ClientConfig",
     "Group",
@@ -153,6 +153,7 @@ __all__ = [
     "AvailabilityError",
     "GroupNotFoundError",
     "FileNotFoundError",
+    "FileNotFoundInGroupError",
     "DateRangeError",
     "FileTypeError",
     "WorkflowError",

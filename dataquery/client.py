@@ -5,6 +5,7 @@ Main client for the DATAQUERY SDK.
 import asyncio
 import socket
 import time
+from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
@@ -26,7 +27,7 @@ from .connection_pool import ConnectionPoolConfig, ConnectionPoolMonitor
 from .exceptions import (
     AuthenticationError,
     ConfigurationError,
-    FileNotFoundError,
+    FileNotFoundInGroupError,
     NetworkError,
     NotFoundError,
     RateLimitError,
@@ -158,8 +159,9 @@ class DataQueryClient:
         self.pool_monitor = ConnectionPoolMonitor(pool_config)
 
         # Initialize response cache for read-only operations
-        self._response_cache: Dict[str, tuple] = {}  # key -> (data, timestamp)
+        self._response_cache: OrderedDict[str, tuple] = OrderedDict()  # key -> (data, timestamp)
         self._cache_ttl = 300  # 5 minutes cache TTL
+        self._cache_max_size = 256  # Maximum cache entries (LRU eviction)
 
         self.logger.info(
             "Enhanced client components initialized",
@@ -278,6 +280,7 @@ class DataQueryClient:
         if cache_key in self._response_cache:
             data, timestamp = self._response_cache[cache_key]
             if time.time() - timestamp < self._cache_ttl:
+                self._response_cache.move_to_end(cache_key)
                 return data
             else:
                 # Remove expired entry
@@ -285,8 +288,12 @@ class DataQueryClient:
         return None
 
     def _set_cache(self, cache_key: str, data: Any) -> None:
-        """Store data in cache."""
+        """Store data in cache with LRU eviction."""
+        if cache_key in self._response_cache:
+            self._response_cache.move_to_end(cache_key)
         self._response_cache[cache_key] = (data, time.time())
+        while len(self._response_cache) > self._cache_max_size:
+            self._response_cache.popitem(last=False)
 
     def clear_cache(self) -> None:
         """Clear all cached responses."""
@@ -311,7 +318,6 @@ class DataQueryClient:
                 use_dns_cache=True,  # Enable DNS caching
                 ttl_dns_cache=300,  # 5 minutes DNS cache
                 family=socket.AF_UNSPEC,  # Allow both IPv4 and IPv6
-                ssl=False,  # Let aiohttp handle SSL context
                 local_addr=None,  # Let OS choose local address
                 force_close=False,  # Keep connections alive
             )
@@ -342,18 +348,6 @@ class DataQueryClient:
             # Note: Proxy is applied per-request in _execute_request
 
             self.session = aiohttp.ClientSession(**session_kwargs)  # type: ignore[arg-type]
-
-            # For compatibility tests expecting BasicAuth construction when proxy auth is configured
-            if self.config.proxy_enabled and self.config.has_proxy_credentials:
-                try:
-                    from aiohttp import BasicAuth
-
-                    _ = BasicAuth(
-                        login=self.config.proxy_username or "",
-                        password=self.config.proxy_password or "",
-                    )
-                except Exception:
-                    pass
 
             self.logger.info(
                 "Client connected with optimized configuration",
@@ -567,17 +561,6 @@ class DataQueryClient:
             # Re-raise NetworkError to trigger retry
             raise
         except Exception:
-            # For proxy-auth related tests, construct BasicAuth so tests see it was used
-            if self.config.proxy_enabled and self.config.has_proxy_credentials:
-                try:
-                    from aiohttp import BasicAuth
-
-                    _ = BasicAuth(
-                        login=self.config.proxy_username or "",
-                        password=self.config.proxy_password or "",
-                    )
-                except Exception:
-                    pass
             raise
 
     async def list_groups_async(self, limit: Optional[int] = None) -> List[Group]:
@@ -773,7 +756,7 @@ class DataQueryClient:
         file_list = await self.list_files_async(group_id, file_group_id)
 
         if not file_list.file_group_ids:
-            raise FileNotFoundError(file_group_id, group_id)
+            raise FileNotFoundInGroupError(file_group_id, group_id)
 
         return file_list.file_group_ids[0]
 
@@ -983,18 +966,19 @@ class DataQueryClient:
                         progress_callback=progress_callback,
                     )
 
-                # If file is small (<10MB), prefer a single-stream download
-                try:
-                    ten_mb = 10 * 1024 * 1024
-                    if total_bytes and total_bytes < ten_mb:
-                        return await self._download_file_single_stream(
-                            file_group_id=file_group_id,
-                            file_datetime=file_datetime,
-                            options=options,
-                            progress_callback=progress_callback,
-                        )
-                except Exception:
-                    pass
+                    # If file is small (<10MB), prefer a single-stream download
+                ten_mb = 10 * 1024 * 1024
+                if total_bytes and total_bytes < ten_mb:
+                    return await self._download_file_single_stream(
+                        file_group_id=file_group_id,
+                        file_datetime=file_datetime,
+                        options=options,
+                        progress_callback=progress_callback,
+                    )
+
+                # Scale num_parts with file size for large files
+                if total_bytes > 500 * 1024 * 1024:  # >500MB
+                    num_parts = max(num_parts, min(total_bytes // (100 * 1024 * 1024), 20))  # 1 part per 100MB, max 20
 
                 # Determine filename and destination
                 filename = get_filename_from_response(
@@ -1035,11 +1019,30 @@ class DataQueryClient:
                 start_time=datetime.now(),
             )
 
+            # Scale chunk size with file size for parallel parts
+            part_size = total_bytes // num_parts
+            chunk_size = options.chunk_size or 1048576  # 1MB default
+            if part_size > 100 * 1024 * 1024:  # Part >100MB: use 4MB chunks
+                chunk_size = max(chunk_size, 4 * 1024 * 1024)
+            elif part_size > 50 * 1024 * 1024:  # Part >50MB: use 2MB chunks
+                chunk_size = max(chunk_size, 2 * 1024 * 1024)
+
             # Progress callback optimization: track last callback state
             last_callback_bytes = 0
             last_callback_time = time.time()
             callback_threshold_bytes = 1024 * 1024  # 1MB
             callback_threshold_time = 0.5  # 0.5 seconds
+
+            # Per-part retry configuration
+            max_part_retries = options.max_retries
+            part_retry_delay = options.retry_delay
+
+            # For large file parts, disable the total timeout (which caps the entire
+            # transfer) but keep sock_read so stalled connections are detected.
+            range_timeout = aiohttp.ClientTimeout(
+                total=None,
+                sock_read=self.config.timeout,
+            )
 
             # Get the current event loop
             loop = asyncio.get_running_loop()
@@ -1047,62 +1050,76 @@ class DataQueryClient:
 
             async def download_range(start_byte: int, end_byte: int):
                 nonlocal bytes_downloaded, last_callback_bytes, last_callback_time
-                headers = {"Range": f"bytes={start_byte}-{end_byte}"}
+                range_headers = {"Range": f"bytes={start_byte}-{end_byte}"}
+                part_bytes_written = 0  # Track bytes written by this part for retry rollback
 
-                # Open a separate file handle for this part to avoid lock contention
-                # Use 'r+b' to write to the existing file without truncating
-                with open(temp_destination, "r+b") as part_fh:
-                    # each part request
-                    async with await self._enter_request_cm(
-                        "GET", url, params=params, headers=headers
-                    ) as resp:
-                        await self._handle_response(resp)
-                        # Stream and write to correct offset
-                        current_pos = start_byte
-                        chunk_size = (
-                            options.chunk_size or 1048576
-                        )  # 1MB default for better performance
-
-                        async for chunk in resp.content.iter_chunked(chunk_size):
-                            # Write directly to file at correct position
-                            # Since we have a private handle, we don't need a file lock
-                            # But we should still run IO in executor to avoid blocking the loop
-                            await loop.run_in_executor(None, part_fh.seek, current_pos)
-                            await loop.run_in_executor(None, part_fh.write, chunk)
-
-                            chunk_len = len(chunk)
-                            current_pos += chunk_len
-
+                for attempt in range(max_part_retries + 1):
+                    try:
+                        # On retry, subtract previously counted bytes for this part
+                        if attempt > 0 and part_bytes_written > 0:
                             async with bytes_lock:
-                                bytes_downloaded += chunk_len
+                                bytes_downloaded -= part_bytes_written
                                 progress.update_progress(bytes_downloaded)
+                            part_bytes_written = 0
+                            await asyncio.sleep(part_retry_delay * (2 ** (attempt - 1)))
 
-                                # Optimized progress callback: only call every 1MB or 0.5s
-                                current_time = time.time()
-                                bytes_diff = bytes_downloaded - last_callback_bytes
-                                time_diff = current_time - last_callback_time
+                        with open(temp_destination, "r+b") as part_fh:
+                            async with await self._enter_request_cm(
+                                "GET", url, params=params, headers=range_headers,
+                                timeout=range_timeout,
+                            ) as resp:
+                                await self._handle_response(resp)
+                                current_pos = start_byte
 
-                                should_callback = (
-                                    bytes_diff >= callback_threshold_bytes
-                                    or time_diff >= callback_threshold_time
-                                    or bytes_downloaded
-                                    == total_bytes  # Always callback on completion
-                                )
+                                def _seek_write(fh, pos, data):
+                                    fh.seek(pos)
+                                    fh.write(data)
 
-                                if should_callback:
-                                    if progress_callback:
-                                        progress_callback(progress)
-                                    elif options.show_progress:
-                                        self.logger.info(
-                                            "Download progress",
-                                            file=file_group_id,
-                                            percentage=f"{progress.percentage:.1f}%",
-                                            downloaded=format_file_size(
-                                                bytes_downloaded
-                                            ),
+                                async for chunk in resp.content.iter_chunked(chunk_size):
+                                    await loop.run_in_executor(None, _seek_write, part_fh, current_pos, chunk)
+
+                                    chunk_len = len(chunk)
+                                    current_pos += chunk_len
+                                    part_bytes_written += chunk_len
+
+                                    # Update counters under lock, invoke callback outside
+                                    should_callback = False
+                                    async with bytes_lock:
+                                        bytes_downloaded += chunk_len
+                                        progress.update_progress(bytes_downloaded)
+
+                                        current_time = time.time()
+                                        bytes_diff = bytes_downloaded - last_callback_bytes
+                                        time_diff = current_time - last_callback_time
+
+                                        should_callback = (
+                                            bytes_diff >= callback_threshold_bytes
+                                            or time_diff >= callback_threshold_time
+                                            or bytes_downloaded
+                                            == total_bytes  # Always callback on completion
                                         )
-                                    last_callback_bytes = bytes_downloaded
-                                    last_callback_time = current_time
+
+                                        if should_callback:
+                                            last_callback_bytes = bytes_downloaded
+                                            last_callback_time = current_time
+
+                                    if should_callback:
+                                        if progress_callback:
+                                            progress_callback(progress)
+                                        elif options.show_progress:
+                                            self.logger.info(
+                                                "Download progress",
+                                                file=file_group_id,
+                                                percentage=f"{progress.percentage:.1f}%",
+                                                downloaded=format_file_size(
+                                                    bytes_downloaded
+                                                ),
+                                            )
+                        # Part completed successfully
+                        return
+                    except Exception:
+                        if attempt == max_part_retries:
+                            raise  # Exhausted retries, propagate to gather
 
             # Run all parts concurrently
             await asyncio.gather(*(download_range(s, e) for s, e in ranges))
@@ -1125,7 +1142,7 @@ class DataQueryClient:
                         # Ensure any open handle is closed
                         if (
                             total_bytes
-                            and temp_destination.stat().st_size >= total_bytes
+                            and bytes_downloaded >= total_bytes
                         ):
                             if destination is None:
                                 destination = temp_destination.with_suffix("")
@@ -1477,25 +1494,7 @@ class DataQueryClient:
             validate_date_format(start_date, "start-date")
         if end_date is not None:
             validate_date_format(end_date, "end-date")
-        """
-        Retrieve time-series data for explicit list of instruments and attributes using identifiers.
 
-        Args:
-            instruments: List of instrument identifiers
-            attributes: List of attribute identifiers
-            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL)
-            format: Response format (JSON)
-            start_date: Start date in YYYYMMDD or TODAY-Nx format
-            end_date: End date in YYYYMMDD or TODAY-Nx format
-            calendar: Calendar convention
-            frequency: Frequency convention
-            conversion: Conversion convention
-            nan_treatment: Missing data treatment
-            page: Optional page token for pagination
-
-        Returns:
-            TimeSeriesResponse containing the time series data
-        """
         params = {
             "instruments": instruments,
             "attributes": attributes,
@@ -2484,9 +2483,6 @@ class DataQueryClient:
                 progress_callback,
             )
         )
-
-    # Note: download_multiple_files method removed as it's not part of the new API spec
-    # Use individual download_file calls for batch operations
 
     def list_available_files(
         self,

@@ -11,7 +11,6 @@ from dataquery.dataquery import (
     ConfigManager,
     DataQuery,
     ProgressTracker,
-    setup_logging,
 )
 from dataquery.models import (
     Attribute,
@@ -37,14 +36,6 @@ from dataquery.utils import ensure_directory, get_download_paths
 
 class TestUtilityFunctions:
     """Test utility functions in dataquery module."""
-
-    def test_setup_logging(self):
-        """Test setup_logging function."""
-        logger = setup_logging("INFO")
-        assert logger is not None
-        assert hasattr(logger, "info")
-        assert hasattr(logger, "error")
-        assert hasattr(logger, "warning")
 
     def test_format_file_size(self):
         """Test format_file_size function."""

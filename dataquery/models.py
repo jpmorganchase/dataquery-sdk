@@ -66,7 +66,6 @@ class ClientConfig(BaseModel):
     client_secret: Optional[str] = Field(
         default=None, description="OAuth client secret"
     )
-    # scope removed
     aud: Optional[str] = Field(
         default="JPMC:URI:RS-06785-DataQueryExternalApi-PROD",
         description="OAuth audience (aud)",
@@ -288,7 +287,7 @@ class ClientConfig(BaseModel):
     @property
     def has_proxy_credentials(self) -> bool:
         """Check if proxy credentials are configured."""
-        return self.proxy_username is not None and self.proxy_password is not None
+        return bool(self.proxy_username) and bool(self.proxy_password)
 
     @property
     def api_base_url(self) -> str:
@@ -315,7 +314,6 @@ class OAuthToken(BaseModel):
     expires_in: Optional[int] = Field(
         default=None, description="Token expiry time in seconds"
     )
-    # scope removed
     refresh_token: Optional[str] = Field(default=None, description="Refresh token")
 
     # Internal tracking
@@ -367,7 +365,6 @@ class TokenRequest(BaseModel):
     grant_type: str = Field("client_credentials", description="OAuth grant type")
     client_id: Optional[str] = Field(None, description="OAuth client ID")
     client_secret: Optional[str] = Field(None, description="OAuth client secret")
-    # scope removed
     aud: Optional[str] = Field(None, description="OAuth audience (aud)")
 
     model_config = ConfigDict(
@@ -383,7 +380,6 @@ class TokenRequest(BaseModel):
             data["client_id"] = cast(str, self.client_id)
         if self.client_secret:
             data["client_secret"] = cast(str, self.client_secret)
-        # scope removed
         if getattr(self, "aud", None):
             # Send audience as 'aud' per provider requirement
             data["aud"] = cast(str, self.aud)
@@ -398,7 +394,6 @@ class TokenResponse(BaseModel):
     expires_in: Optional[int] = Field(
         default=None, description="Token expiry time in seconds"
     )
-    # scope removed
     refresh_token: Optional[str] = Field(default=None, description="Refresh token")
 
     model_config = ConfigDict(
@@ -411,7 +406,6 @@ class TokenResponse(BaseModel):
             access_token=self.access_token,
             token_type=(self.token_type or "Bearer"),
             expires_in=self.expires_in,
-            # scope removed
             refresh_token=self.refresh_token,
             issued_at=datetime.now(),  # Set issued_at when converting
             # status is computed property
@@ -511,8 +505,6 @@ class Group(BaseModel):
         extra="allow", populate_by_name=True
     )  # Allow extra fields from API and populate by both alias and name
 
-    # associated_file_count removed; use file_groups instead
-
 
 class Link(BaseModel):
     """Pagination link model."""
@@ -565,7 +557,6 @@ class FileInfo(BaseModel):
     file_type: Optional[List[str]] = Field(
         None, alias="file-type", description="Type(s) of the file"
     )
-    # legacy fields removed
     metadata: Optional[FileMetadata] = Field(None, description="File metadata")
     file_schema: Optional[List[SchemaColumn]] = Field(
         None, description="File schema", alias="schema"
@@ -658,13 +649,6 @@ class FileList(BaseModel):
                 result.append(f)
         return result
 
-    def get_date_range(self) -> Optional[DateRange]:
-        """Get overall date range from metadata if available."""
-        # This would need to be implemented based on actual metadata structure
-        # For now, return None as the new spec doesn't show date range in file list
-        return None
-
-
 class AvailabilityInfo(BaseModel):
     """Model representing file availability information."""
 
@@ -700,30 +684,6 @@ class AvailabilityInfo(BaseModel):
             return datetime.strptime(self.file_date, "%Y%m%d").date()
         except ValueError:
             return None
-
-
-class AvailabilityResponse(BaseModel):
-    """Deprecated: Use AvailabilityInfo directly."""
-
-    group_id: Optional[str] = Field(None, alias="group-id")
-    file_group_id: Optional[str] = Field(None, alias="file-group-id")
-    date_range: Optional[DateRange] = Field(None, alias="date-range")
-    availability: List[AvailabilityInfo] = Field(default_factory=list)
-    model_config = ConfigDict(extra="allow", populate_by_name=True)
-
-    @property
-    def available_files(self) -> List[AvailabilityInfo]:
-        return [f for f in self.availability if f.is_available]
-
-    @property
-    def unavailable_files(self) -> List[AvailabilityInfo]:
-        return [f for f in self.availability if not f.is_available]
-
-    @property
-    def availability_rate(self) -> float:
-        if not self.availability:
-            return 0.0
-        return (len(self.available_files) / len(self.availability)) * 100
 
 
 class AvailableFilesResponse(BaseModel):
@@ -844,13 +804,6 @@ class DownloadOptions(BaseModel):
         default=None, description="Custom progress callback function"
     )
 
-    # Enterprise optimizations
-    enable_write_batching: bool = Field(
-        default=True, description="Enable write batching for better performance"
-    )
-    write_batch_size: int = Field(
-        default=4 * 1024 * 1024, description="Write batch size in bytes (4MB default)"
-    )
     enable_adaptive_chunks: bool = Field(
         default=False,
         description="Enable adaptive chunk sizing based on network conditions",
@@ -906,8 +859,8 @@ class DownloadOptions(BaseModel):
     def validate_chunk_size(cls, v):
         if v <= 0:
             raise ValueError("Chunk size must be positive")
-        if v > 1024 * 1024:  # 1MB
-            raise ValueError("Chunk size cannot exceed 1MB")
+        if v > 8 * 1024 * 1024:  # 8MB
+            raise ValueError("Chunk size cannot exceed 8MB")
         return v
 
     @field_validator("range_start", "range_end")
@@ -944,8 +897,6 @@ class DownloadResult(BaseModel):
     error_message: Optional[str] = Field(
         None, description="Error message if download failed"
     )
-
-    # legacy download result fields removed
 
     model_config = {"extra": "allow"}  # Allow extra fields from API
 
@@ -1331,75 +1282,6 @@ class TimeSeriesParameters(BaseModel):
     )
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
-
-
-# Enterprise Download Optimizations
-
-
-@dataclass
-class AdaptiveChunkSizer:
-    """Dynamically adjusts chunk size based on network conditions."""
-
-    window_size: int = 10
-    bandwidth_history: List[float] = dc_field(default_factory=list)
-    latency_history: List[float] = dc_field(default_factory=list)
-
-    def calculate_optimal_chunk_size(
-        self, file_size: int, current_bandwidth_mbps: float, current_latency_ms: float
-    ) -> int:
-        """Calculate optimal chunk size based on network conditions."""
-        self.bandwidth_history.append(current_bandwidth_mbps)
-        self.latency_history.append(current_latency_ms)
-        self.bandwidth_history = self.bandwidth_history[-self.window_size :]
-        self.latency_history = self.latency_history[-self.window_size :]
-
-        avg_bandwidth = (
-            sum(self.bandwidth_history) / len(self.bandwidth_history)
-            if self.bandwidth_history
-            else 1.0
-        )
-        avg_latency = (
-            sum(self.latency_history) / len(self.latency_history)
-            if self.latency_history
-            else 100.0
-        )
-
-        base_chunk = 1024 * 1024
-        bandwidth_factor = min(8.0, 1.0 + math.log10(max(1, avg_bandwidth)))
-        latency_factor = min(4.0, 1.0 + math.log10(max(10, avg_latency) / 10))
-
-        if file_size > 1024 * 1024 * 1024:
-            size_factor = 2.0
-        elif file_size > 100 * 1024 * 1024:
-            size_factor = 1.5
-        else:
-            size_factor = 1.0
-
-        optimal_chunk = int(
-            base_chunk * bandwidth_factor * latency_factor * size_factor
-        )
-        return max(256 * 1024, min(16 * 1024 * 1024, optimal_chunk))
-
-    def update_metrics(self, bytes_transferred: int, time_elapsed: float):
-        """Update bandwidth and latency measurements."""
-        if time_elapsed > 0:
-            bandwidth_mbps = (bytes_transferred * 8) / (time_elapsed * 1000000)
-            bytes_mb = bytes_transferred / (1024 * 1024)
-            latency_ms = (time_elapsed * 1000) / max(1, bytes_mb)
-            self.bandwidth_history.append(bandwidth_mbps)
-            self.latency_history.append(min(latency_ms, 1000))
-
-
-@dataclass
-class DownloadCheckpoint:
-    """Checkpoint for resumable downloads (future feature)."""
-
-    file_group_id: str
-    file_datetime: Optional[str]
-    total_bytes: int
-    completed_ranges: List[Tuple[int, int]]
-    checkpoint_time: datetime
-    destination_path: Optional[Path] = None
 
 
 class BandwidthThrottler:

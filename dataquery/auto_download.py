@@ -166,7 +166,7 @@ class AutoDownloadManager:
                     self.stats["last_check_time"] = datetime.now()
 
                 except Exception as e:
-                    self.logger.error(f"Error in monitoring loop: {e}")
+                    self.logger.error("Error in monitoring loop: %s", e)
                     self.stats["errors"].append(
                         {
                             "timestamp": datetime.now().isoformat(),
@@ -180,7 +180,7 @@ class AutoDownloadManager:
                         try:
                             await self._safe_call_callback(self.error_callback, e)
                         except Exception as cb_error:
-                            self.logger.error(f"Error in error callback: {cb_error}")
+                            self.logger.error("Error in error callback: %s", cb_error)
 
                 # Wait for the specified interval or until stopped
                 try:
@@ -196,7 +196,7 @@ class AutoDownloadManager:
         except asyncio.CancelledError:
             self.logger.info("Monitoring loop cancelled")
         except Exception as e:
-            self.logger.error(f"Fatal error in monitoring loop: {e}")
+            self.logger.error("Fatal error in monitoring loop: %s", e)
         finally:
             self._running = False
 
@@ -230,28 +230,28 @@ class AutoDownloadManager:
             )
 
             # Build eligible downloads
-            eligible: List[tuple[str, str, str]] = []  # (file_id, date_str, file_key)
+            eligible: List[tuple[str, str, str]] = []  # (file_group_id, date_str, file_key)
             for item in available_files:
                 if not self._running:
                     break
-                file_id = item.get("file-group-id")
+                file_group_id = item.get("file-group-id")
                 date_str = item.get("file-datetime")
                 avail_flag = item.get("is-available")
                 is_available = bool(avail_flag)
-                if not file_id or not date_str or not is_available:
+                if not file_group_id or not date_str or not is_available:
                     continue
                 if self.file_filter and not self.file_filter(item):
                     continue
-                file_key = f"{file_id}_{date_str}"
+                file_key = f"{file_group_id}_{date_str}"
                 if file_key in self._downloaded_files:
                     continue
                 if self._failed_files.get(file_key, 0) >= self.max_retries:
                     continue
-                if self._file_exists_locally(file_id, date_str):
+                if self._file_exists_locally(file_group_id, date_str):
                     self.stats["files_skipped"] += 1
                     self._downloaded_files.add(file_key)
                     continue
-                eligible.append((file_id, date_str, file_key))
+                eligible.append((file_group_id, date_str, file_key))
 
             if not eligible:
                 return
@@ -272,12 +272,8 @@ class AutoDownloadManager:
             await asyncio.gather(*tasks, return_exceptions=True)
 
         except Exception as e:
-            self.logger.error(f"Error checking available files: {e}")
+            self.logger.error("Error checking available files: %s", e)
             raise
-
-    async def _process_file(self, file_info):
-        """Deprecated path; available-files flow supersedes this."""
-        return
 
     def _get_dates_to_check(self) -> List[str]:
         """Get list of dates to check for files."""
@@ -293,11 +289,7 @@ class AutoDownloadManager:
                 dates.append(date.strftime("%Y%m%d"))
             return dates
 
-    async def _check_and_download_file_for_date(self, file_id: str, date_str: str):
-        """Deprecated path; available-files flow supersedes this."""
-        return
-
-    def _file_exists_locally(self, file_id: str, date_str: str) -> bool:
+    def _file_exists_locally(self, file_group_id: str, date_str: str) -> bool:
         """Check if file already exists in the destination directory."""
         # Look for files that might match this file_group_id and date
         # This is a heuristic approach since we don't know the exact filename
@@ -306,14 +298,14 @@ class AutoDownloadManager:
             if file_path.is_file():
                 filename = file_path.name
                 # Check if filename contains the file_group_id and date
-                if file_id in filename and date_str in filename:
+                if file_group_id in filename and date_str in filename:
                     return True
 
         return False
 
-    async def _download_file(self, file_id: str, date_str: str, file_key: str):
+    async def _download_file(self, file_group_id: str, date_str: str, file_key: str):
         """Download a file."""
-        self.logger.info(f"Downloading '{file_id}' for {date_str}...")
+        self.logger.info("Downloading '%s' for %s", file_group_id, date_str)
 
         # Create progress callback that updates statistics
         def progress_wrapper(progress: DownloadProgress):
@@ -331,11 +323,11 @@ class AutoDownloadManager:
                     else:
                         self.progress_callback(progress)
                 except Exception as e:
-                    self.logger.error(f"Error in progress callback: {e}")
+                    self.logger.error("Error in progress callback: %s", e)
 
         try:
             result = await self.client.download_file_async(
-                file_group_id=file_id,
+                file_group_id=file_group_id,
                 file_datetime=date_str,
                 options=self.download_options,
                 progress_callback=progress_wrapper,
@@ -353,7 +345,9 @@ class AutoDownloadManager:
                     succeeded = False
 
             if succeeded:
-                self.logger.info(f"Successfully downloaded '{file_id}' for {date_str}")
+                self.logger.info(
+                    "Successfully downloaded '%s' for %s", file_group_id, date_str
+                )
                 self.stats["files_downloaded"] += 1
                 self._downloaded_files.add(file_key)
                 # Accumulate total bytes if provided
@@ -376,13 +370,17 @@ class AutoDownloadManager:
                     else "No result"
                 )
                 self.logger.error(
-                    f"Download failed for '{file_id}' for {date_str}: {error_msg}"
+                    "Download failed for '%s' for %s: %s",
+                    file_group_id, date_str, error_msg,
                 )
                 self._failed_files[file_key] = self._failed_files.get(file_key, 0) + 1
                 self.stats["download_failures"] += 1
 
         except Exception as e:
-            self.logger.error(f"Exception downloading '{file_id}' for {date_str}: {e}")
+            self.logger.error(
+                "Exception downloading '%s' for %s: %s",
+                file_group_id, date_str, e,
+            )
             self._failed_files[file_key] = self._failed_files.get(file_key, 0) + 1
             self.stats["download_failures"] += 1
             raise
@@ -395,7 +393,7 @@ class AutoDownloadManager:
             else:
                 callback(*args, **kwargs)
         except Exception as e:
-            self.logger.error(f"Error in callback: {e}")
+            self.logger.error("Error in callback: %s", e)
 
     def get_stats(self) -> Dict[str, Any]:
         """Get auto-download statistics."""

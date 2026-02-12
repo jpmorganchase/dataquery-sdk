@@ -106,7 +106,6 @@ class TokenManager:
             grant_type=self.config.grant_type,
             client_id=self.config.client_id,
             client_secret=self.config.client_secret,
-            # scope removed
             aud=getattr(self.config, "aud", None),
         )
 

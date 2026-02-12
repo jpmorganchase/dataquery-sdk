@@ -120,11 +120,11 @@ DATAQUERY_POOL_MAXSIZE=20
 # Rate Limiting Configuration
 # =============================================================================
 
-# Requests per minute limit (default: 100)
-DATAQUERY_REQUESTS_PER_MINUTE=100
+# Requests per minute limit (default: 1500)
+DATAQUERY_REQUESTS_PER_MINUTE=1500
 
-# Burst capacity for rate limiting (default: 20)
-DATAQUERY_BURST_CAPACITY=20
+# Burst capacity for rate limiting (default: 25)
+DATAQUERY_BURST_CAPACITY=25
 
 # =============================================================================
 # Logging Configuration
@@ -257,7 +257,6 @@ DATAQUERY_OAUTH_ENABLED={str(config.oauth_enabled).lower()}
 DATAQUERY_OAUTH_TOKEN_URL={config.oauth_token_url or ''}
 DATAQUERY_CLIENT_ID={config.client_id or ''}
 DATAQUERY_CLIENT_SECRET={config.client_secret or ''}
-## scope removed
 DATAQUERY_OAUTH_AUD={getattr(config, 'aud', '') or ''}
 DATAQUERY_GRANT_TYPE={config.grant_type}
 
