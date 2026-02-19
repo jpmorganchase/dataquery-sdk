@@ -16,7 +16,6 @@ Options:
 
 import argparse
 import asyncio
-import os
 import sys
 import time
 from pathlib import Path
@@ -85,8 +84,7 @@ Examples:
 
     try:
         async with DataQuery() as dq:
-            results = await run_sequential_downloads(
-                dq=dq,
+            report = await dq.run_group_download_async(
                 group_id=args.group_id,
                 start_date=args.from_date,
                 end_date=args.to_date,
