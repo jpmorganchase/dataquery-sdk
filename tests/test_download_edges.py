@@ -119,6 +119,6 @@ async def test_download_overwrite_protection(tmp_path, monkeypatch):
 
     opts = DownloadOptions(destination_path=str(tmp_path), overwrite_existing=False)
     result = await client.download_file_async("FG1", options=opts)
-    assert result.status == DownloadStatus.FAILED
-    # Error message content can vary by platform/mocks
+    assert result.status == DownloadStatus.ALREADY_EXISTS
     assert result.error_message
+    assert "FileExistsError" in result.error_message

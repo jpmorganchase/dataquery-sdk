@@ -25,9 +25,7 @@ async def test_cmd_download_with_performance_args():
     )
 
     mock_dq_instance = AsyncMock()
-    mock_dq_instance.download_file_async.return_value = MagicMock(
-        local_path="/tmp/test/file"
-    )
+    mock_dq_instance.download_file_async.return_value = MagicMock(local_path="/tmp/test/file")
 
     with patch("dataquery.cli.DataQuery") as MockDQ:
         MockDQ.return_value.__aenter__.return_value = mock_dq_instance

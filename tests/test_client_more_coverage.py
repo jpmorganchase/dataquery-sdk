@@ -149,9 +149,7 @@ async def test_download_file_async_splits_parts(tmp_path, monkeypatch):
                 "content-disposition": 'attachment; filename="file.bin"',
                 "content-length": "10",
             }
-            return _Ctx(
-                _Resp(status=200, headers=full_headers, chunks=[b"01234", b"56789"])
-            )
+            return _Ctx(_Resp(status=200, headers=full_headers, chunks=[b"01234", b"56789"]))
         assert rng and rng.startswith("bytes=")
         try:
             start_end = rng.split("=")[1]
@@ -179,9 +177,7 @@ async def test_download_file_async_splits_parts(tmp_path, monkeypatch):
     # Perform parallel download: expect a 10-byte file assembled
     result = await client.download_file_async(
         file_group_id="FG1",
-        options=DownloadOptions(
-            destination_path=str(tmp_path), overwrite_existing=True
-        ),
+        options=DownloadOptions(destination_path=str(tmp_path), overwrite_existing=True),
         num_parts=5,
     )
 
@@ -216,9 +212,7 @@ async def test_download_file_async_small_file_falls_back(tmp_path, monkeypatch):
                 "content-disposition": 'attachment; filename="small.bin"',
                 "content-length": "6",
             }
-            return _Ctx(
-                _Resp(status=200, headers=full_headers, chunks=[b"abc", b"def"])
-            )
+            return _Ctx(_Resp(status=200, headers=full_headers, chunks=[b"abc", b"def"]))
         # Should not request ranged parts for small file, but guard anyway
         return _Ctx(_Resp(status=416, headers={}, chunks=[]))
 
@@ -226,9 +220,7 @@ async def test_download_file_async_small_file_falls_back(tmp_path, monkeypatch):
 
     result = await client.download_file_async(
         file_group_id="FGS",
-        options=DownloadOptions(
-            destination_path=str(tmp_path), overwrite_existing=True
-        ),
+        options=DownloadOptions(destination_path=str(tmp_path), overwrite_existing=True),
         num_parts=5,
     )
 

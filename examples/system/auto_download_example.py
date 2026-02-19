@@ -33,9 +33,7 @@ async def main():
         if not group_id:
             print("[Error] Group ID is required")
             return
-        destination = (
-            input("Destination directory [./downloads]: ").strip() or "./downloads"
-        )
+        destination = input("Destination directory [./downloads]: ").strip() or "./downloads"
         try:
             interval = int(input("Check interval in minutes [30]: ").strip() or "30")
         except ValueError:
@@ -46,9 +44,7 @@ async def main():
 
         # Run watcher
         async with DataQuery() as dq:
-            print(
-                f"[Info] Watching group '{group_id}' every {interval} min; saving to: {destination}"
-            )
+            print(f"[Info] Watching group '{group_id}' every {interval} min; saving to: {destination}")
             manager = await dq.start_auto_download_async(
                 group_id=group_id,
                 destination_dir=destination,
@@ -62,9 +58,9 @@ async def main():
                 print("\n[Warning]  Stopping watcher...")
                 await manager.stop()
                 stats = manager.get_stats()
-                print(
-                    f"[Success] Stopped. Files downloaded: {stats.get('files_downloaded')} | Failures: {stats.get('download_failures')}"
-                )
+                downloaded = stats.get("files_downloaded")
+                failures = stats.get("download_failures")
+                print(f"[Success] Stopped. Files downloaded: {downloaded} | Failures: {failures}")
     except AuthenticationError as e:
         print(f"[Error] Authentication failed: {e}")
         print("[Tip] Check your credentials in .env file")

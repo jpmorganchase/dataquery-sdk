@@ -27,9 +27,7 @@ class TestClientConfigCoverage:
 
     def test_api_base_url_with_context_path(self):
         """Test api_base_url property with context path."""
-        config = ClientConfig(
-            base_url="https://api.example.com", context_path="/api/v2"
-        )
+        config = ClientConfig(base_url="https://api.example.com", context_path="/api/v2")
         assert config.api_base_url == "https://api.example.com/api/v2"
 
     def test_api_base_url_without_context_path(self):
@@ -84,18 +82,14 @@ class TestErrorModelCoverage:
 
     def test_error_response_creation(self):
         """Test ErrorResponse creation."""
-        error = ErrorResponse(
-            code=400, description="Bad Request", interaction_id="test-123"
-        )
+        error = ErrorResponse(code=400, description="Bad Request", interaction_id="test-123")
         assert error.code == 400
         assert error.description == "Bad Request"
         assert error.interaction_id == "test-123"
 
     def test_authentication_error_response(self):
         """Test AuthenticationErrorResponse."""
-        error = AuthenticationErrorResponse(
-            code=401, description="Authentication failed"
-        )
+        error = AuthenticationErrorResponse(code=401, description="Authentication failed")
         assert error.code == 401
         assert error.description == "Authentication failed"
 
@@ -113,9 +107,7 @@ class TestErrorModelCoverage:
 
     def test_unavailable_model(self):
         """Test Unavailable model."""
-        unavailable = Unavailable(
-            code="UNAVAILABLE", description="Services are not available"
-        )
+        unavailable = Unavailable(code="UNAVAILABLE", description="Services are not available")
         assert unavailable.code == "UNAVAILABLE"
         assert unavailable.description == "Services are not available"
 
@@ -125,9 +117,7 @@ class TestModelSerialization:
 
     def test_client_config_serialization(self):
         """Test ClientConfig serialization."""
-        config = ClientConfig(
-            base_url="https://api.example.com", oauth_enabled=True, timeout=30
-        )
+        config = ClientConfig(base_url="https://api.example.com", oauth_enabled=True, timeout=30)
 
         # Test dict serialization
         data = config.model_dump()
@@ -195,9 +185,7 @@ class TestModelValidation:
         assert info.description == "Test info"
 
         # Error with interaction ID
-        error = ErrorResponse(
-            code=500, description="Server Error", interaction_id="trace-123"
-        )
+        error = ErrorResponse(code=500, description="Server Error", interaction_id="trace-123")
         assert error.interaction_id == "trace-123"
 
 

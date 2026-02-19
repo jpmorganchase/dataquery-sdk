@@ -121,8 +121,7 @@ class AutoDownloadManager:
         self._stop_event.clear()
 
         self.logger.info(
-            f"Starting auto-download for group '{self.group_id}' "
-            f"(interval: {self.interval_minutes} minutes)"
+            f"Starting auto-download for group '{self.group_id}' (interval: {self.interval_minutes} minutes)"
         )
 
         # Start the monitoring task
@@ -145,9 +144,7 @@ class AutoDownloadManager:
             try:
                 await asyncio.wait_for(self._task, timeout=5.0)
             except asyncio.TimeoutError:
-                self.logger.warning(
-                    "Monitoring task did not stop gracefully, cancelling..."
-                )
+                self.logger.warning("Monitoring task did not stop gracefully, cancelling...")
                 self._task.cancel()
                 try:
                     await self._task
@@ -184,9 +181,7 @@ class AutoDownloadManager:
 
                 # Wait for the specified interval or until stopped
                 try:
-                    await asyncio.wait_for(
-                        self._stop_event.wait(), timeout=self.interval_minutes * 60
-                    )
+                    await asyncio.wait_for(self._stop_event.wait(), timeout=self.interval_minutes * 60)
                     # If we reach here, stop was requested
                     break
                 except asyncio.TimeoutError:
@@ -220,19 +215,13 @@ class AutoDownloadManager:
             )
 
             if not isinstance(available_files, list) or not available_files:
-                self.logger.debug(
-                    f"No available files for group '{self.group_id}' between {start_date} and {end_date}"
-                )
+                self.logger.debug(f"No available files for group '{self.group_id}' between {start_date} and {end_date}")
                 return
 
-            self.logger.debug(
-                f"Found {len(available_files)} available file entries for group '{self.group_id}'"
-            )
+            self.logger.debug(f"Found {len(available_files)} available file entries for group '{self.group_id}'")
 
             # Build eligible downloads
-            eligible: List[tuple[str, str, str]] = (
-                []
-            )  # (file_group_id, date_str, file_key)
+            eligible: List[tuple[str, str, str]] = []  # (file_group_id, date_str, file_key)
             for item in available_files:
                 if not self._running:
                     break
@@ -267,10 +256,7 @@ class AutoDownloadManager:
                 async with semaphore:
                     await self._download_file(fid, dstr, fkey)
 
-            tasks = [
-                asyncio.create_task(worker(fid, dstr, fkey))
-                for fid, dstr, fkey in eligible
-            ]
+            tasks = [asyncio.create_task(worker(fid, dstr, fkey)) for fid, dstr, fkey in eligible]
             await asyncio.gather(*tasks, return_exceptions=True)
 
         except Exception as e:
@@ -336,6 +322,7 @@ class AutoDownloadManager:
             )
 
             succeeded = False
+            already_exists = False
             if result is not None and getattr(result, "status", None) is not None:
                 try:
                     from .models import (  # import inside to avoid cycles in some tools
@@ -343,21 +330,29 @@ class AutoDownloadManager:
                     )
 
                     succeeded = result.status == DownloadStatus.COMPLETED
+                    already_exists = result.status == DownloadStatus.ALREADY_EXISTS
                 except Exception:
                     succeeded = False
 
-            if succeeded:
+            if already_exists:
                 self.logger.info(
-                    "Successfully downloaded '%s' for %s", file_group_id, date_str
+                    "File already exists for '%s' for %s, skipping",
+                    file_group_id,
+                    date_str,
                 )
+                self.stats["files_skipped"] += 1
+                self._downloaded_files.add(file_key)
+                if file_key in self._failed_files:
+                    del self._failed_files[file_key]
+
+            elif succeeded:
+                self.logger.info("Successfully downloaded '%s' for %s", file_group_id, date_str)
                 self.stats["files_downloaded"] += 1
                 self._downloaded_files.add(file_key)
                 # Accumulate total bytes if provided
                 try:
                     if getattr(result, "file_size", None):
-                        self.stats["total_bytes_downloaded"] += (
-                            int(result.file_size) or 0
-                        )
+                        self.stats["total_bytes_downloaded"] += int(result.file_size) or 0
                 except Exception:
                     pass
 
@@ -366,11 +361,7 @@ class AutoDownloadManager:
                     del self._failed_files[file_key]
 
             else:
-                error_msg = (
-                    getattr(result, "error_message", "Unknown error")
-                    if result
-                    else "No result"
-                )
+                error_msg = getattr(result, "error_message", "Unknown error") if result else "No result"
                 self.logger.error(
                     "Download failed for '%s' for %s: %s",
                     file_group_id,

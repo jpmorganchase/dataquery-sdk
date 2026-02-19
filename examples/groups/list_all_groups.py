@@ -23,9 +23,7 @@ from dataquery import DataQuery  # noqa: E402
 
 async def main():
     parser = argparse.ArgumentParser(description="List all groups (lean)")
-    parser.add_argument(
-        "--limit", type=int, default=None, help="Max groups to fetch (default: all)"
-    )
+    parser.add_argument("--limit", type=int, default=None, help="Max groups to fetch (default: all)")
     args = parser.parse_args()
 
     try:
@@ -40,9 +38,7 @@ async def main():
             print(f"Total groups: {len(groups)} (fetched in {elapsed:.2f}s)")
             for i, g in enumerate(groups[:20], 1):
                 print("-" * 80)
-                print(
-                    f"{i}. {getattr(g, 'group_id', '')} | {getattr(g, 'group_name', '')}"
-                )
+                print(f"{i}. {getattr(g, 'group_id', '')} | {getattr(g, 'group_name', '')}")
             if len(groups) > 20:
                 print(f"... and {len(groups) - 20} more")
     except Exception as e:

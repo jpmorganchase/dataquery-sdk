@@ -66,14 +66,11 @@ jobs:
       - name: Install project (dev + extras)
         run: uv sync --all-extras --dev
 
-      - name: Run black formatter check
-        run: uv run black --check --diff .
+      - name: Run ruff linter
+        run: uv run ruff check dataquery/ examples/ tests/
 
-      - name: Run isort import sorting check
-        run: uv run isort --check-only --diff .
-
-      - name: Run flake8 linter
-        run: uv run flake8 dataquery/
+      - name: Run ruff formatter check
+        run: uv run ruff format --check dataquery/ examples/ tests/
 
       - name: Run mypy type checker
         run: uv run mypy dataquery/

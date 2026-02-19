@@ -24,15 +24,9 @@ from dataquery.exceptions import DataQueryError  # noqa: E402
 
 async def main() -> None:
     parser = argparse.ArgumentParser(description="List instruments (lean)")
-    parser.add_argument(
-        "--group-id", help="Group ID. If omitted, uses the first available group"
-    )
-    parser.add_argument(
-        "--limit", type=int, default=10, help="Max instruments to list (default: 10)"
-    )
-    parser.add_argument(
-        "--offset", type=int, default=0, help="Offset for pagination (default: 0)"
-    )
+    parser.add_argument("--group-id", help="Group ID. If omitted, uses the first available group")
+    parser.add_argument("--limit", type=int, default=10, help="Max instruments to list (default: 10)")
+    parser.add_argument("--offset", type=int, default=0, help="Offset for pagination (default: 0)")
     args = parser.parse_args()
 
     try:
@@ -45,17 +39,13 @@ async def main() -> None:
                     return
                 group_id = groups[0].group_id
 
-            resp = await dq.list_instruments_async(
-                group_id=group_id, limit=args.limit, offset=args.offset
-            )
+            resp = await dq.list_instruments_async(group_id=group_id, limit=args.limit, offset=args.offset)
 
             items = getattr(resp, "items", 0) or 0
             instruments = getattr(resp, "instruments", []) or []
             print(f"Instruments: {items}")
             for i, inst in enumerate(instruments[: min(args.limit, 10)], 1):
-                inst_id = getattr(inst, "instrument_id", None) or inst.get(
-                    "instrument_id", ""
-                )
+                inst_id = getattr(inst, "instrument_id", None) or inst.get("instrument_id", "")
                 name = getattr(inst, "instrument_name", None) or inst.get("name", "")
                 print(f"{i}. {inst_id} {('- ' + name) if name else ''}")
 

@@ -603,9 +603,7 @@ def mock_client_factory():
             client.rate_limiter.acquire = AsyncMock()
             client.rate_limiter.release = AsyncMock()
             client.rate_limiter.shutdown = AsyncMock()
-            client.rate_limiter.get_stats = Mock(
-                return_value={"rate_limiting": "stats"}
-            )
+            client.rate_limiter.get_stats = Mock(return_value={"rate_limiting": "stats"})
             client.rate_limiter.handle_rate_limit_response = Mock()
 
             client.retry_manager = AsyncMock()
@@ -626,13 +624,9 @@ def mock_client_factory():
 
             client.auth_manager = AsyncMock()
             client.auth_manager.is_authenticated = Mock(return_value=True)
-            client.auth_manager.get_headers = AsyncMock(
-                return_value={"Authorization": "Bearer test_token"}
-            )
+            client.auth_manager.get_headers = AsyncMock(return_value={"Authorization": "Bearer test_token"})
             client.auth_manager.get_stats = Mock(return_value={"auth": "stats"})
-            client.auth_manager.get_auth_info = Mock(
-                return_value={"authenticated": True}
-            )
+            client.auth_manager.get_auth_info = Mock(return_value={"authenticated": True})
 
             return client
 
@@ -654,9 +648,7 @@ def async_response_factory():
         response = AsyncMock()
         response.status = status
         response.headers = headers or {}
-        response.url = (
-            "https://api-developer.jpmorgan.com/research/dataquery-authe/api/v2/test"
-        )
+        response.url = "https://api-developer.jpmorgan.com/research/dataquery-authe/api/v2/test"
 
         if json_data is not None:
             response.json = AsyncMock(return_value=json_data)

@@ -69,9 +69,7 @@ class TestRateLimitConfigDetails:
 
     def test_config_with_custom_values(self):
         """Test config with custom values."""
-        config = RateLimitConfig(
-            requests_per_minute=120, burst_capacity=20, enable_rate_limiting=False
-        )
+        config = RateLimitConfig(requests_per_minute=120, burst_capacity=20, enable_rate_limiting=False)
         assert config.requests_per_minute == 120
         assert config.burst_capacity == 20
         assert config.enable_rate_limiting is False
@@ -292,9 +290,7 @@ class TestRateLimiterIntegration:
 
     def test_config_limiter_integration(self):
         """Test config and limiter integration."""
-        config = RateLimitConfig(
-            requests_per_minute=100, burst_capacity=10, enable_rate_limiting=True
-        )
+        config = RateLimitConfig(requests_per_minute=100, burst_capacity=10, enable_rate_limiting=True)
         limiter = TokenBucketRateLimiter(config)
 
         # Limiter should use config values
@@ -305,9 +301,7 @@ class TestRateLimiterIntegration:
     @pytest.mark.asyncio
     async def test_full_rate_limiting_flow(self):
         """Test full rate limiting flow."""
-        config = RateLimitConfig(
-            enable_rate_limiting=True, burst_capacity=5, requests_per_minute=60
-        )
+        config = RateLimitConfig(enable_rate_limiting=True, burst_capacity=5, requests_per_minute=60)
         limiter = EnhancedTokenBucketRateLimiter(config)
 
         # Test multiple requests
@@ -356,9 +350,7 @@ async def test_simple_acquire_without_queuing_merged():
 async def test_queueing_with_priority_and_timeout_merged():
     rl = _make_rate_limiter(requests_per_minute=300, burst_capacity=1)
     assert await rl.acquire(timeout=0.1, priority=QueuePriority.LOW, operation="op1")
-    assert not await rl.acquire(
-        timeout=0.05, priority=QueuePriority.CRITICAL, operation="op2"
-    )
+    assert not await rl.acquire(timeout=0.05, priority=QueuePriority.CRITICAL, operation="op2")
     await _asyncio_rl_adv.sleep(0.25)
     ok = await rl.acquire(timeout=1.0, priority=QueuePriority.CRITICAL, operation="op3")
     assert ok is True
@@ -377,20 +369,14 @@ def test_handle_rate_limit_response_and_success_reset_merged():
 @pytest.mark.asyncio
 async def test_context_manager_success_and_timeout_merged():
     rl = _make_rate_limiter(requests_per_minute=60, burst_capacity=1)
-    async with RateLimitContext(
-        rl, timeout=0.1, priority=QueuePriority.NORMAL, operation="ctx"
-    ):
+    async with RateLimitContext(rl, timeout=0.1, priority=QueuePriority.NORMAL, operation="ctx"):
         pass
     assert not await rl.acquire(timeout=0.1)
 
-    rl2 = _make_rate_limiter(
-        requests_per_minute=60, burst_capacity=1, enable_queuing=False
-    )
+    rl2 = _make_rate_limiter(requests_per_minute=60, burst_capacity=1, enable_queuing=False)
     assert await rl2.acquire(timeout=0.1)
     with pytest.raises(TimeoutError):
-        async with RateLimitContext(
-            rl2, timeout=0.05, priority=QueuePriority.NORMAL, operation="ctx2"
-        ):
+        async with RateLimitContext(rl2, timeout=0.05, priority=QueuePriority.NORMAL, operation="ctx2"):
             pass
     await _asyncio_rl_adv.sleep(0.25)
     assert await rl.acquire(timeout=2.0)
@@ -399,9 +385,7 @@ async def test_context_manager_success_and_timeout_merged():
 @pytest.mark.asyncio
 async def test_shutdown_cancels_queue_merged():
     rl = _make_rate_limiter(requests_per_minute=60, burst_capacity=1)
-    _ = _asyncio_rl_adv.create_task(
-        rl.acquire(timeout=1.0, priority=QueuePriority.LOW, operation="bg")
-    )
+    _ = _asyncio_rl_adv.create_task(rl.acquire(timeout=1.0, priority=QueuePriority.LOW, operation="bg"))
     await _asyncio_rl_adv.sleep(0)
     await rl.shutdown()
     assert len(rl.state.queue) == 0

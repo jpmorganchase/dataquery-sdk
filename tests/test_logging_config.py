@@ -126,9 +126,7 @@ class TestRequestResponseLogger:
         body = '{"test": "data"}'
 
         with patch.object(logger.logger, "info") as mock_info:
-            logger.log_request(
-                "POST", "https://api.example.com/test", headers, body, "corr-123"
-            )
+            logger.log_request("POST", "https://api.example.com/test", headers, body, "corr-123")
 
             mock_info.assert_called_once()
             call_args = mock_info.call_args[1]
@@ -235,9 +233,7 @@ class TestPerformanceLogger:
         logger.log_operation_start("download_file", file_id="123", size=1024)
 
         with patch.object(logger.logger, "info") as mock_info:
-            logger.log_operation_end(
-                "download_file", 2.5, True, file_id="123", bytes_downloaded=1024
-            )
+            logger.log_operation_end("download_file", 2.5, True, file_id="123", bytes_downloaded=1024)
 
             mock_info.assert_called_once()
             call_args = mock_info.call_args[1]
@@ -266,9 +262,7 @@ class TestStructuredLogger:
     @pytest.fixture
     def config(self):
         """Create a test configuration."""
-        return LoggingConfig(
-            level=LogLevel.INFO, format=LogFormat.JSON, enable_console=True
-        )
+        return LoggingConfig(level=LogLevel.INFO, format=LogFormat.JSON, enable_console=True)
 
     @pytest.fixture
     def logger(self, config):
@@ -363,13 +357,9 @@ class TestLoggingManager:
     def test_log_request(self, manager):
         """Test logging request."""
         with patch.object(manager.request_logger, "log_request") as mock_log_request:
-            manager.log_request(
-                "GET", "https://api.example.com", {}, "body", "corr-123"
-            )
+            manager.log_request("GET", "https://api.example.com", {}, "body", "corr-123")
 
-            mock_log_request.assert_called_once_with(
-                "GET", "https://api.example.com", {}, "body", "corr-123"
-            )
+            mock_log_request.assert_called_once_with("GET", "https://api.example.com", {}, "body", "corr-123")
 
     def test_log_response(self, manager):
         """Test logging response."""
@@ -380,18 +370,14 @@ class TestLoggingManager:
 
     def test_log_operation_start(self, manager):
         """Test logging operation start."""
-        with patch.object(
-            manager.performance_logger, "log_operation_start"
-        ) as mock_log_start:
+        with patch.object(manager.performance_logger, "log_operation_start") as mock_log_start:
             manager.log_operation_start("test_op", param="value")
 
             mock_log_start.assert_called_once_with("test_op", param="value")
 
     def test_log_operation_end(self, manager):
         """Test logging operation end."""
-        with patch.object(
-            manager.performance_logger, "log_operation_end"
-        ) as mock_log_end:
+        with patch.object(manager.performance_logger, "log_operation_end") as mock_log_end:
             manager.log_operation_end("test_op", 2.0, True, param="value")
 
             mock_log_end.assert_called_once_with("test_op", 2.0, True, param="value")
@@ -401,9 +387,7 @@ class TestLoggingManager:
         with patch.object(manager.performance_logger, "log_metric") as mock_log_metric:
             manager.log_metric("test_metric", 100.0, "units", param="value")
 
-            mock_log_metric.assert_called_once_with(
-                "test_metric", 100.0, "units", param="value"
-            )
+            mock_log_metric.assert_called_once_with("test_metric", 100.0, "units", param="value")
 
 
 class TestCreateLoggingConfig:
@@ -477,24 +461,16 @@ class TestLoggingIntegration:
 
         # Test request/response logging
         with patch.object(manager.request_logger, "log_request") as mock_log_request:
-            with patch.object(
-                manager.request_logger, "log_response"
-            ) as mock_log_response:
-                manager.log_request(
-                    "POST", "https://api.example.com/test", {}, "body", "corr-123"
-                )
+            with patch.object(manager.request_logger, "log_response") as mock_log_response:
+                manager.log_request("POST", "https://api.example.com/test", {}, "body", "corr-123")
                 manager.log_response(200, {}, "response", 1.5, "corr-123")
 
                 mock_log_request.assert_called_once()
                 mock_log_response.assert_called_once()
 
         # Test performance logging
-        with patch.object(
-            manager.performance_logger, "log_operation_start"
-        ) as mock_log_start:
-            with patch.object(
-                manager.performance_logger, "log_operation_end"
-            ) as mock_log_end:
+        with patch.object(manager.performance_logger, "log_operation_start") as mock_log_start:
+            with patch.object(manager.performance_logger, "log_operation_end") as mock_log_end:
                 manager.log_operation_start("download", file_id="123")
                 manager.log_operation_end("download", 2.0, True, file_id="123")
 

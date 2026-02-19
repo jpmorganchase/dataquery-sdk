@@ -51,12 +51,8 @@ async def main() -> None:
         help="End date YYYYMMDD (default: today)",
         required=True,
     )
-    parser.add_argument(
-        "--frequency", default="FREQ_DAY", help="Frequency (default: FREQ_DAY)"
-    )
-    parser.add_argument(
-        "--calendar", default="CAL_USBANK", help="Calendar (default: CAL_USBANK)"
-    )
+    parser.add_argument("--frequency", default="FREQ_DAY", help="Frequency (default: FREQ_DAY)")
+    parser.add_argument("--calendar", default="CAL_USBANK", help="Calendar (default: CAL_USBANK)")
     parser.add_argument(
         "--conversion",
         default="CONV_LASTBUS_ABS",
@@ -69,9 +65,7 @@ async def main() -> None:
         help="NaN treatment (default: NA_FILL_FORWARD)",
     )
     parser.add_argument("--page", help="Pagination token (optional)")
-    parser.add_argument(
-        "--show", type=int, default=3, help="How many series to print (default: 3)"
-    )
+    parser.add_argument("--show", type=int, default=3, help="How many series to print (default: 3)")
     args = parser.parse_args()
 
     # Dates
@@ -105,9 +99,7 @@ async def main() -> None:
                     print("No instruments found in the first group")
                     return
                 instrument_ids = [
-                    getattr(inst, "instrument_id", None)
-                    or inst.get("instrument_id", "")
-                    for inst in instruments
+                    getattr(inst, "instrument_id", None) or inst.get("instrument_id", "") for inst in instruments
                 ]
 
             resp = await dq.get_instrument_time_series_async(
@@ -126,11 +118,7 @@ async def main() -> None:
 
             instruments = getattr(resp, "instruments", []) or []
             print(f"Series: {instruments}")
-            attributes = [
-                attr
-                for instrument in instruments
-                for attr in getattr(instrument, "attributes", [])
-            ]
+            attributes = [attr for instrument in instruments for attr in getattr(instrument, "attributes", [])]
             print(f"attributes: {attributes}")
             time_series_list = [attr.time_series for attr in attributes]
             print(f"time_series: {time_series_list}")

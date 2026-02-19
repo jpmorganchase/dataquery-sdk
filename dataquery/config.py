@@ -185,9 +185,7 @@ class EnvConfig:
         try:
             return int(value)
         except ValueError:
-            raise ConfigurationError(
-                f"Invalid integer value for {cls.PREFIX}{key}: {value}"
-            )
+            raise ConfigurationError(f"Invalid integer value for {cls.PREFIX}{key}: {value}")
 
     @classmethod
     def get_float(cls, key: str, default: Optional[str] = None) -> float:
@@ -200,9 +198,7 @@ class EnvConfig:
         try:
             return float(value)
         except ValueError:
-            raise ConfigurationError(
-                f"Invalid float value for {cls.PREFIX}{key}: {value}"
-            )
+            raise ConfigurationError(f"Invalid float value for {cls.PREFIX}{key}: {value}")
 
     @classmethod
     def get_path(cls, key: str, default: str = ".") -> Path:
@@ -255,9 +251,7 @@ class EnvConfig:
             # Get base URL (required)
             base_url = cls.get_env_var("BASE_URL")
             if not base_url:
-                raise ConfigurationError(
-                    f"{cls.PREFIX}BASE_URL environment variable is required"
-                )
+                raise ConfigurationError(f"{cls.PREFIX}BASE_URL environment variable is required")
 
             # Auto-generate OAuth token URL if not provided
             oauth_token_url = cls.get_env_var("OAUTH_TOKEN_URL")
@@ -378,11 +372,9 @@ class EnvConfig:
 
         return {
             "base": base_download_dir,
-            "workflow": base_download_dir
-            / (cls.get_env_var("WORKFLOW_DIR") or "workflow"),
+            "workflow": base_download_dir / (cls.get_env_var("WORKFLOW_DIR") or "workflow"),
             "groups": base_download_dir / (cls.get_env_var("GROUPS_DIR") or "groups"),
-            "availability": base_download_dir
-            / (cls.get_env_var("AVAILABILITY_DIR") or "availability"),
+            "availability": base_download_dir / (cls.get_env_var("AVAILABILITY_DIR") or "availability"),
             "default": base_download_dir / (cls.get_env_var("DEFAULT_DIR") or "files"),
         }
 
@@ -433,9 +425,7 @@ class EnvConfig:
             errors.append("BURST_CAPACITY must be positive")
 
         if errors:
-            raise ConfigurationError(
-                f"Configuration validation failed: {'; '.join(errors)}"
-            )
+            raise ConfigurationError(f"Configuration validation failed: {'; '.join(errors)}")
 
     @classmethod
     def create_env_template(cls, output_path: Optional[Path] = None) -> Path:

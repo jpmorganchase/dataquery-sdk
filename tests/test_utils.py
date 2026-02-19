@@ -352,9 +352,7 @@ class TestDownloadPaths:
             assert paths["base"] == Path("/custom/downloads")
             assert paths["workflow"] == Path("/custom/downloads/custom_workflow")
             assert paths["groups"] == Path("/custom/downloads/custom_groups")
-            assert paths["availability"] == Path(
-                "/custom/downloads/custom_availability"
-            )
+            assert paths["availability"] == Path("/custom/downloads/custom_availability")
             assert paths["default"] == Path("/custom/downloads/custom_files")
 
     def test_get_download_paths_mixed_env_and_base(self):
@@ -598,10 +596,7 @@ class TestUtilsEdgeCases:
             assert "DATAQUERY_OAUTH_ENABLED=true" in content
             assert "DATAQUERY_CLIENT_ID=test_client" in content
             assert "DATAQUERY_CLIENT_SECRET=test_secret" in content
-            assert (
-                "DATAQUERY_OAUTH_TOKEN_URL=https://api.example.com/oauth/token"
-                in content
-            )
+            assert "DATAQUERY_OAUTH_TOKEN_URL=https://api.example.com/oauth/token" in content
         finally:
             if custom_path.exists():
                 custom_path.unlink()
@@ -685,9 +680,7 @@ class TestUtilsEdgeCases:
         assert format_duration(0) == "0s"
 
         # Test negative values
-        assert (
-            format_duration(-1) == "-1.0s"
-        )  # format_duration doesn't handle negative values specially
+        assert format_duration(-1) == "-1.0s"  # format_duration doesn't handle negative values specially
 
         # Test very small values
         assert format_duration(0.1) == "0.1s"
@@ -695,6 +688,4 @@ class TestUtilsEdgeCases:
 
         # Test very large values
         assert format_duration(3661) == "1h 1m 1s"
-        assert (
-            format_duration(86400) == "24h"
-        )  # When no remaining minutes/seconds, only hours are shown
+        assert format_duration(86400) == "24h"  # When no remaining minutes/seconds, only hours are shown

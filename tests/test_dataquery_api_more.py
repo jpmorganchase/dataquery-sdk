@@ -8,9 +8,7 @@ from dataquery.models import ClientConfig
 
 def _dq(monkeypatch) -> DataQuery:
     cfg = ClientConfig(base_url="https://api.example.com")
-    monkeypatch.setattr(
-        "dataquery.dataquery.EnvConfig.validate_config", lambda _cfg: None
-    )
+    monkeypatch.setattr("dataquery.dataquery.EnvConfig.validate_config", lambda _cfg: None)
     return DataQuery(cfg)
 
 
@@ -44,8 +42,6 @@ async def test_more_async_endpoints(monkeypatch):
 
 def test_sync_proxies_more(monkeypatch):
     dq = _dq(monkeypatch)
-    with patch(
-        "dataquery.dataquery.DataQuery._run_sync", return_value={"ok": True}
-    ) as ra:
+    with patch("dataquery.dataquery.DataQuery._run_sync", return_value={"ok": True}) as ra:
         assert dq.get_grid_data(expr="x") == {"ok": True}
         assert ra.called

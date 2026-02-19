@@ -32,9 +32,7 @@ class TokenManager:
         # Prefer explicit token_storage_dir only when token storage is enabled,
         # else fallback to download_dir/.tokens if download_dir is provided.
         base_dir: Optional[Path] = None
-        token_storage_enabled = bool(
-            getattr(self.config, "token_storage_enabled", False)
-        )
+        token_storage_enabled = bool(getattr(self.config, "token_storage_enabled", False))
         token_storage_dir = getattr(self.config, "token_storage_dir", None)
         if token_storage_enabled and token_storage_dir:
             base_dir = Path(token_storage_dir)
@@ -97,9 +95,7 @@ class TokenManager:
 
         # Validate required fields
         if not self.config.client_id or not self.config.client_secret:
-            raise ConfigurationError(
-                "client_id and client_secret are required for OAuth"
-            )
+            raise ConfigurationError("client_id and client_secret are required for OAuth")
 
         # Create token request
         token_request = TokenRequest(
@@ -142,9 +138,7 @@ class TokenManager:
                             status=response.status,
                             error=error_data,
                         )
-                        raise AuthenticationError(
-                            f"OAuth token request failed: {response.status}"
-                        )
+                        raise AuthenticationError(f"OAuth token request failed: {response.status}")
 
         except Exception as e:
             logger.error("Error getting OAuth token", error=str(e))
@@ -220,9 +214,7 @@ class TokenManager:
 
             # Convert timestamp back to datetime
             if "issued_at" in token_data:
-                token_data["issued_at"] = datetime.fromisoformat(
-                    token_data["issued_at"]
-                )
+                token_data["issued_at"] = datetime.fromisoformat(token_data["issued_at"])
 
             self.current_token = OAuthToken(**token_data)
 
@@ -232,9 +224,7 @@ class TokenManager:
                 self.current_token = None
                 return None
 
-            logger.info(
-                "Token loaded from storage", expires_at=self.current_token.expires_at
-            )
+            logger.info("Token loaded from storage", expires_at=self.current_token.expires_at)
             return self.current_token
 
         except Exception as e:
@@ -297,16 +287,8 @@ class TokenManager:
         return {
             "status": self.current_token.status.value,
             "token_type": self.current_token.token_type,
-            "issued_at": (
-                self.current_token.issued_at.isoformat()
-                if self.current_token.issued_at
-                else None
-            ),
-            "expires_at": (
-                self.current_token.expires_at.isoformat()
-                if self.current_token.expires_at
-                else None
-            ),
+            "issued_at": (self.current_token.issued_at.isoformat() if self.current_token.issued_at else None),
+            "expires_at": (self.current_token.expires_at.isoformat() if self.current_token.expires_at else None),
             "is_expired": self.current_token.is_expired,
             "has_refresh_token": self.current_token.refresh_token is not None,
         }

@@ -57,9 +57,7 @@ class ConfigManager:
             EnvConfig.validate_config(config)
             return config
         except Exception as e:
-            logger.warning(
-                "Failed to load configuration from environment", error=str(e)
-            )
+            logger.warning("Failed to load configuration from environment", error=str(e))
             return self._get_default_config()
 
     def _get_default_config(self) -> ClientConfig:
@@ -151,9 +149,7 @@ class DataQuery:
             # Auto-derive token URL if missing
             if not self.client_config.oauth_token_url and self.client_config.base_url:
                 try:
-                    self.client_config.oauth_token_url = (
-                        f"{self.client_config.base_url.rstrip('/')}/oauth/token"
-                    )
+                    self.client_config.oauth_token_url = f"{self.client_config.base_url.rstrip('/')}/oauth/token"
                 except Exception:
                     pass
 
@@ -212,9 +208,7 @@ class DataQuery:
     def _ensure_client(self) -> "DataQueryClient":
         """Return the connected client or raise RuntimeError."""
         if self._client is None:
-            raise RuntimeError(
-                "Client not connected. Call connect() or use the context manager first."
-            )
+            raise RuntimeError("Client not connected. Call connect() or use the context manager first.")
         return self._client
 
     async def cleanup_async(self):
@@ -286,9 +280,7 @@ class DataQuery:
         client = self._ensure_client()
         return await client.search_groups_async(keywords, limit, offset)
 
-    async def list_files_async(
-        self, group_id: str, file_group_id: Optional[str] = None
-    ) -> List[FileInfo]:
+    async def list_files_async(self, group_id: str, file_group_id: Optional[str] = None) -> List[FileInfo]:
         """
         List all files in a group.
 
@@ -304,9 +296,7 @@ class DataQuery:
         file_list = await client.list_files_async(group_id, file_group_id)
         return file_list.file_group_ids
 
-    async def check_availability_async(
-        self, file_group_id: str, file_datetime: str
-    ) -> AvailabilityInfo:
+    async def check_availability_async(self, file_group_id: str, file_datetime: str) -> AvailabilityInfo:
         """
         Check file availability for a specific datetime.
 
@@ -368,9 +358,7 @@ class DataQuery:
         client = self._ensure_client()
         # Pass parameters in correct order: file_group_id, file_datetime, options, num_parts, progress_callback
         # Use default num_parts=5
-        return await client.download_file_async(
-            file_group_id, file_datetime, options, num_parts, progress_callback
-        )
+        return await client.download_file_async(file_group_id, file_datetime, options, num_parts, progress_callback)
 
     async def list_available_files_async(
         self,
@@ -393,9 +381,7 @@ class DataQuery:
         """
         await self.connect_async()
         client = self._ensure_client()
-        return await client.list_available_files_async(
-            group_id, file_group_id, start_date, end_date
-        )
+        return await client.list_available_files_async(group_id, file_group_id, start_date, end_date)
 
     async def health_check_async(self) -> bool:
         """
@@ -544,9 +530,7 @@ class DataQuery:
         )
 
     # Group Collection Additional Endpoints
-    async def get_group_filters_async(
-        self, group_id: str, page: Optional[str] = None
-    ) -> "FiltersResponse":
+    async def get_group_filters_async(self, group_id: str, page: Optional[str] = None) -> "FiltersResponse":
         """
         Request the unique list of filter dimensions that are available for a given dataset.
 
@@ -693,9 +677,7 @@ class DataQuery:
             logger.error("Groups operation failed", error=str(e))
             raise
 
-    async def run_group_files_async(
-        self, group_id: str, max_concurrent: int = 5
-    ) -> Dict[str, Any]:
+    async def run_group_files_async(self, group_id: str, max_concurrent: int = 5) -> Dict[str, Any]:
         """Run complete operation for a specific group."""
         logger.info("Starting group files operation", group_id=group_id)
 
@@ -735,14 +717,10 @@ class DataQuery:
             return report
 
         except Exception as e:
-            logger.error(
-                "Group files operation failed", group_id=group_id, error=str(e)
-            )
+            logger.error("Group files operation failed", group_id=group_id, error=str(e))
             raise
 
-    async def run_availability_async(
-        self, file_group_id: str, file_datetime: str
-    ) -> Dict[str, Any]:
+    async def run_availability_async(self, file_group_id: str, file_datetime: str) -> Dict[str, Any]:
         """Run operation for checking file availability."""
         logger.info(
             "Starting availability operation",
@@ -753,9 +731,7 @@ class DataQuery:
         try:
             # Step 1: Check availability
             logger.info("Step 1: Checking Availability")
-            availability = await self.check_availability_async(
-                file_group_id, file_datetime
-            )
+            availability = await self.check_availability_async(file_group_id, file_datetime)
 
             # Step 2: Generate summary report
             logger.info("Step 2: Summary Report")
@@ -817,9 +793,7 @@ class DataQuery:
                 if destination_path
                 else None
             )
-            result = await self.download_file_async(
-                file_group_id, file_datetime, destination_path, download_options
-            )
+            result = await self.download_file_async(file_group_id, file_datetime, destination_path, download_options)
 
             # Step 2: Generate summary report
             logger.info("Step 2: Summary Report")
@@ -840,9 +814,7 @@ class DataQuery:
             return report
 
         except Exception as e:
-            logger.error(
-                "Download operation failed", file_group_id=file_group_id, error=str(e)
-            )
+            logger.error("Download operation failed", file_group_id=file_group_id, error=str(e))
             raise
 
     async def run_group_download_async(
@@ -906,8 +878,7 @@ class DataQuery:
                 filtered_files = [
                     f
                     for f in (available_files or [])
-                    if (f.get("is-available") is True)
-                    or (f.get("is_available") is True)
+                    if (f.get("is-available") is True) or (f.get("is_available") is True)
                 ]
             except Exception:
                 filtered_files = []
@@ -945,9 +916,7 @@ class DataQuery:
             logger.info("Found available files", count=len(filtered_files))
 
             # Step 2: Download all available files using flattened concurrency model
-            logger.info(
-                "Step 2: Downloading Available Files with flattened concurrency model"
-            )
+            logger.info("Step 2: Downloading Available Files with flattened concurrency model")
 
             # Create destination directory
             dest_dir = destination_dir / group_id
@@ -976,12 +945,8 @@ class DataQuery:
 
             # Create all download tasks with flattened concurrency and staggered delays
             async def download_file_concurrent(file_info, delay_seconds: float = 0.0):
-                file_group_id = file_info.get(
-                    "file-group-id", file_info.get("file_group_id")
-                )
-                file_datetime = file_info.get(
-                    "file-datetime", file_info.get("file_datetime")
-                )
+                file_group_id = file_info.get("file-group-id", file_info.get("file_group_id"))
+                file_datetime = file_info.get("file-datetime", file_info.get("file_datetime"))
 
                 if not file_group_id:
                     logger.error("File info missing file-group-id", file_info=file_info)
@@ -1042,9 +1007,7 @@ class DataQuery:
                 rate_limit_protection="enabled",
             )
 
-            download_results = await asyncio.gather(
-                *download_tasks, return_exceptions=True
-            )
+            download_results = await asyncio.gather(*download_tasks, return_exceptions=True)
 
             # Process results
             successful = []
@@ -1083,9 +1046,7 @@ class DataQuery:
                     task = download_file_concurrent(file_info, delay_seconds)
                     retry_tasks.append(task)
 
-                retry_results = await asyncio.gather(
-                    *retry_tasks, return_exceptions=True
-                )
+                retry_results = await asyncio.gather(*retry_tasks, return_exceptions=True)
 
                 # Process retry results
                 still_failed = []
@@ -1100,10 +1061,8 @@ class DataQuery:
                     ):
                         successful.append(result)
                         logger.info(
-                            f"Retry succeeded for file",
-                            file_group_id=file_info.get(
-                                "file-group-id", file_info.get("file_group_id")
-                            ),
+                            "Retry succeeded for file",
+                            file_group_id=file_info.get("file-group-id", file_info.get("file_group_id")),
                             attempt=retry_count,
                         )
                     else:
@@ -1127,9 +1086,7 @@ class DataQuery:
             total_time_minutes = total_time_seconds / 60.0
 
             # Generate rate limit recommendations
-            recommendations = self._get_rate_limit_recommendations(
-                total_concurrent_requests
-            )
+            recommendations = self._get_rate_limit_recommendations(total_concurrent_requests)
 
             # Calculate per-file timing statistics
             file_times = []
@@ -1141,27 +1098,15 @@ class DataQuery:
                             "file_group_id": result.file_group_id,
                             "download_time_seconds": round(result.download_time, 2),
                             "file_size_bytes": result.file_size or 0,
-                            "speed_mbps": (
-                                round(result.speed_mbps, 2)
-                                if result.speed_mbps
-                                else 0.0
-                            ),
+                            "speed_mbps": (round(result.speed_mbps, 2) if result.speed_mbps else 0.0),
                         }
                     )
                     total_download_time += result.download_time
 
             # Calculate timing statistics
             avg_file_time = total_download_time / len(successful) if successful else 0.0
-            min_file_time = (
-                min([ft["download_time_seconds"] for ft in file_times])
-                if file_times
-                else 0.0
-            )
-            max_file_time = (
-                max([ft["download_time_seconds"] for ft in file_times])
-                if file_times
-                else 0.0
-            )
+            min_file_time = min([ft["download_time_seconds"] for ft in file_times]) if file_times else 0.0
+            max_file_time = max([ft["download_time_seconds"] for ft in file_times]) if file_times else 0.0
 
             report = {
                 "group_id": group_id,
@@ -1172,16 +1117,9 @@ class DataQuery:
                 "failed_downloads": len(failed),
                 "retries_attempted": retry_count,
                 "max_retries": max_retries,
-                "success_rate": (
-                    (len(successful) / len(filtered_files)) * 100
-                    if filtered_files
-                    else 0
-                ),
+                "success_rate": ((len(successful) / len(filtered_files)) * 100 if filtered_files else 0),
                 "downloaded_files": [r.file_group_id for r in successful],
-                "failed_files": [
-                    f.get("file-group-id", f.get("file_group_id", "unknown"))
-                    for f in failed
-                ],
+                "failed_files": [f.get("file-group-id", f.get("file_group_id", "unknown")) for f in failed],
                 "num_parts": num_parts,
                 "max_concurrent": max_concurrent,
                 "total_concurrent_requests": total_concurrent_requests,
@@ -1212,9 +1150,7 @@ class DataQuery:
                     ),
                 },
             }
-            logger.info(
-                "Group parallel download for date range operation completed!", **report
-            )
+            logger.info("Group parallel download for date range operation completed!", **report)
             return report
         except Exception as e:
             logger.error(
@@ -1316,16 +1252,12 @@ class DataQuery:
                     "GET", url, params=params, headers=probe_headers
                 ) as probe_resp:
                     await client._handle_response(probe_resp)
-                    content_range = probe_resp.headers.get(
-                        "content-range"
-                    ) or probe_resp.headers.get("Content-Range")
+                    content_range = probe_resp.headers.get("content-range") or probe_resp.headers.get("Content-Range")
                     if content_range and "/" in content_range:
                         try:
                             total_bytes = int(content_range.split("/")[-1])
                         except Exception:
-                            total_bytes = int(
-                                probe_resp.headers.get("content-length", "0")
-                            )
+                            total_bytes = int(probe_resp.headers.get("content-length", "0"))
                     else:
                         # Fallback to single-stream download if range not supported
                         return await client.download_file_async(
@@ -1347,14 +1279,10 @@ class DataQuery:
 
                     # Scale num_parts with file size for large files
                     if total_bytes > 500 * 1024 * 1024:  # >500MB
-                        num_parts = max(
-                            num_parts, min(total_bytes // (100 * 1024 * 1024), 20)
-                        )
+                        num_parts = max(num_parts, min(total_bytes // (100 * 1024 * 1024), 20))
 
                     # Determine filename from headers
-                    filename = get_filename_from_response(
-                        probe_resp, file_group_id, file_datetime
-                    )
+                    filename = get_filename_from_response(probe_resp, file_group_id, file_datetime)
                     destination = destination_dir / filename
 
                     if destination.exists() and not download_options.overwrite_existing:
@@ -1362,9 +1290,7 @@ class DataQuery:
 
             # Step 2: Prepare temp file with full size for random access writes
             temp_destination = destination.with_suffix(destination.suffix + ".part")
-            with open(
-                temp_destination, "wb", buffering=1024 * 1024
-            ) as f:  # 1MB buffer for network drives
+            with open(temp_destination, "wb", buffering=1024 * 1024) as f:  # 1MB buffer for network drives
                 f.truncate(total_bytes)
 
             # Step 3: Compute ranges for parallel download
@@ -1372,9 +1298,7 @@ class DataQuery:
             ranges = []
             start = 0
             for i in range(num_parts):
-                end = (
-                    (start + part_size - 1) if i < num_parts - 1 else (total_bytes - 1)
-                )
+                end = (start + part_size - 1) if i < num_parts - 1 else (total_bytes - 1)
                 if start > end:
                     break
                 ranges.append((start, end))
@@ -1421,11 +1345,7 @@ class DataQuery:
             if download_options.max_bandwidth_mbps:
                 from .models import BandwidthThrottler
 
-                throttler = BandwidthThrottler(
-                    max_bytes_per_second=int(
-                        download_options.max_bandwidth_mbps * 125000
-                    )
-                )
+                throttler = BandwidthThrottler(max_bytes_per_second=int(download_options.max_bandwidth_mbps * 125000))
 
             # Step 4: Download each range with global semaphore control
             async def download_range(start_byte: int, end_byte: int):
@@ -1459,9 +1379,7 @@ class DataQuery:
                                         fh.seek(pos)
                                         fh.write(data)
 
-                                    async for chunk in resp.content.iter_chunked(
-                                        chunk_size
-                                    ):
+                                    async for chunk in resp.content.iter_chunked(chunk_size):
                                         if throttler:
                                             await throttler.throttle(len(chunk))
 
@@ -1484,12 +1402,8 @@ class DataQuery:
                                             progress.update_progress(bytes_downloaded)
 
                                             current_time = time.time()
-                                            bytes_diff = (
-                                                bytes_downloaded - last_callback_bytes
-                                            )
-                                            time_diff = (
-                                                current_time - last_callback_time
-                                            )
+                                            bytes_diff = bytes_downloaded - last_callback_bytes
+                                            time_diff = current_time - last_callback_time
 
                                             should_callback = (
                                                 bytes_diff >= callback_threshold_bytes
@@ -1509,9 +1423,7 @@ class DataQuery:
                                                     "Download progress (flattened)",
                                                     file=file_group_id,
                                                     percentage=f"{progress.percentage:.1f}%",
-                                                    downloaded=format_file_size(
-                                                        bytes_downloaded
-                                                    ),
+                                                    downloaded=format_file_size(bytes_downloaded),
                                                 )
                         # Part completed successfully
                         return
@@ -1536,6 +1448,17 @@ class DataQuery:
                 error_message=None,
             )
 
+        except FileExistsError as e:
+            return DownloadResult(
+                file_group_id=file_group_id,
+                group_id="",
+                local_path=destination,
+                file_size=0,
+                download_time=time.time() - start_time,
+                bytes_downloaded=0,
+                status=DownloadStatus.ALREADY_EXISTS,
+                error_message=f"FileExistsError: {e}",
+            )
         except Exception as e:
             # Cleanup on error
             try:
@@ -1638,9 +1561,7 @@ class DataQuery:
         """
         try:
             requests_per_minute = rate_limit_capacity["requests_per_minute"]
-            burst_capacity = rate_limit_capacity[
-                "burst_capacity"
-            ]  # Absolute number of immediate requests
+            burst_capacity = rate_limit_capacity["burst_capacity"]  # Absolute number of immediate requests
             safe_interval = rate_limit_capacity["safe_interval"]
 
             # Calculate minimum delay needed to stay within rate limits
@@ -1658,12 +1579,8 @@ class DataQuery:
                 # Calculate how much time we need to spread the excess requests
                 # We want to spread them over a reasonable time window based on the excess
                 # More excess requests = longer time window to spread them out
-                time_window = max(
-                    5.0, excess_requests * 0.1
-                )  # At least 5s, or 0.1s per excess request
-                min_delay_for_burst = (
-                    time_window / excess_requests if excess_requests > 0 else 0.0
-                )
+                time_window = max(5.0, excess_requests * 0.1)  # At least 5s, or 0.1s per excess request
+                min_delay_for_burst = time_window / excess_requests if excess_requests > 0 else 0.0
 
                 logger.debug(
                     "Burst capacity exceeded, calculating spread delay",
@@ -1705,9 +1622,7 @@ class DataQuery:
             return intelligent_delay
 
         except Exception as e:
-            logger.warning(
-                "Failed to calculate intelligent delay, using base delay", error=str(e)
-            )
+            logger.warning("Failed to calculate intelligent delay, using base delay", error=str(e))
             return base_delay
 
     def _calculate_safe_concurrency_limit(self, requested_concurrency: int) -> int:
@@ -1750,17 +1665,12 @@ class DataQuery:
 
             immediate_capacity = burst_capacity
             sustained_capacity = min(
-                requests_per_minute
-                // 4,  # Quarter of per-minute limit for sustained load
-                (
-                    queue_size // 2 if queue_size > 0 else immediate_capacity
-                ),  # Half queue size
+                requests_per_minute // 4,  # Quarter of per-minute limit for sustained load
+                (queue_size // 2 if queue_size > 0 else immediate_capacity),  # Half queue size
             )
 
             # Use the more conservative of immediate or sustained capacity
-            safe_limit = max(
-                1, min(immediate_capacity, sustained_capacity, requested_concurrency)
-            )
+            safe_limit = max(1, min(immediate_capacity, sustained_capacity, requested_concurrency))
 
             # Add warning if we're significantly reducing concurrency
             if safe_limit < requested_concurrency * 0.5:
@@ -1793,9 +1703,7 @@ class DataQuery:
             # Conservative fallback: use a small fraction of requested
             return max(1, min(10, requested_concurrency // 4))
 
-    def _get_rate_limit_recommendations(
-        self, requested_concurrency: int
-    ) -> Dict[str, Any]:
+    def _get_rate_limit_recommendations(self, requested_concurrency: int) -> Dict[str, Any]:
         """
         Get recommendations for optimizing rate limit settings for the requested concurrency.
 
@@ -1828,17 +1736,13 @@ class DataQuery:
                     {
                         "type": "increase_burst_capacity",
                         "current": rate_config.burst_capacity,
-                        "recommended": max(
-                            requested_concurrency, rate_config.burst_capacity * 2
-                        ),
+                        "recommended": max(requested_concurrency, rate_config.burst_capacity * 2),
                         "reason": "Burst capacity should accommodate concurrent requests",
                     }
                 )
 
             # Recommend requests per minute increase for sustained load
-            sustained_rpm_needed = (
-                requested_concurrency * 15
-            )  # Assume 15 requests per minute per concurrent slot
+            sustained_rpm_needed = requested_concurrency * 15  # Assume 15 requests per minute per concurrent slot
             if sustained_rpm_needed > rate_config.requests_per_minute:
                 recommendations["recommendations"].append(
                     {
@@ -1850,10 +1754,7 @@ class DataQuery:
                 )
 
             # Recommend enabling queuing if not enabled
-            if (
-                not rate_config.enable_queuing
-                and requested_concurrency > rate_config.burst_capacity
-            ):
+            if not rate_config.enable_queuing and requested_concurrency > rate_config.burst_capacity:
                 recommendations["recommendations"].append(
                     {
                         "type": "enable_queuing",
@@ -1866,9 +1767,7 @@ class DataQuery:
             return recommendations
 
         except Exception as e:
-            logger.warning(
-                "Failed to generate rate limit recommendations", error=str(e)
-            )
+            logger.warning("Failed to generate rate limit recommendations", error=str(e))
             return {}
 
     # Utility Methods
@@ -1932,9 +1831,7 @@ class DataQuery:
         except Exception as e:
             return {"error": f"Failed to get rate limit info: {e}"}
 
-    def optimize_concurrency_for_rate_limits(
-        self, max_concurrent: int, num_parts: int
-    ) -> Dict[str, Any]:
+    def optimize_concurrency_for_rate_limits(self, max_concurrent: int, num_parts: int) -> Dict[str, Any]:
         """
         Get optimized concurrency settings that respect rate limits.
 
@@ -1997,25 +1894,17 @@ class DataQuery:
         """Synchronous wrapper for list_groups."""
         return self._run_sync(self.list_groups_async(limit))
 
-    def search_groups(
-        self, keywords: str, limit: Optional[int] = 100, offset: Optional[int] = None
-    ) -> List[Group]:
+    def search_groups(self, keywords: str, limit: Optional[int] = 100, offset: Optional[int] = None) -> List[Group]:
         """Synchronous wrapper for search_groups."""
         return self._run_sync(self.search_groups_async(keywords, limit, offset))
 
-    def list_files(
-        self, group_id: str, file_group_id: Optional[str] = None
-    ) -> List[FileInfo]:
+    def list_files(self, group_id: str, file_group_id: Optional[str] = None) -> List[FileInfo]:
         """Synchronous wrapper for list_files."""
         return self._run_sync(self.list_files_async(group_id, file_group_id))
 
-    def check_availability(
-        self, file_group_id: str, file_datetime: str
-    ) -> AvailabilityInfo:
+    def check_availability(self, file_group_id: str, file_datetime: str) -> AvailabilityInfo:
         """Synchronous wrapper for check_availability."""
-        return self._run_sync(
-            self.check_availability_async(file_group_id, file_datetime)
-        )
+        return self._run_sync(self.check_availability_async(file_group_id, file_datetime))
 
     def download_file(
         self,
@@ -2062,11 +1951,7 @@ class DataQuery:
         end_date: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Synchronous wrapper for list_available_files."""
-        return self._run_sync(
-            self.list_available_files_async(
-                group_id, file_group_id, start_date, end_date
-            )
-        )
+        return self._run_sync(self.list_available_files_async(group_id, file_group_id, start_date, end_date))
 
     def health_check(self) -> bool:
         """Synchronous wrapper for health_check."""
@@ -2090,13 +1975,9 @@ class DataQuery:
         Returns:
             InstrumentsResponse containing the list of instruments
         """
-        return self._run_sync(
-            self.list_instruments_async(group_id, instrument_id, page)
-        )
+        return self._run_sync(self.list_instruments_async(group_id, instrument_id, page))
 
-    def search_instruments(
-        self, group_id: str, keywords: str, page: Optional[str] = None
-    ) -> "InstrumentsResponse":
+    def search_instruments(self, group_id: str, keywords: str, page: Optional[str] = None) -> "InstrumentsResponse":
         """
         Search within a dataset using keywords to create subsets of matching instruments.
 
@@ -2206,9 +2087,7 @@ class DataQuery:
         )
 
     # Group Collection Additional Endpoints - Synchronous wrappers
-    def get_group_filters(
-        self, group_id: str, page: Optional[str] = None
-    ) -> "FiltersResponse":
+    def get_group_filters(self, group_id: str, page: Optional[str] = None) -> "FiltersResponse":
         """
         Request the unique list of filter dimensions that are available for a given dataset.
 
@@ -2238,9 +2117,7 @@ class DataQuery:
         Returns:
             AttributesResponse containing the attributes for each instrument
         """
-        return self._run_sync(
-            self.get_group_attributes_async(group_id, instrument_id, page)
-        )
+        return self._run_sync(self.get_group_attributes_async(group_id, instrument_id, page))
 
     def get_group_time_series(
         self,
@@ -2325,9 +2202,7 @@ class DataQuery:
         """Synchronous wrapper for run_group_files_async."""
         return self._run_sync(self.run_group_files_async(group_id, max_concurrent))
 
-    def run_availability(
-        self, file_group_id: str, file_datetime: str
-    ) -> Dict[str, Any]:
+    def run_availability(self, file_group_id: str, file_datetime: str) -> Dict[str, Any]:
         """Synchronous wrapper for run_availability_async."""
         return self._run_sync(self.run_availability_async(file_group_id, file_datetime))
 
@@ -2339,11 +2214,7 @@ class DataQuery:
         max_concurrent: int = 1,
     ) -> Dict[str, Any]:
         """Synchronous wrapper for run_download_async."""
-        return self._run_sync(
-            self.run_download_async(
-                file_group_id, file_datetime, destination_path, max_concurrent
-            )
-        )
+        return self._run_sync(self.run_download_async(file_group_id, file_datetime, destination_path, max_concurrent))
 
     def run_group_download(
         self,
@@ -2402,15 +2273,11 @@ class DataQuery:
         """Synchronous wrapper for search_groups with _sync suffix."""
         return asyncio.run(self.search_groups_async(keywords, limit, offset))
 
-    def list_files_sync(
-        self, group_id: str, file_group_id: Optional[str] = None
-    ) -> List[FileInfo]:
+    def list_files_sync(self, group_id: str, file_group_id: Optional[str] = None) -> List[FileInfo]:
         """Synchronous wrapper for list_files with _sync suffix."""
         return asyncio.run(self.list_files_async(group_id, file_group_id))
 
-    def check_availability_sync(
-        self, file_group_id: str, file_datetime: str
-    ) -> AvailabilityInfo:
+    def check_availability_sync(self, file_group_id: str, file_datetime: str) -> AvailabilityInfo:
         """Synchronous wrapper for check_availability with _sync suffix."""
         return asyncio.run(self.check_availability_async(file_group_id, file_datetime))
 
@@ -2443,11 +2310,7 @@ class DataQuery:
         end_date: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Synchronous wrapper for list_available_files with _sync suffix."""
-        return asyncio.run(
-            self.list_available_files_async(
-                group_id, file_group_id, start_date, end_date
-            )
-        )
+        return asyncio.run(self.list_available_files_async(group_id, file_group_id, start_date, end_date))
 
     def health_check_sync(self) -> bool:
         """Synchronous wrapper for health_check with _sync suffix."""
@@ -2463,9 +2326,7 @@ class DataQuery:
     ) -> dict:
         """Synchronous wrapper for run_group_download with _sync suffix."""
         return asyncio.run(
-            self.run_group_download_async(
-                group_id, start_date, end_date, destination_dir, max_concurrent
-            )
+            self.run_group_download_async(group_id, start_date, end_date, destination_dir, max_concurrent)
         )
 
     # Auto-Download wrappers
@@ -2549,9 +2410,7 @@ class DataQuery:
     def groups_to_dataframe(self, groups, include_metadata: bool = False):
         if self._client is None:
             self._client = DataQueryClient(self.client_config)
-        return self._client.groups_to_dataframe(
-            groups, include_metadata=include_metadata
-        )
+        return self._client.groups_to_dataframe(groups, include_metadata=include_metadata)
 
     def files_to_dataframe(self, files, include_metadata: bool = False):
         if self._client is None:
@@ -2561,13 +2420,9 @@ class DataQuery:
     def instruments_to_dataframe(self, instruments, include_metadata: bool = False):
         if self._client is None:
             self._client = DataQueryClient(self.client_config)
-        return self._client.instruments_to_dataframe(
-            instruments, include_metadata=include_metadata
-        )
+        return self._client.instruments_to_dataframe(instruments, include_metadata=include_metadata)
 
     def time_series_to_dataframe(self, time_series, include_metadata: bool = False):
         if self._client is None:
             self._client = DataQueryClient(self.client_config)
-        return self._client.time_series_to_dataframe(
-            time_series, include_metadata=include_metadata
-        )
+        return self._client.time_series_to_dataframe(time_series, include_metadata=include_metadata)
