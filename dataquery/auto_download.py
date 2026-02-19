@@ -230,7 +230,9 @@ class AutoDownloadManager:
             )
 
             # Build eligible downloads
-            eligible: List[tuple[str, str, str]] = []  # (file_group_id, date_str, file_key)
+            eligible: List[tuple[str, str, str]] = (
+                []
+            )  # (file_group_id, date_str, file_key)
             for item in available_files:
                 if not self._running:
                     break
@@ -371,7 +373,9 @@ class AutoDownloadManager:
                 )
                 self.logger.error(
                     "Download failed for '%s' for %s: %s",
-                    file_group_id, date_str, error_msg,
+                    file_group_id,
+                    date_str,
+                    error_msg,
                 )
                 self._failed_files[file_key] = self._failed_files.get(file_key, 0) + 1
                 self.stats["download_failures"] += 1
@@ -379,7 +383,9 @@ class AutoDownloadManager:
         except Exception as e:
             self.logger.error(
                 "Exception downloading '%s' for %s: %s",
-                file_group_id, date_str, e,
+                file_group_id,
+                date_str,
+                e,
             )
             self._failed_files[file_key] = self._failed_files.get(file_key, 0) + 1
             self.stats["download_failures"] += 1

@@ -83,8 +83,10 @@ async def download_month(
         failed_count = report.get("failed_downloads", 0)
         total_count = report.get("total_files", 0)
 
-        print(f"[Done] {month_name}: {success_count}/{total_count} files "
-              f"({failed_count} failed) in {elapsed:.1f}s")
+        print(
+            f"[Done] {month_name}: {success_count}/{total_count} files "
+            f"({failed_count} failed) in {elapsed:.1f}s"
+        )
 
         return {
             "month": month,
@@ -210,7 +212,9 @@ Examples:
     print("=" * 60)
     print(f"Group ID:            {args.group_id}")
     print(f"Year:                {args.year}")
-    print(f"Months:              {args.start_month} to {args.end_month} ({num_months} months)")
+    print(
+        f"Months:              {args.start_month} to {args.end_month} ({num_months} months)"
+    )
     print(f"Destination:         {dest_path}")
     print(f"Concurrent Files:    {args.max_concurrent_files}")
     print(f"Parts per File:      {args.num_parts}")
@@ -263,7 +267,9 @@ Examples:
         if total_files > 0:
             success_rate = (total_success / total_files) * 100
             print(f"Success Rate:        {success_rate:.1f}%")
-        print(f"Total Time:          {total_elapsed:.1f}s ({total_elapsed/60:.1f} minutes)")
+        print(
+            f"Total Time:          {total_elapsed:.1f}s ({total_elapsed/60:.1f} minutes)"
+        )
 
         if months_with_errors:
             print(f"\nMonths with errors:  {', '.join(months_with_errors)}")
@@ -273,6 +279,7 @@ Examples:
     except Exception as e:
         print(f"\n[Error] {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)
 

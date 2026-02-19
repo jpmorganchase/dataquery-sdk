@@ -580,9 +580,7 @@ class DataQuery:
         """
         await self.connect_async()
         client = self._ensure_client()
-        return await client.get_group_attributes_async(
-            group_id, instrument_id, page
-        )
+        return await client.get_group_attributes_async(group_id, instrument_id, page)
 
     async def get_group_time_series_async(
         self,
@@ -977,9 +975,7 @@ class DataQuery:
             )
 
             # Create all download tasks with flattened concurrency and staggered delays
-            async def download_file_concurrent(
-                file_info, delay_seconds: float = 0.0
-            ):
+            async def download_file_concurrent(file_info, delay_seconds: float = 0.0):
                 file_group_id = file_info.get(
                     "file-group-id", file_info.get("file_group_id")
                 )
@@ -1034,9 +1030,7 @@ class DataQuery:
             for i, file_info in enumerate(filtered_files):
                 # Calculate intelligent delay: combines base delay with rate limit protection
                 delay_seconds = i * intelligent_delay
-                task = download_file_concurrent(
-                    file_info, delay_seconds
-                )
+                task = download_file_concurrent(file_info, delay_seconds)
                 download_tasks.append(task)
 
             logger.info(
@@ -1086,9 +1080,7 @@ class DataQuery:
                 retry_tasks = []
                 for i, file_info in enumerate(failed):
                     delay_seconds = i * intelligent_delay
-                    task = download_file_concurrent(
-                        file_info, delay_seconds
-                    )
+                    task = download_file_concurrent(file_info, delay_seconds)
                     retry_tasks.append(task)
 
                 retry_results = await asyncio.gather(
@@ -1355,7 +1347,9 @@ class DataQuery:
 
                     # Scale num_parts with file size for large files
                     if total_bytes > 500 * 1024 * 1024:  # >500MB
-                        num_parts = max(num_parts, min(total_bytes // (100 * 1024 * 1024), 20))
+                        num_parts = max(
+                            num_parts, min(total_bytes // (100 * 1024 * 1024), 20)
+                        )
 
                     # Determine filename from headers
                     filename = get_filename_from_response(
@@ -1413,6 +1407,7 @@ class DataQuery:
 
             # For large file parts, disable the total timeout but keep sock_read
             import aiohttp
+
             range_timeout = aiohttp.ClientTimeout(
                 total=None,
                 sock_read=client.config.timeout,
@@ -1451,7 +1446,10 @@ class DataQuery:
                         with open(temp_destination, "r+b") as part_fh:
                             async with global_semaphore:
                                 async with await client._enter_request_cm(
-                                    "GET", url, params=params, headers=range_headers,
+                                    "GET",
+                                    url,
+                                    params=params,
+                                    headers=range_headers,
                                     timeout=range_timeout,
                                 ) as resp:
                                     await client._handle_response(resp)
@@ -1461,12 +1459,18 @@ class DataQuery:
                                         fh.seek(pos)
                                         fh.write(data)
 
-                                    async for chunk in resp.content.iter_chunked(chunk_size):
+                                    async for chunk in resp.content.iter_chunked(
+                                        chunk_size
+                                    ):
                                         if throttler:
                                             await throttler.throttle(len(chunk))
 
                                         await loop.run_in_executor(
-                                            None, _seek_write, part_fh, current_pos, chunk
+                                            None,
+                                            _seek_write,
+                                            part_fh,
+                                            current_pos,
+                                            chunk,
                                         )
 
                                         chunk_len = len(chunk)
@@ -1480,8 +1484,12 @@ class DataQuery:
                                             progress.update_progress(bytes_downloaded)
 
                                             current_time = time.time()
-                                            bytes_diff = bytes_downloaded - last_callback_bytes
-                                            time_diff = current_time - last_callback_time
+                                            bytes_diff = (
+                                                bytes_downloaded - last_callback_bytes
+                                            )
+                                            time_diff = (
+                                                current_time - last_callback_time
+                                            )
 
                                             should_callback = (
                                                 bytes_diff >= callback_threshold_bytes

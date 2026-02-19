@@ -28,7 +28,7 @@ class EnvConfig:
         "CONTEXT_PATH": "/research/dataquery-authe/api/v2",
         "API_VERSION": "2.0.0",
         # Optional separate files host
-        "FILES_BASE_URL": "https://api-strm-gw01.jpmchase.com",
+        "FILES_BASE_URL": "https://api-dataquery.jpmchase.com",
         "FILES_CONTEXT_PATH": "/research/dataquery-authe/api/v2",
         # OAuth Configuration
         "OAUTH_ENABLED": "true",
@@ -462,7 +462,7 @@ class EnvConfig:
 {cls.PREFIX}BASE_URL=https://api-developer.jpmorgan.com
 {cls.PREFIX}CONTEXT_PATH=/research/dataquery-authe/api/v2
 # Optional separate Files API host
-{cls.PREFIX}FILES_BASE_URL=https://api-strm-gw01.jpmchase.com
+{cls.PREFIX}FILES_BASE_URL=https://api-dataquery.jpmchase.com
 {cls.PREFIX}FILES_CONTEXT_PATH=/research/dataquery-authe/api/v2
 
 # OAuth Configuration

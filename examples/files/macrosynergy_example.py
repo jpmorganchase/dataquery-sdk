@@ -8,11 +8,7 @@ import pandas as pd
 load_dotenv()
 
 # Hardcoded file-group-ids for UAT testing
-FILE_GROUP_IDS = [
-    
-    "JPMAQS_GENERIC_RETURNS"
-    
-]
+FILE_GROUP_IDS = ["JPMAQS_GENERIC_RETURNS"]
 
 client = DataQueryFileAPIClient("./jpmaqs_data")
 

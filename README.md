@@ -210,7 +210,7 @@ DATAQUERY_CLIENT_SECRET=your_client_secret
 
 # Optional - API Endpoints
 DATAQUERY_BASE_URL=https://api-developer.jpmorgan.com
-DATAQUERY_FILES_BASE_URL=https://api-strm-gw01.jpmchase.com
+DATAQUERY_FILES_BASE_URL=https://api-dataquery.jpmchase.com
 
 # Optional - Performance
 DATAQUERY_MAX_RETRIES=3

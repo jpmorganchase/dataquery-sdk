@@ -48,7 +48,7 @@ class ClientConfig(BaseModel):
     api_version: str = Field(default="2.0.0", description="API version")
     # Optional separate host for file endpoints
     files_base_url: Optional[str] = Field(
-        default="https://api-strm-gw01.jpmchase.com",
+        default="https://api-dataquery.jpmchase.com",
         description="Separate base URL for file endpoints",
     )
     files_context_path: Optional[str] = Field(
@@ -648,6 +648,7 @@ class FileList(BaseModel):
             if ft and any((t or "").lower() == target for t in ft):
                 result.append(f)
         return result
+
 
 class AvailabilityInfo(BaseModel):
     """Model representing file availability information."""

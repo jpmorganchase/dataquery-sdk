@@ -159,7 +159,9 @@ class DataQueryClient:
         self.pool_monitor = ConnectionPoolMonitor(pool_config)
 
         # Initialize response cache for read-only operations
-        self._response_cache: OrderedDict[str, tuple] = OrderedDict()  # key -> (data, timestamp)
+        self._response_cache: OrderedDict[str, tuple] = (
+            OrderedDict()
+        )  # key -> (data, timestamp)
         self._cache_ttl = 300  # 5 minutes cache TTL
         self._cache_max_size = 256  # Maximum cache entries (LRU eviction)
 
@@ -304,10 +306,8 @@ class DataQueryClient:
         if self.session is None:
             # Optimize timeout configuration
             timeout = aiohttp.ClientTimeout(
-                total=self.config.timeout,
-                connect=300.0, 
-                sock_read= self.config.timeout 
-           )
+                total=self.config.timeout, connect=300.0, sock_read=self.config.timeout
+            )
 
             # Optimize connector configuration for better performance
             connector = aiohttp.TCPConnector(
@@ -552,8 +552,7 @@ class DataQueryClient:
                     pass
                 raise NetworkError(
                     f"Server error: {response.status}",
-                    status_code=response.status,
-                    details={"url": url, "body": error_body},
+                    status_code=response.status
                 )
 
             return response
@@ -978,7 +977,9 @@ class DataQueryClient:
 
                 # Scale num_parts with file size for large files
                 if total_bytes > 500 * 1024 * 1024:  # >500MB
-                    num_parts = max(num_parts, min(total_bytes // (100 * 1024 * 1024), 20))  # 1 part per 100MB, max 20
+                    num_parts = max(
+                        num_parts, min(total_bytes // (100 * 1024 * 1024), 20)
+                    )  # 1 part per 100MB, max 20
 
                 # Determine filename and destination
                 filename = get_filename_from_response(
@@ -1051,7 +1052,9 @@ class DataQueryClient:
             async def download_range(start_byte: int, end_byte: int):
                 nonlocal bytes_downloaded, last_callback_bytes, last_callback_time
                 range_headers = {"Range": f"bytes={start_byte}-{end_byte}"}
-                part_bytes_written = 0  # Track bytes written by this part for retry rollback
+                part_bytes_written = (
+                    0  # Track bytes written by this part for retry rollback
+                )
 
                 for attempt in range(max_part_retries + 1):
                     try:
@@ -1065,7 +1068,10 @@ class DataQueryClient:
 
                         with open(temp_destination, "r+b") as part_fh:
                             async with await self._enter_request_cm(
-                                "GET", url, params=params, headers=range_headers,
+                                "GET",
+                                url,
+                                params=params,
+                                headers=range_headers,
                                 timeout=range_timeout,
                             ) as resp:
                                 await self._handle_response(resp)
@@ -1075,8 +1081,12 @@ class DataQueryClient:
                                     fh.seek(pos)
                                     fh.write(data)
 
-                                async for chunk in resp.content.iter_chunked(chunk_size):
-                                    await loop.run_in_executor(None, _seek_write, part_fh, current_pos, chunk)
+                                async for chunk in resp.content.iter_chunked(
+                                    chunk_size
+                                ):
+                                    await loop.run_in_executor(
+                                        None, _seek_write, part_fh, current_pos, chunk
+                                    )
 
                                     chunk_len = len(chunk)
                                     current_pos += chunk_len
@@ -1089,7 +1099,9 @@ class DataQueryClient:
                                         progress.update_progress(bytes_downloaded)
 
                                         current_time = time.time()
-                                        bytes_diff = bytes_downloaded - last_callback_bytes
+                                        bytes_diff = (
+                                            bytes_downloaded - last_callback_bytes
+                                        )
                                         time_diff = current_time - last_callback_time
 
                                         should_callback = (
@@ -1140,10 +1152,7 @@ class DataQueryClient:
                 if temp_destination and temp_destination.exists():
                     try:
                         # Ensure any open handle is closed
-                        if (
-                            total_bytes
-                            and bytes_downloaded >= total_bytes
-                        ):
+                        if total_bytes and bytes_downloaded >= total_bytes:
                             if destination is None:
                                 destination = temp_destination.with_suffix("")
                             temp_destination.replace(destination)
