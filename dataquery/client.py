@@ -544,15 +544,12 @@ class DataQueryClient:
 
             # Check for retryable server errors (5xx) - these should trigger retry
             if response.status >= 500:
-                error_body = None
                 try:
-                    text = await response.text()
-                    error_body = text[:500] if text else None
+                    await response.text()
                 except Exception:
                     pass
                 raise NetworkError(
-                    f"Server error: {response.status}",
-                    status_code=response.status
+                    f"Server error: {response.status}", status_code=response.status
                 )
 
             return response

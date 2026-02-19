@@ -1,8 +1,8 @@
 from pathlib import Path
 
+import pandas as pd
 from dotenv import load_dotenv
 from macrosynergy.download import DataQueryFileAPIClient
-import pandas as pd
 
 # Load environment variables from .env file
 load_dotenv()
