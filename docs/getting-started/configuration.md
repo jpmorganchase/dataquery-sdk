@@ -22,7 +22,7 @@ DATAQUERY_BASE_URL=https://api-developer.jpmorgan.com
 DATAQUERY_CONTEXT_PATH=/research/dataquery-authe/api/v2
 
 # Files API endpoints (pre-configured)
-DATAQUERY_FILES_BASE_URL=https://api-strm-gw01.jpmchase.com
+DATAQUERY_FILES_BASE_URL=https://api-dataquery.jpmchase.com
 DATAQUERY_FILES_CONTEXT_PATH=/research/dataquery-authe/api/v2
 
 # OAuth endpoint (pre-configured)
@@ -98,7 +98,7 @@ The SDK comes with the following sensible defaults, so you only need to configur
 | `DATAQUERY_BASE_URL` | `https://api-developer.jpmorgan.com` | Main API base URL |
 | `DATAQUERY_API_VERSION` | `2.0.0` | API version |
 | `DATAQUERY_CONTEXT_PATH` | `/research/dataquery-authe/api/v2` | API context path |
-| `DATAQUERY_FILES_BASE_URL` | `https://api-strm-gw01.jpmchase.com` | Files API base URL |
+| `DATAQUERY_FILES_BASE_URL` | `https://api-dataquery.jpmchase.com` | Files API base URL |
 | `DATAQUERY_FILES_CONTEXT_PATH` | `/research/dataquery-authe/api/v2` | Files API context path |
 | **Authentication** | | |
 | `DATAQUERY_OAUTH_ENABLED` | `true` | OAuth authentication enabled by default |

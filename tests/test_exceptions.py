@@ -10,6 +10,7 @@ from dataquery.exceptions import (
     DateRangeError,
     DownloadError,
     FileNotFoundError,
+    FileNotFoundInGroupError,
     FileTypeError,
     GroupNotFoundError,
     NetworkError,
@@ -209,6 +210,14 @@ class TestFileNotFoundError:
         error = FileNotFoundError("file123", "group456")
         assert "File file123 not found in group group456" in str(error)
         assert error.details["resource_id"] == "file123"
+
+    def test_file_not_found_in_group_error_canonical_name(self):
+        """Test FileNotFoundInGroupError canonical name and alias."""
+        error = FileNotFoundInGroupError("test_file", "test_group")
+        assert "File test_file not found in group test_group" in str(error)
+        assert isinstance(error, FileNotFoundInGroupError)
+        # Verify backwards-compatible alias
+        assert FileNotFoundError is FileNotFoundInGroupError
 
 
 class TestDateRangeError:

@@ -258,6 +258,11 @@ async def test_health_check_async_success_and_failure(monkeypatch):
 
 
 def test_dataframe_conversion_paths(monkeypatch):
+    try:
+        import pandas as pd  # noqa: F401
+    except ImportError:
+        pytest.skip("pandas not available")
+
     client = _make_bare_client()
 
     # Simple list of dicts with date and numeric-like strings

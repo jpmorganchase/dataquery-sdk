@@ -28,14 +28,13 @@ class EnvConfig:
         "CONTEXT_PATH": "/research/dataquery-authe/api/v2",
         "API_VERSION": "2.0.0",
         # Optional separate files host
-        "FILES_BASE_URL": "https://api-strm-gw01.jpmchase.com",
+        "FILES_BASE_URL": "https://api-dataquery.jpmchase.com",
         "FILES_CONTEXT_PATH": "/research/dataquery-authe/api/v2",
         # OAuth Configuration
         "OAUTH_ENABLED": "true",
         "OAUTH_TOKEN_URL": "https://authe.jpmorgan.com/as/token.oauth2",
         "CLIENT_ID": None,
         "CLIENT_SECRET": None,
-        # scope removed
         "OAUTH_AUD": "JPMC:URI:RS-06785-DataQueryExternalApi-PROD",
         "GRANT_TYPE": "client_credentials",
         # Bearer Token Configuration
@@ -48,9 +47,9 @@ class EnvConfig:
         # Connection Pooling
         "POOL_CONNECTIONS": "10",
         "POOL_MAXSIZE": "20",
-        # Rate Limiting
-        "REQUESTS_PER_MINUTE": "100",
-        "BURST_CAPACITY": "20",
+        # Rate Limiting - Full 25 TPS capacity
+        "REQUESTS_PER_MINUTE": "1500",
+        "BURST_CAPACITY": "25",
         # Proxy Configuration
         "PROXY_ENABLED": "false",
         "PROXY_URL": "",
@@ -78,6 +77,7 @@ class EnvConfig:
         "LOG_ERRORS": "true",
         "SAVE_ERROR_LOG": "true",
         "USE_ASYNC_DOWNLOADS": "true",
+        "ENABLE_RANGE_DOWNLOADS": "false",
         "CHUNK_SIZE": "1048576",  # 1MB default for better performance with large files
         # Download Options
         "ENABLE_RANGE_REQUESTS": "true",
@@ -107,7 +107,6 @@ class EnvConfig:
         "oauth_token_url": "DATAQUERY_OAUTH_TOKEN_URL",
         "client_id": "DATAQUERY_CLIENT_ID",
         "client_secret": "DATAQUERY_CLIENT_SECRET",
-        # scope removed
         "aud": "DATAQUERY_OAUTH_AUD",
         "grant_type": "DATAQUERY_OAUTH_GRANT_TYPE",
         # Bearer Token Configuration
@@ -136,6 +135,7 @@ class EnvConfig:
         "download_dir": "DATAQUERY_DOWNLOAD_DIR",
         "create_directories": "DATAQUERY_CREATE_DIRECTORIES",
         "overwrite_existing": "DATAQUERY_OVERWRITE_EXISTING",
+        "enable_range_downloads": "DATAQUERY_ENABLE_RANGE_DOWNLOADS",
     }
 
     @classmethod
@@ -276,7 +276,6 @@ class EnvConfig:
                 oauth_token_url=oauth_token_url,
                 client_id=cls.get_env_var("CLIENT_ID"),
                 client_secret=cls.get_env_var("CLIENT_SECRET"),
-                # scope removed
                 aud=cls.get_env_var("OAUTH_AUD"),
                 grant_type=cls.get_env_var("GRANT_TYPE") or "client_credentials",
                 # Bearer token configuration
@@ -319,6 +318,7 @@ class EnvConfig:
                 log_errors=cls.get_bool("LOG_ERRORS"),
                 save_error_log=cls.get_bool("SAVE_ERROR_LOG"),
                 use_async_downloads=cls.get_bool("USE_ASYNC_DOWNLOADS"),
+                enable_range_downloads=cls.get_bool("ENABLE_RANGE_DOWNLOADS"),
                 chunk_size=cls.get_int("CHUNK_SIZE"),
                 # Download Options
                 enable_range_requests=cls.get_bool("ENABLE_RANGE_REQUESTS"),
@@ -462,7 +462,7 @@ class EnvConfig:
 {cls.PREFIX}BASE_URL=https://api-developer.jpmorgan.com
 {cls.PREFIX}CONTEXT_PATH=/research/dataquery-authe/api/v2
 # Optional separate Files API host
-{cls.PREFIX}FILES_BASE_URL=https://api-strm-gw01.jpmchase.com
+{cls.PREFIX}FILES_BASE_URL=https://api-dataquery.jpmchase.com
 {cls.PREFIX}FILES_CONTEXT_PATH=/research/dataquery-authe/api/v2
 
 # OAuth Configuration

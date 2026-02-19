@@ -124,13 +124,17 @@ class GroupNotFoundError(NotFoundError):
         super().__init__("Group", group_id)
 
 
-class FileNotFoundError(NotFoundError):
-    """Raised when a file is not found."""
+class FileNotFoundInGroupError(NotFoundError):
+    """Raised when a file is not found within a group."""
 
     def __init__(self, file_group_id: str, group_id: str):
         super().__init__(
             "File", file_group_id, f"File {file_group_id} not found in group {group_id}"
         )
+
+
+# Deprecated alias — avoids shadowing the built-in FileNotFoundError
+FileNotFoundError = FileNotFoundInGroupError
 
 
 class DateRangeError(ValidationError):

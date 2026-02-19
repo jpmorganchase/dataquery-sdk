@@ -11,7 +11,6 @@ from dataquery.dataquery import (
     ConfigManager,
     DataQuery,
     ProgressTracker,
-    setup_logging,
 )
 from dataquery.models import (
     Attribute,
@@ -37,14 +36,6 @@ from dataquery.utils import ensure_directory, get_download_paths
 
 class TestUtilityFunctions:
     """Test utility functions in dataquery module."""
-
-    def test_setup_logging(self):
-        """Test setup_logging function."""
-        logger = setup_logging("INFO")
-        assert logger is not None
-        assert hasattr(logger, "info")
-        assert hasattr(logger, "error")
-        assert hasattr(logger, "warning")
 
     def test_format_file_size(self):
         """Test format_file_size function."""
@@ -1818,7 +1809,7 @@ class TestDataQueryWorkflowMethods:
                 )
                 mock_client.download_file_async.return_value = mock_download_result
 
-                # Mock HTTP request methods used by _download_file_parallel_flattened
+                # Mock HTTP request methods used by _download_file_parallel
                 mock_response = AsyncMock()
                 mock_response.headers = {
                     "content-range": "bytes 0-1023/1024",

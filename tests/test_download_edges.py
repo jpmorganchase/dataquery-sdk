@@ -96,9 +96,6 @@ def make_client(tmp_path) -> DataQueryClient:
     return client
 
 
-## Removed xfail test: download_partial_206
-
-
 @pytest.mark.asyncio
 async def test_download_overwrite_protection(tmp_path, monkeypatch):
     client = make_client(tmp_path)
@@ -125,6 +122,3 @@ async def test_download_overwrite_protection(tmp_path, monkeypatch):
     assert result.status == DownloadStatus.FAILED
     # Error message content can vary by platform/mocks
     assert result.error_message
-
-
-## Removed xfail test: download_range_header
