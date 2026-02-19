@@ -56,9 +56,7 @@ async def async_example(expression: str):
 
             # Get grid data using expression
             start_time = time.time()
-            grid_response = await dq.get_grid_data_async(
-                expr=expression, grid_id=None, date=end_dt.strftime("%Y%m%d")
-            )
+            grid_response = await dq.get_grid_data_async(expr=expression, grid_id=None, date=end_dt.strftime("%Y%m%d"))
             elapsed = time.time() - start_time
 
             print(f"[Success] Retrieved data in {elapsed:.2f}s")

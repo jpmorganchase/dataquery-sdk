@@ -19,3 +19,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Time series data made optional
 ## [0.1.1] - 2026-02-18
 - Non blocking IO
+## [0.1.2] - 2026-02-18
+- File already exists status added 

@@ -36,12 +36,8 @@ async def main() -> None:
     )
     parser.add_argument("--start", help="Start date YYYYMMDD (default: 30 days ago)")
     parser.add_argument("--end", help="End date YYYYMMDD (default: today)")
-    parser.add_argument(
-        "--frequency", default="FREQ_DAY", help="Frequency (default: FREQ_DAY)"
-    )
-    parser.add_argument(
-        "--calendar", default="CAL_USBANK", help="Calendar (default: CAL_USBANK)"
-    )
+    parser.add_argument("--frequency", default="FREQ_DAY", help="Frequency (default: FREQ_DAY)")
+    parser.add_argument("--calendar", default="CAL_USBANK", help="Calendar (default: CAL_USBANK)")
     parser.add_argument(
         "--conversion",
         default="CONV_LASTBUS_ABS",
@@ -53,12 +49,8 @@ async def main() -> None:
         default="NA_NOTHING",
         help="NaN treatment (default: NA_NOTHING)",
     )
-    parser.add_argument(
-        "--data", default="REFERENCE_DATA", help="Data flag (default: REFERENCE_DATA)"
-    )
-    parser.add_argument(
-        "--show", type=int, default=3, help="How many series to print (default: 3)"
-    )
+    parser.add_argument("--data", default="REFERENCE_DATA", help="Data flag (default: REFERENCE_DATA)")
+    parser.add_argument("--show", type=int, default=3, help="How many series to print (default: 3)")
     args = parser.parse_args()
 
     # Dates
@@ -97,9 +89,7 @@ async def main() -> None:
                         series_count += 1
                         expr = attr.expression or attr.attribute_name or "N/A"
                         time_series = attr.time_series or []
-                        print(
-                            f"{series_count}. {expr} (data points: {len(time_series)})"
-                        )
+                        print(f"{series_count}. {expr} (data points: {len(time_series)})")
                         # Show first few data points as sample
                         if time_series:
                             print(f"   Sample data (first 5): {time_series[:5]}")

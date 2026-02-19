@@ -38,9 +38,7 @@ class ConnectionPoolConfig:
     """Configuration for connection pool monitoring."""
 
     max_connections: int = 64
-    max_keepalive_connections: int = (
-        16  # Renamed for test compatibility; tuned for high parallelism
-    )
+    max_keepalive_connections: int = 16  # Renamed for test compatibility; tuned for high parallelism
     keepalive_timeout: int = 300
     connection_timeout: int = 300  # Increased for better reliability
     enable_cleanup: bool = True
@@ -78,9 +76,7 @@ class ConnectionPoolMonitor:
         self._cleanup_task: Optional[asyncio.Task] = None
         self._health_check_task: Optional[asyncio.Task] = None
         self._running = False
-        self._shutdown_event: Optional[asyncio.Event] = (
-            None  # Added for test compatibility
-        )
+        self._shutdown_event: Optional[asyncio.Event] = None  # Added for test compatibility
 
         logger.info(
             "Connection pool monitor initialized",
@@ -94,9 +90,7 @@ class ConnectionPoolMonitor:
             self._shutdown_event = asyncio.Event()
         return self._shutdown_event
 
-    def start_monitoring(
-        self, connector: Optional[aiohttp.TCPConnector] = None
-    ) -> None:
+    def start_monitoring(self, connector: Optional[aiohttp.TCPConnector] = None) -> None:
         """Start monitoring the connection pool."""
         if self._running:
             return
@@ -183,9 +177,7 @@ class ConnectionPoolMonitor:
                         try:
                             cache_attr = getattr(resolver, attr_name)
                             # Verify it's actually a cache-like object
-                            if hasattr(cache_attr, "clear") and hasattr(
-                                cache_attr, "__len__"
-                            ):
+                            if hasattr(cache_attr, "clear") and hasattr(cache_attr, "__len__"):
                                 break
                             else:
                                 cache_attr = None
@@ -228,19 +220,13 @@ class ConnectionPoolMonitor:
             # Check for potential issues
             issues = []
 
-            if (
-                pool_stats.get("active_connections", 0)
-                > self.config.max_connections * 0.8
-            ):
+            if pool_stats.get("active_connections", 0) > self.config.max_connections * 0.8:
                 issues.append("High connection usage")
 
             if self.stats.connection_errors > 10:
                 issues.append("High error rate")
 
-            if (
-                pool_stats.get("idle_connections", 0)
-                > self.config.max_connections * 0.5
-            ):
+            if pool_stats.get("idle_connections", 0) > self.config.max_connections * 0.5:
                 issues.append("Many idle connections")
 
             # Log health status with simplified logging
@@ -278,21 +264,14 @@ class ConnectionPoolMonitor:
             }
 
             # Use aiohttp's built-in stats if available (more efficient)
-            if (
-                self.connector is not None
-                and hasattr(self.connector, "closed")
-                and not self.connector.closed
-            ):
+            if self.connector is not None and hasattr(self.connector, "closed") and not self.connector.closed:
                 # Try to get stats from aiohttp's internal structures
                 total_connections = 0
                 active_connections = 0
                 idle_connections = 0
 
                 # Check if we have the newer aiohttp stats API
-                if (
-                    hasattr(self.connector, "_conns")
-                    and self.connector._conns is not None
-                ):
+                if hasattr(self.connector, "_conns") and self.connector._conns is not None:
                     try:
                         # More efficient iteration
                         for host_connections in self.connector._conns.values():
@@ -302,10 +281,7 @@ class ConnectionPoolMonitor:
                                 # Only check a sample for active status
                                 sample_size = min(5, len(host_connections))
                                 for conn in host_connections[:sample_size]:
-                                    if (
-                                        hasattr(conn, "_request_count")
-                                        and conn._request_count > 0
-                                    ):
+                                    if hasattr(conn, "_request_count") and conn._request_count > 0:
                                         active_connections += 1
                                     else:
                                         idle_connections += 1
@@ -334,14 +310,8 @@ class ConnectionPoolMonitor:
                         "total_connections": total_connections,
                         "active_connections": active_connections,
                         "idle_connections": idle_connections,
-                        "connection_utilization": (
-                            active_connections / max(total_connections, 1)
-                        )
-                        * 100,
-                        "pool_utilization": (
-                            total_connections / max(self.config.max_connections, 1)
-                        )
-                        * 100,
+                        "connection_utilization": (active_connections / max(total_connections, 1)) * 100,
+                        "pool_utilization": (total_connections / max(self.config.max_connections, 1)) * 100,
                     }
                 )
 
@@ -378,9 +348,7 @@ class ConnectionPoolMonitor:
                 self.connection_times.pop(0)
 
             if self.connection_times:
-                self.stats.avg_connection_lifetime = sum(self.connection_times) / len(
-                    self.connection_times
-                )
+                self.stats.avg_connection_lifetime = sum(self.connection_times) / len(self.connection_times)
 
         elif event_type == "connection_error":
             self.stats.connection_errors += 1
@@ -424,9 +392,7 @@ class ConnectionPoolMonitor:
                 "total": self.stats.total_connections,
                 "active": self.stats.active_connections,
                 "idle": self.stats.idle_connections,
-                "available": max(
-                    0, self.config.max_connections - self.stats.total_connections
-                ),
+                "available": max(0, self.config.max_connections - self.stats.total_connections),
             },
             "utilization": {
                 "connection_utilization": pool_stats.get("connection_utilization", 0.0),
@@ -465,25 +431,17 @@ class ConnectionPoolMonitor:
             },
             "pool_stats": pool_stats,
             "monitor_stats": {
-                "last_cleanup": (
-                    self.stats.last_cleanup.isoformat()
-                    if self.stats.last_cleanup
-                    else None
-                ),
+                "last_cleanup": (self.stats.last_cleanup.isoformat() if self.stats.last_cleanup else None),
                 "cleanup_count": self.stats.cleanup_count,
                 "last_health_check": (
-                    datetime.fromtimestamp(self.last_health_check).isoformat()
-                    if self.last_health_check
-                    else None
+                    datetime.fromtimestamp(self.last_health_check).isoformat() if self.last_health_check else None
                 ),
                 "monitoring_active": self._running,
             },
             "utilization": {
                 "connection_utilization": pool_stats.get("connection_utilization", 0.0),
                 "pool_utilization": pool_stats.get("pool_utilization", 0.0),
-                "available_connections": max(
-                    0, self.config.max_connections - self.stats.total_connections
-                ),
+                "available_connections": max(0, self.config.max_connections - self.stats.total_connections),
             },
         }
 
@@ -495,9 +453,7 @@ class ConnectionPoolMonitor:
 
 
 @asynccontextmanager
-async def managed_connection_pool(
-    config: ConnectionPoolConfig, connector: aiohttp.TCPConnector
-):
+async def managed_connection_pool(config: ConnectionPoolConfig, connector: aiohttp.TCPConnector):
     """Context manager for connection pool monitoring."""
     monitor = ConnectionPoolMonitor(config)
     try:

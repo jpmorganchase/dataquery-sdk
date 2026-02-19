@@ -111,9 +111,7 @@ class TestGetFilenameFromResponse:
     def test_filename_from_content_disposition(self):
         """Test extracting filename from Content-Disposition header."""
         response = Mock(spec=aiohttp.ClientResponse)
-        response.headers = {
-            "content-disposition": 'attachment; filename="data_2024.csv"'
-        }
+        response.headers = {"content-disposition": 'attachment; filename="data_2024.csv"'}
 
         filename = get_filename_from_response(response, "test-group", "20240101")
         assert filename == "data_2024.csv"

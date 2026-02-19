@@ -20,9 +20,7 @@ from dataquery.models import (
 @pytest.mark.asyncio
 async def test_run_groups_async_empty():
     dq = DataQuery(
-        config_or_env_file=ClientConfig(
-            base_url="https://api.example.com", oauth_enabled=False, bearer_token="t"
-        )
+        config_or_env_file=ClientConfig(base_url="https://api.example.com", oauth_enabled=False, bearer_token="t")
     )
     with patch.object(dq, "list_groups_async", new=AsyncMock(return_value=[])):
         result = await dq.run_groups_async()
@@ -32,9 +30,7 @@ async def test_run_groups_async_empty():
 @pytest.mark.asyncio
 async def test_run_groups_async_success():
     dq = DataQuery(
-        config_or_env_file=ClientConfig(
-            base_url="https://api.example.com", oauth_enabled=False, bearer_token="t"
-        )
+        config_or_env_file=ClientConfig(base_url="https://api.example.com", oauth_enabled=False, bearer_token="t")
     )
     groups: List[Group] = [
         Group(provider="A"),
@@ -50,9 +46,7 @@ async def test_run_groups_async_success():
 @pytest.mark.asyncio
 async def test_run_group_files_async_empty():
     dq = DataQuery(
-        config_or_env_file=ClientConfig(
-            base_url="https://api.example.com", oauth_enabled=False, bearer_token="t"
-        )
+        config_or_env_file=ClientConfig(base_url="https://api.example.com", oauth_enabled=False, bearer_token="t")
     )
     with patch.object(dq, "list_files_async", new=AsyncMock(return_value=[])):
         result = await dq.run_group_files_async("grp")
@@ -62,9 +56,7 @@ async def test_run_group_files_async_empty():
 @pytest.mark.asyncio
 async def test_run_group_files_async_success_types_and_dump():
     dq = DataQuery(
-        config_or_env_file=ClientConfig(
-            base_url="https://api.example.com", oauth_enabled=False, bearer_token="t"
-        )
+        config_or_env_file=ClientConfig(base_url="https://api.example.com", oauth_enabled=False, bearer_token="t")
     )
     files = [
         FileInfo(file_group_id="f1", file_type=["JSON", "CSV"]),
@@ -81,9 +73,7 @@ async def test_run_group_files_async_success_types_and_dump():
 @pytest.mark.asyncio
 async def test_health_check_async_delegates_to_client():
     dq = DataQuery(
-        config_or_env_file=ClientConfig(
-            base_url="https://api.example.com", oauth_enabled=False, bearer_token="t"
-        )
+        config_or_env_file=ClientConfig(base_url="https://api.example.com", oauth_enabled=False, bearer_token="t")
     )
     mock_client = type("C", (), {"health_check_async": AsyncMock(return_value=True)})()
     dq._client = mock_client  # Bypass connect
@@ -96,14 +86,10 @@ async def test_health_check_async_delegates_to_client():
 @pytest.mark.asyncio
 async def test_run_availability_async_report():
     dq = DataQuery(
-        config_or_env_file=ClientConfig(
-            base_url="https://api.example.com", oauth_enabled=False, bearer_token="t"
-        )
+        config_or_env_file=ClientConfig(base_url="https://api.example.com", oauth_enabled=False, bearer_token="t")
     )
     avail = AvailabilityInfo(file_date="20240101", is_available=True, file_name="a.txt")
-    with patch.object(
-        dq, "check_availability_async", new=AsyncMock(return_value=avail)
-    ):
+    with patch.object(dq, "check_availability_async", new=AsyncMock(return_value=avail)):
         report = await dq.run_availability_async("fg", "20240101")
         assert report["file_group_id"] == "fg"
         assert report["file_datetime"] == "20240101"
@@ -113,9 +99,7 @@ async def test_run_availability_async_report():
 @pytest.mark.asyncio
 async def test_run_download_async_report_from_result():
     dq = DataQuery(
-        config_or_env_file=ClientConfig(
-            base_url="https://api.example.com", oauth_enabled=False, bearer_token="t"
-        )
+        config_or_env_file=ClientConfig(base_url="https://api.example.com", oauth_enabled=False, bearer_token="t")
     )
     result = DownloadResult(
         file_group_id="fg",
@@ -135,9 +119,7 @@ async def test_run_download_async_report_from_result():
 @pytest.mark.asyncio
 async def test_run_group_download_async_no_available_files():
     dq = DataQuery(
-        config_or_env_file=ClientConfig(
-            base_url="https://api.example.com", oauth_enabled=False, bearer_token="t"
-        )
+        config_or_env_file=ClientConfig(base_url="https://api.example.com", oauth_enabled=False, bearer_token="t")
     )
     with patch.object(dq, "list_available_files_async", new=AsyncMock(return_value=[])):
         out = await dq.run_group_download_async("grp", "20240101", "20240102")
@@ -145,12 +127,8 @@ async def test_run_group_download_async_no_available_files():
 
 
 def test_init_raises_configurationerror_on_validate_failure():
-    cfg = ClientConfig(
-        base_url="https://api.example.com", oauth_enabled=False, bearer_token="t"
-    )
-    with patch(
-        "dataquery.dataquery.EnvConfig.validate_config", side_effect=Exception("boom")
-    ):
+    cfg = ClientConfig(base_url="https://api.example.com", oauth_enabled=False, bearer_token="t")
+    with patch("dataquery.dataquery.EnvConfig.validate_config", side_effect=Exception("boom")):
         with pytest.raises(ConfigurationError):
             DataQuery(config_or_env_file=cfg)
 
@@ -168,9 +146,7 @@ def test_token_url_autoderive_when_client_id_given():
 
 
 def test_overrides_applied_basic():
-    cfg = ClientConfig(
-        base_url="https://api.example.com", oauth_enabled=False, bearer_token="t"
-    )
+    cfg = ClientConfig(base_url="https://api.example.com", oauth_enabled=False, bearer_token="t")
     with patch("dataquery.dataquery.EnvConfig.validate_config", return_value=None):
         dq = DataQuery(config_or_env_file=cfg, timeout=123.0, max_retries=5)
         assert dq.client_config.timeout == 123.0
@@ -180,16 +156,10 @@ def test_overrides_applied_basic():
 @pytest.mark.asyncio
 async def test_async_context_manager_calls_connect_and_close():
     dq = DataQuery(
-        config_or_env_file=ClientConfig(
-            base_url="https://api.example.com", oauth_enabled=False, bearer_token="t"
-        )
+        config_or_env_file=ClientConfig(base_url="https://api.example.com", oauth_enabled=False, bearer_token="t")
     )
-    with patch.object(
-        dq, "connect_async", new=AsyncMock(return_value=None)
-    ) as m_connect:
-        with patch.object(
-            dq, "close_async", new=AsyncMock(return_value=None)
-        ) as m_close:
+    with patch.object(dq, "connect_async", new=AsyncMock(return_value=None)) as m_connect:
+        with patch.object(dq, "close_async", new=AsyncMock(return_value=None)) as m_close:
             async with dq as ctx:
                 assert ctx is dq
             m_connect.assert_called_once()
@@ -199,9 +169,7 @@ async def test_async_context_manager_calls_connect_and_close():
 @pytest.mark.asyncio
 async def test_wrapper_methods_delegate_to_client():
     dq = DataQuery(
-        config_or_env_file=ClientConfig(
-            base_url="https://api.example.com", oauth_enabled=False, bearer_token="t"
-        )
+        config_or_env_file=ClientConfig(base_url="https://api.example.com", oauth_enabled=False, bearer_token="t")
     )
 
     # Prepare a fake client with async methods
@@ -216,16 +184,12 @@ async def test_wrapper_methods_delegate_to_client():
             return [Group(provider="Z")]
 
         async def list_files_async(self, group_id, file_group_id=None):
-            return FileList(
-                group_id=group_id, file_group_ids=[FileInfo(file_group_id="f1")]
-            )
+            return FileList(group_id=group_id, file_group_ids=[FileInfo(file_group_id="f1")])
 
         async def check_availability_async(self, file_group_id, file_datetime):
             return AvailabilityInfo(file_date=file_datetime, is_available=True)
 
-        async def list_available_files_async(
-            self, group_id, file_group_id=None, start_date=None, end_date=None
-        ):
+        async def list_available_files_async(self, group_id, file_group_id=None, start_date=None, end_date=None):
             return [{"is-available": True}]
 
         async def health_check_async(self):
@@ -246,9 +210,7 @@ async def test_wrapper_methods_delegate_to_client():
         async def get_group_filters_async(self, group_id, page=None):
             return FiltersResponse(items=0, page_size=1, filters=[], links=None)
 
-        async def get_group_attributes_async(
-            self, group_id, instrument_id=None, page=None
-        ):
+        async def get_group_attributes_async(self, group_id, instrument_id=None, page=None):
             return AttributesResponse(items=0, page_size=1, instruments=[], links=None)
 
         async def get_group_time_series_async(self, *args, **kwargs):
@@ -323,9 +285,7 @@ async def test_connect_async_and_close_async_create_and_cleanup_client(monkeypat
     monkeypatch.setattr("dataquery.dataquery.DataQueryClient", DummyClient)
 
     dq = DataQuery(
-        config_or_env_file=ClientConfig(
-            base_url="https://api.example.com", oauth_enabled=False, bearer_token="t"
-        )
+        config_or_env_file=ClientConfig(base_url="https://api.example.com", oauth_enabled=False, bearer_token="t")
     )
     assert dq._client is None
 
@@ -340,9 +300,7 @@ async def test_connect_async_and_close_async_create_and_cleanup_client(monkeypat
 @pytest.mark.asyncio
 async def test_cleanup_async_calls_close_and_gc(monkeypatch):
     dq = DataQuery(
-        config_or_env_file=ClientConfig(
-            base_url="https://api.example.com", oauth_enabled=False, bearer_token="t"
-        )
+        config_or_env_file=ClientConfig(base_url="https://api.example.com", oauth_enabled=False, bearer_token="t")
     )
     with patch.object(dq, "close_async", new=AsyncMock(return_value=None)) as m_close:
         await dq.cleanup_async()

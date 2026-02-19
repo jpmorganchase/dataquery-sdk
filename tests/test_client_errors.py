@@ -20,9 +20,7 @@ class Resp:
 
 @pytest.mark.asyncio
 async def test_handle_response_error_mappings():
-    cfg = ClientConfig(
-        base_url="https://api.example.com", api_base_url="https://api.example.com"
-    )
+    cfg = ClientConfig(base_url="https://api.example.com", api_base_url="https://api.example.com")
     c = DataQueryClient(cfg)
 
     with pytest.raises(AuthenticationError):

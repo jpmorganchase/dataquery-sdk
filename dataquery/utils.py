@@ -221,9 +221,7 @@ DATAQUERY_LOG_REQUESTS=false
         return template_file
 
     except (OSError, IOError) as e:
-        logger.error(
-            "Failed to create .env template", file=str(template_file), error=str(e)
-        )
+        logger.error("Failed to create .env template", file=str(template_file), error=str(e))
         raise
     except Exception as e:
         logger.error("Unexpected error creating .env template", error=str(e))
@@ -254,14 +252,14 @@ DATAQUERY_BASE_URL={config.base_url}
 
 # OAuth Configuration
 DATAQUERY_OAUTH_ENABLED={str(config.oauth_enabled).lower()}
-DATAQUERY_OAUTH_TOKEN_URL={config.oauth_token_url or ''}
-DATAQUERY_CLIENT_ID={config.client_id or ''}
-DATAQUERY_CLIENT_SECRET={config.client_secret or ''}
-DATAQUERY_OAUTH_AUD={getattr(config, 'aud', '') or ''}
+DATAQUERY_OAUTH_TOKEN_URL={config.oauth_token_url or ""}
+DATAQUERY_CLIENT_ID={config.client_id or ""}
+DATAQUERY_CLIENT_SECRET={config.client_secret or ""}
+DATAQUERY_OAUTH_AUD={getattr(config, "aud", "") or ""}
 DATAQUERY_GRANT_TYPE={config.grant_type}
 
 # Bearer Token Configuration
-DATAQUERY_BEARER_TOKEN={config.bearer_token or ''}
+DATAQUERY_BEARER_TOKEN={config.bearer_token or ""}
 DATAQUERY_TOKEN_REFRESH_THRESHOLD={config.token_refresh_threshold}
 
 # HTTP Configuration
@@ -393,12 +391,7 @@ def validate_env_config() -> None:
     if oauth_enabled:
         client_id = get_env_value("DATAQUERY_CLIENT_ID")
         client_secret = get_env_value("DATAQUERY_CLIENT_SECRET")
-        if (
-            not client_id
-            or not client_secret
-            or client_id.strip() == ""
-            or client_secret.strip() == ""
-        ):
+        if not client_id or not client_secret or client_id.strip() == "" or client_secret.strip() == "":
             raise ValueError("OAuth credentials are required")
 
     # Check if either OAuth or Bearer token is configured
@@ -525,8 +518,7 @@ def get_download_paths(base_dir: Optional[Path] = None) -> dict:
         "base": base_download_dir,
         "workflow": base_download_dir / os.getenv("DATAQUERY_WORKFLOW_DIR", "workflow"),
         "groups": base_download_dir / os.getenv("DATAQUERY_GROUPS_DIR", "groups"),
-        "availability": base_download_dir
-        / os.getenv("DATAQUERY_AVAILABILITY_DIR", "availability"),
+        "availability": base_download_dir / os.getenv("DATAQUERY_AVAILABILITY_DIR", "availability"),
         "default": base_download_dir / os.getenv("DATAQUERY_DEFAULT_DIR", "files"),
     }
 
@@ -545,25 +537,19 @@ def parse_content_disposition(content_disposition: str) -> Optional[str]:
         return None
 
     # Try to find filename* (RFC 2231/5987)
-    filename_star_match = re.search(
-        r"filename\*=(?:UTF-8\'\')?([^;\r\n]+)", content_disposition, re.IGNORECASE
-    )
+    filename_star_match = re.search(r"filename\*=(?:UTF-8\'\')?([^;\r\n]+)", content_disposition, re.IGNORECASE)
     if filename_star_match:
         filename = filename_star_match.group(1)
         filename = urllib.parse.unquote(filename)
         return filename.strip('"')
 
     # Try to find filename="..."
-    filename_match = re.search(
-        r'filename="([^"]+)"', content_disposition, re.IGNORECASE
-    )
+    filename_match = re.search(r'filename="([^"]+)"', content_disposition, re.IGNORECASE)
     if filename_match:
         return urllib.parse.unquote(filename_match.group(1))
 
     # Try to find filename=...
-    filename_match2 = re.search(
-        r"filename=([^;\r\n]+)", content_disposition, re.IGNORECASE
-    )
+    filename_match2 = re.search(r"filename=([^;\r\n]+)", content_disposition, re.IGNORECASE)
     if filename_match2:
         return urllib.parse.unquote(filename_match2.group(1).strip('"'))
 

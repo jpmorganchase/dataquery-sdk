@@ -20,9 +20,7 @@ def test_cli_no_command_prints_help(capsys):
             rc = cli.main()
     captured = capsys.readouterr()
     assert rc == 1
-    assert (
-        "Command Line Interface" in captured.out or "Available commands" in captured.out
-    )
+    assert "Command Line Interface" in captured.out or "Available commands" in captured.out
 
 
 @pytest.mark.asyncio
@@ -109,7 +107,9 @@ async def test_cli_download_missing_group_id_in_watch(monkeypatch, capsys):
 async def test_cli_download_single_json(monkeypatch, tmp_path, capsys):
     parser = _parser()
     dest = tmp_path / "out"
-    args = parser.parse_args(["download", "--file-group-id", "FG", "--file-datetime", "20240101", "--destination", str(dest), "--json"])  # type: ignore[arg-type]
+    args = parser.parse_args(
+        ["download", "--file-group-id", "FG", "--file-datetime", "20240101", "--destination", str(dest), "--json"]
+    )  # type: ignore[arg-type]
 
     fake_result = MagicMock()
     fake_result.model_dump = lambda: {"status": "completed", "local_path": str(dest)}

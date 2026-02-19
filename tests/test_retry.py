@@ -356,9 +356,7 @@ class TestRetryManager:
     @pytest.mark.asyncio
     async def test_retry_manager_circuit_breaker_open(self):
         """Test circuit breaker open state."""
-        config = RetryConfig(
-            enable_circuit_breaker=True, circuit_breaker_threshold=1, max_retries=0
-        )
+        config = RetryConfig(enable_circuit_breaker=True, circuit_breaker_threshold=1, max_retries=0)
         manager = RetryManager(config)
 
         # First failure should open the circuit
@@ -388,9 +386,7 @@ class TestRetryManager:
 
     def test_retry_manager_is_retryable_exception(self):
         """Test is_retryable_exception method."""
-        config = RetryConfig(
-            retryable_exceptions=[RuntimeError], non_retryable_exceptions=[ValueError]
-        )
+        config = RetryConfig(retryable_exceptions=[RuntimeError], non_retryable_exceptions=[ValueError])
         manager = RetryManager(config)
 
         # Test retryable exception
@@ -415,9 +411,7 @@ class TestRetryManager:
 
     def test_retry_manager_calculate_delay_exponential(self):
         """Test delay calculation with exponential strategy."""
-        config = RetryConfig(
-            strategy=RetryStrategy.EXPONENTIAL, base_delay=1.0, exponential_base=2.0
-        )
+        config = RetryConfig(strategy=RetryStrategy.EXPONENTIAL, base_delay=1.0, exponential_base=2.0)
         manager = RetryManager(config)
 
         delay1 = manager._calculate_delay(1)
@@ -456,9 +450,7 @@ class TestRetryManager:
 
     def test_retry_manager_calculate_delay_no_jitter(self):
         """Test delay calculation without jitter."""
-        config = RetryConfig(
-            strategy=RetryStrategy.CONSTANT, base_delay=1.0, jitter=False
-        )
+        config = RetryConfig(strategy=RetryStrategy.CONSTANT, base_delay=1.0, jitter=False)
         manager = RetryManager(config)
 
         delay1 = manager._calculate_delay(1)

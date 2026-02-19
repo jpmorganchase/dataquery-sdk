@@ -3,14 +3,11 @@ Data models for the DATAQUERY SDK based on the OpenAPI specification.
 """
 
 import asyncio
-import math
 import time
-from dataclasses import dataclass
-from dataclasses import field as dc_field
 from datetime import date, datetime, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union, cast
+from typing import Any, Dict, List, Optional, Union, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -23,6 +20,7 @@ class DownloadStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    ALREADY_EXISTS = "already_exists"
 
 
 class TokenStatus(str, Enum):
@@ -42,9 +40,7 @@ class ClientConfig(BaseModel):
         default="https://api-developer.jpmorgan.com",
         description="Base URL of the DATAQUERY API",
     )
-    context_path: Optional[str] = Field(
-        default="/research/dataquery-authe/api/v2", description="API context path"
-    )
+    context_path: Optional[str] = Field(default="/research/dataquery-authe/api/v2", description="API context path")
     api_version: str = Field(default="2.0.0", description="API version")
     # Optional separate host for file endpoints
     files_base_url: Optional[str] = Field(
@@ -63,45 +59,29 @@ class ClientConfig(BaseModel):
         description="OAuth token endpoint URL",
     )
     client_id: Optional[str] = Field(default=None, description="OAuth client ID")
-    client_secret: Optional[str] = Field(
-        default=None, description="OAuth client secret"
-    )
+    client_secret: Optional[str] = Field(default=None, description="OAuth client secret")
     aud: Optional[str] = Field(
         default="JPMC:URI:RS-06785-DataQueryExternalApi-PROD",
         description="OAuth audience (aud)",
     )
-    grant_type: str = Field(
-        default="client_credentials", description="OAuth grant type"
-    )
+    grant_type: str = Field(default="client_credentials", description="OAuth grant type")
 
     # Bearer token configuration
-    bearer_token: Optional[str] = Field(
-        default=None, description="Bearer token for API access"
-    )
-    token_refresh_threshold: int = Field(
-        default=300, description="Seconds before expiry to refresh token"
-    )
+    bearer_token: Optional[str] = Field(default=None, description="Bearer token for API access")
+    token_refresh_threshold: int = Field(default=300, description="Seconds before expiry to refresh token")
 
     # HTTP configuration
-    timeout: float = Field(
-        default=600.0, description="Default request timeout in seconds"
-    )
+    timeout: float = Field(default=600.0, description="Default request timeout in seconds")
     max_retries: int = Field(default=3, description="Maximum retry attempts")
-    retry_delay: float = Field(
-        default=1.0, description="Delay between retries in seconds"
-    )
+    retry_delay: float = Field(default=1.0, description="Delay between retries in seconds")
 
     # Connection pooling
     pool_connections: int = Field(default=10, description="Number of connection pools")
     pool_maxsize: int = Field(default=20, description="Maximum connections per pool")
 
     # Rate limiting - Full 25 TPS capacity (1500 requests per minute)
-    requests_per_minute: int = Field(
-        default=1500, description="Requests per minute limit (25 TPS)"
-    )
-    burst_capacity: int = Field(
-        default=25, description="Burst capacity for rate limiting"
-    )
+    requests_per_minute: int = Field(default=1500, description="Requests per minute limit (25 TPS)")
+    burst_capacity: int = Field(default=25, description="Burst capacity for rate limiting")
 
     # Proxy configuration
     proxy_enabled: bool = Field(default=False, description="Enable proxy support")
@@ -109,68 +89,41 @@ class ClientConfig(BaseModel):
         default="",
         description="Proxy URL (e.g., http://proxy:8080, socks5://proxy:1080)",
     )
-    proxy_username: Optional[str] = Field(
-        default="", description="Proxy username for authentication"
-    )
-    proxy_password: Optional[str] = Field(
-        default="", description="Proxy password for authentication"
-    )
-    proxy_verify_ssl: bool = Field(
-        default=True, description="Verify SSL certificates for proxy connections"
-    )
+    proxy_username: Optional[str] = Field(default="", description="Proxy username for authentication")
+    proxy_password: Optional[str] = Field(default="", description="Proxy password for authentication")
+    proxy_verify_ssl: bool = Field(default=True, description="Verify SSL certificates for proxy connections")
 
     # Logging
     log_level: str = Field(default="INFO", description="Logging level")
-    enable_debug_logging: bool = Field(
-        default=False, description="Enable debug logging"
-    )
+    enable_debug_logging: bool = Field(default=False, description="Enable debug logging")
 
     # Download configuration
-    download_dir: str = Field(
-        default="./downloads", description="Base download directory"
-    )
-    create_directories: bool = Field(
-        default=True, description="Create parent directories if they don't exist"
-    )
-    overwrite_existing: bool = Field(
-        default=False, description="Overwrite existing files"
-    )
+    download_dir: str = Field(default="./downloads", description="Base download directory")
+    create_directories: bool = Field(default=True, description="Create parent directories if they don't exist")
+    overwrite_existing: bool = Field(default=False, description="Overwrite existing files")
     token_storage_dir: Optional[str] = Field(
         default=None,
         description="Optional directory to store OAuth tokens; defaults to '<download_dir>/.tokens'",
     )
 
     # Batch Download Configuration
-    max_concurrent_downloads: int = Field(
-        default=5, description="Maximum concurrent downloads"
-    )
+    max_concurrent_downloads: int = Field(default=5, description="Maximum concurrent downloads")
     batch_size: int = Field(default=10, description="Batch size for operations")
     retry_failed: bool = Field(default=True, description="Retry failed downloads")
-    max_retry_attempts: int = Field(
-        default=2, description="Maximum retry attempts for failed downloads"
-    )
-    create_date_folders: bool = Field(
-        default=True, description="Create date-based folders"
-    )
-    preserve_path_structure: bool = Field(
-        default=True, description="Preserve original path structure"
-    )
-    flatten_structure: bool = Field(
-        default=False, description="Flatten directory structure"
-    )
+    max_retry_attempts: int = Field(default=2, description="Maximum retry attempts for failed downloads")
+    create_date_folders: bool = Field(default=True, description="Create date-based folders")
+    preserve_path_structure: bool = Field(default=True, description="Preserve original path structure")
+    flatten_structure: bool = Field(default=False, description="Flatten directory structure")
     show_batch_progress: bool = Field(default=True, description="Show batch progress")
-    show_individual_progress: bool = Field(
-        default=True, description="Show individual file progress"
-    )
-    continue_on_error: bool = Field(
-        default=True, description="Continue processing on errors"
-    )
+    show_individual_progress: bool = Field(default=True, description="Show individual file progress")
+    continue_on_error: bool = Field(default=True, description="Continue processing on errors")
     log_errors: bool = Field(default=True, description="Log errors")
     save_error_log: bool = Field(default=True, description="Save error log to file")
     use_async_downloads: bool = Field(default=True, description="Use async downloads")
     enable_range_downloads: bool = Field(
         default=False,
-        description="Enable parallel range downloads (HEAD request + byte ranges). Set to True for faster large file downloads.",
+        description="Enable parallel range downloads (HEAD + byte ranges). "
+        "Set to True for faster large file downloads.",
     )
     chunk_size: int = Field(
         default=1048576,
@@ -178,26 +131,18 @@ class ClientConfig(BaseModel):
     )
 
     # Download Options
-    enable_range_requests: bool = Field(
-        default=True, description="Enable HTTP range requests"
-    )
+    enable_range_requests: bool = Field(default=True, description="Enable HTTP range requests")
     show_progress: bool = Field(default=True, description="Show download progress")
 
     # Workflow Configuration
-    workflow_dir: str = Field(
-        default="workflow", description="Workflow files subdirectory"
-    )
+    workflow_dir: str = Field(default="workflow", description="Workflow files subdirectory")
     groups_dir: str = Field(default="groups", description="Groups files subdirectory")
-    availability_dir: str = Field(
-        default="availability", description="Availability files subdirectory"
-    )
+    availability_dir: str = Field(default="availability", description="Availability files subdirectory")
     default_dir: str = Field(default="files", description="Default files subdirectory")
 
     # Security
     mask_secrets: bool = Field(default=True, description="Mask secrets in logs")
-    token_storage_enabled: bool = Field(
-        default=False, description="Enable token storage"
-    )
+    token_storage_enabled: bool = Field(default=False, description="Enable token storage")
 
     model_config = ConfigDict(
         extra="allow", populate_by_name=True
@@ -247,9 +192,7 @@ class ClientConfig(BaseModel):
         if v is not None:
             # Validate proxy URL format
             if not v.startswith(("http://", "https://", "socks4://", "socks5://")):
-                raise ValueError(
-                    "Proxy URL must start with http://, https://, socks4://, or socks5://"
-                )
+                raise ValueError("Proxy URL must start with http://, https://, socks4://, or socks5://")
         return v
 
     @field_validator("log_level")
@@ -273,11 +216,7 @@ class ClientConfig(BaseModel):
     @property
     def has_oauth_credentials(self) -> bool:
         """Check if OAuth credentials are configured."""
-        return (
-            self.oauth_enabled
-            and self.client_id is not None
-            and self.client_secret is not None
-        )
+        return self.oauth_enabled and self.client_id is not None and self.client_secret is not None
 
     @property
     def has_bearer_token(self) -> bool:
@@ -302,7 +241,7 @@ class ClientConfig(BaseModel):
         if not self.files_base_url:
             return None
         if self.files_context_path:
-            return f"{self.files_base_url}" f"{self.files_context_path}"
+            return f"{self.files_base_url}{self.files_context_path}"
         return self.files_base_url
 
 
@@ -311,9 +250,7 @@ class OAuthToken(BaseModel):
 
     access_token: str = Field(..., description="Access token")
     token_type: str = Field(default="Bearer", description="Token type")
-    expires_in: Optional[int] = Field(
-        default=None, description="Token expiry time in seconds"
-    )
+    expires_in: Optional[int] = Field(default=None, description="Token expiry time in seconds")
     refresh_token: Optional[str] = Field(default=None, description="Refresh token")
 
     # Internal tracking
@@ -391,9 +328,7 @@ class TokenResponse(BaseModel):
 
     access_token: str = Field(..., description="Access token")
     token_type: Optional[str] = Field(default=None, description="Token type")
-    expires_in: Optional[int] = Field(
-        default=None, description="Token expiry time in seconds"
-    )
+    expires_in: Optional[int] = Field(default=None, description="Token expiry time in seconds")
     refresh_token: Optional[str] = Field(default=None, description="Refresh token")
 
     model_config = ConfigDict(
@@ -416,21 +351,11 @@ class FileMetadata(BaseModel):
     """File metadata information."""
 
     frequency: Optional[str] = Field(None, description="Data frequency")
-    regions: Optional[List[str]] = Field(
-        None, description="List of regions covered by the data"
-    )
-    history_start_date: Optional[str] = Field(
-        None, alias="history-start-date", description="History start date"
-    )
-    median_file_size_mb: Optional[str] = Field(
-        None, alias="median-file-size-mb", description="Median file size in MB"
-    )
-    publication_time: Optional[str] = Field(
-        None, alias="publication-time", description="Publication time"
-    )
-    data_lag: Optional[str] = Field(
-        None, alias="data-lag", description="Data lag information"
-    )
+    regions: Optional[List[str]] = Field(None, description="List of regions covered by the data")
+    history_start_date: Optional[str] = Field(None, alias="history-start-date", description="History start date")
+    median_file_size_mb: Optional[str] = Field(None, alias="median-file-size-mb", description="Median file size in MB")
+    publication_time: Optional[str] = Field(None, alias="publication-time", description="Publication time")
+    data_lag: Optional[str] = Field(None, alias="data-lag", description="Data lag information")
 
     model_config = ConfigDict(
         extra="allow", populate_by_name=True
@@ -442,9 +367,7 @@ class SchemaColumn(BaseModel):
 
     column_id: str = Field(..., alias="columnId", description="Column identifier")
     column_name: str = Field(..., alias="columnName", description="Column name")
-    column_description: Optional[str] = Field(
-        None, alias="columnDescription", description="Column description"
-    )
+    column_description: Optional[str] = Field(None, alias="columnDescription", description="Column description")
     data_type: str = Field(..., alias="dataType", description="Data type")
 
     model_config = ConfigDict(
@@ -481,25 +404,15 @@ class Group(BaseModel):
     """Model representing a data group based on the new OpenAPI spec."""
 
     item: Optional[int] = Field(None, description="Item number")
-    group_id: Optional[str] = Field(
-        None, alias="group-id", description="Unique group identifier"
-    )
-    group_name: Optional[str] = Field(
-        None, alias="group-name", description="Display name of the group"
-    )
+    group_id: Optional[str] = Field(None, alias="group-id", description="Unique group identifier")
+    group_name: Optional[str] = Field(None, alias="group-name", description="Display name of the group")
 
     description: Optional[str] = Field(None, description="Group description")
     provider: Optional[str] = Field(None, description="Data provider")
     premium: Optional[bool] = Field(None, description="Whether this is a premium group")
-    population: Optional[Dict[str, Any]] = Field(
-        None, description="Population information"
-    )
-    attributes: Optional[List[Dict[str, Any]]] = Field(
-        None, description="Group attributes"
-    )
-    file_groups: Optional[int] = Field(
-        None, alias="file-groups", description="Number of file groups"
-    )
+    population: Optional[Dict[str, Any]] = Field(None, description="Population information")
+    attributes: Optional[List[Dict[str, Any]]] = Field(None, description="Group attributes")
+    file_groups: Optional[int] = Field(None, alias="file-groups", description="Number of file groups")
 
     model_config = ConfigDict(
         extra="allow", populate_by_name=True
@@ -548,19 +461,13 @@ class FileInfo(BaseModel):
     """
 
     # Primary identifier
-    file_group_id: Optional[str] = Field(
-        None, alias="file-group-id", description="Unique file group identifier"
-    )
+    file_group_id: Optional[str] = Field(None, alias="file-group-id", description="Unique file group identifier")
 
     # Additional info
     description: Optional[str] = Field(None, description="File description")
-    file_type: Optional[List[str]] = Field(
-        None, alias="file-type", description="Type(s) of the file"
-    )
+    file_type: Optional[List[str]] = Field(None, alias="file-type", description="Type(s) of the file")
     metadata: Optional[FileMetadata] = Field(None, description="File metadata")
-    file_schema: Optional[List[SchemaColumn]] = Field(
-        None, description="File schema", alias="schema"
-    )
+    file_schema: Optional[List[SchemaColumn]] = Field(None, description="File schema", alias="schema")
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
@@ -595,30 +502,22 @@ class FileInfo(BaseModel):
 
     def is_parquet(self) -> bool:
         """Check if file is Parquet format."""
-        return bool(self.file_type) and any(
-            (t or "").lower() == "parquet" for t in (self.file_type or [])
-        )
+        return bool(self.file_type) and any((t or "").lower() == "parquet" for t in (self.file_type or []))
 
     def is_csv(self) -> bool:
         """Check if file is CSV format."""
-        return bool(self.file_type) and any(
-            (t or "").lower() == "csv" for t in (self.file_type or [])
-        )
+        return bool(self.file_type) and any((t or "").lower() == "csv" for t in (self.file_type or []))
 
     def is_json(self) -> bool:
         """Check if file is JSON format."""
-        return bool(self.file_type) and any(
-            (t or "").lower() == "json" for t in (self.file_type or [])
-        )
+        return bool(self.file_type) and any((t or "").lower() == "json" for t in (self.file_type or []))
 
 
 class FileList(BaseModel):
     """Response model for listing files."""
 
     group_id: str = Field(..., alias="group-id", description="Group identifier")
-    file_group_ids: List[FileInfo] = Field(
-        ..., alias="file-group-ids", description="List of file information"
-    )
+    file_group_ids: List[FileInfo] = Field(..., alias="file-group-ids", description="List of file information")
 
     model_config = ConfigDict(
         extra="allow", populate_by_name=True
@@ -653,27 +552,13 @@ class FileList(BaseModel):
 class AvailabilityInfo(BaseModel):
     """Model representing file availability information."""
 
-    group_id: Optional[str] = Field(
-        None, alias="group-id", description="Group identifier"
-    )
-    file_group_id: Optional[str] = Field(
-        None, alias="file-group-id", description="File group identifier"
-    )
-    file_date: str = Field(
-        ..., alias="file-datetime", description="File date in YYYYMMDD format"
-    )
-    is_available: bool = Field(
-        ..., alias="is-available", description="Whether the file is available"
-    )
-    file_name: Optional[str] = Field(
-        None, alias="file-name", description="Name of the file"
-    )
-    first_created_on: Optional[str] = Field(
-        None, alias="first-created-on", description="First creation timestamp"
-    )
-    last_modified: Optional[str] = Field(
-        None, alias="last-modified", description="Last modification timestamp"
-    )
+    group_id: Optional[str] = Field(None, alias="group-id", description="Group identifier")
+    file_group_id: Optional[str] = Field(None, alias="file-group-id", description="File group identifier")
+    file_date: str = Field(..., alias="file-datetime", description="File date in YYYYMMDD format")
+    is_available: bool = Field(..., alias="is-available", description="Whether the file is available")
+    file_name: Optional[str] = Field(None, alias="file-name", description="Name of the file")
+    first_created_on: Optional[str] = Field(None, alias="first-created-on", description="First creation timestamp")
+    last_modified: Optional[str] = Field(None, alias="last-modified", description="Last modification timestamp")
 
     model_config = ConfigDict(
         extra="allow", populate_by_name=True
@@ -691,19 +576,11 @@ class AvailableFilesResponse(BaseModel):
     """Response model for listing available files by date range."""
 
     group_id: str = Field(..., alias="group-id", description="Group identifier")
-    file_group_id: Optional[str] = Field(
-        None, alias="file-group-id", description="File identifier"
-    )
-    start_date: Optional[str] = Field(
-        None, alias="start-date", description="Start date"
-    )
+    file_group_id: Optional[str] = Field(None, alias="file-group-id", description="File identifier")
+    start_date: Optional[str] = Field(None, alias="start-date", description="Start date")
     end_date: Optional[str] = Field(None, alias="end-date", description="End date")
-    available_files: List[Dict[str, Any]] = Field(
-        ..., alias="available-files", description="List of available files"
-    )
-    summary: Optional[Dict[str, Any]] = Field(
-        None, alias="summary", description="Summary of available files"
-    )
+    available_files: List[Dict[str, Any]] = Field(..., alias="available-files", description="List of available files")
+    summary: Optional[Dict[str, Any]] = Field(None, alias="summary", description="Summary of available files")
 
     model_config = ConfigDict(
         extra="allow", populate_by_name=True
@@ -717,21 +594,11 @@ class DownloadProgress(BaseModel):
     bytes_downloaded: int = Field(default=0, description="Number of bytes downloaded")
     total_bytes: int = Field(default=0, description="Total number of bytes to download")
     percentage: float = Field(default=0.0, description="Download percentage (0-100)")
-    speed_bps: float = Field(
-        default=0.0, description="Download speed in bytes per second"
-    )
-    eta_seconds: Optional[float] = Field(
-        default=None, description="Estimated time to completion in seconds"
-    )
-    start_time: datetime = Field(
-        default_factory=datetime.now, description="Download start time"
-    )
-    last_update: datetime = Field(
-        default_factory=datetime.now, description="Last progress update time"
-    )
-    status: DownloadStatus = Field(
-        default=DownloadStatus.PENDING, description="Download status"
-    )
+    speed_bps: float = Field(default=0.0, description="Download speed in bytes per second")
+    eta_seconds: Optional[float] = Field(default=None, description="Estimated time to completion in seconds")
+    start_time: datetime = Field(default_factory=datetime.now, description="Download start time")
+    last_update: datetime = Field(default_factory=datetime.now, description="Last progress update time")
+    status: DownloadStatus = Field(default=DownloadStatus.PENDING, description="Download status")
 
     model_config = ConfigDict(extra="allow")  # Allow extra fields from API
 
@@ -748,9 +615,7 @@ class DownloadProgress(BaseModel):
     def update_progress(self, bytes_downloaded: int, speed_bps: Optional[float] = None):
         """Update download progress."""
         self.bytes_downloaded = bytes_downloaded
-        self.percentage = (
-            (bytes_downloaded / self.total_bytes) * 100 if self.total_bytes > 0 else 0
-        )
+        self.percentage = (bytes_downloaded / self.total_bytes) * 100 if self.total_bytes > 0 else 0
 
         if speed_bps:
             self.speed_bps = speed_bps
@@ -762,15 +627,9 @@ class DownloadOptions(BaseModel):
     """Options for file downloads."""
 
     # File options
-    destination_path: Optional[Path] = Field(
-        default=None, description="Local path to save the file"
-    )
-    create_directories: bool = Field(
-        default=True, description="Create parent directories if they don't exist"
-    )
-    overwrite_existing: bool = Field(
-        default=False, description="Overwrite existing files"
-    )
+    destination_path: Optional[Path] = Field(default=None, description="Local path to save the file")
+    create_directories: bool = Field(default=True, description="Create parent directories if they don't exist")
+    overwrite_existing: bool = Field(default=False, description="Overwrite existing files")
 
     # Download options
     chunk_size_setting: int = Field(
@@ -779,21 +638,13 @@ class DownloadOptions(BaseModel):
         alias="chunk_size",
     )
     max_retries: int = Field(default=3, description="Maximum number of retry attempts")
-    retry_delay: float = Field(
-        default=1.0, description="Delay between retries in seconds"
-    )
+    retry_delay: float = Field(default=1.0, description="Delay between retries in seconds")
     timeout: float = Field(default=600.0, description="Request timeout in seconds")
 
     # Range requests
-    enable_range_requests: bool = Field(
-        default=True, description="Enable HTTP range requests for resumable downloads"
-    )
-    range_start: Optional[int] = Field(
-        default=None, description="Start byte position for range download (0-based)"
-    )
-    range_end: Optional[int] = Field(
-        default=None, description="End byte position for range download (inclusive)"
-    )
+    enable_range_requests: bool = Field(default=True, description="Enable HTTP range requests for resumable downloads")
+    range_start: Optional[int] = Field(default=None, description="Start byte position for range download (0-based)")
+    range_end: Optional[int] = Field(default=None, description="End byte position for range download (inclusive)")
     range_header: Optional[str] = Field(
         default=None,
         description="Custom range header (e.g., 'bytes=0-1023')",
@@ -801,9 +652,7 @@ class DownloadOptions(BaseModel):
 
     # Progress tracking
     show_progress: bool = Field(default=True, description="Show download progress")
-    progress_callback: Optional[Any] = Field(
-        default=None, description="Custom progress callback function"
-    )
+    progress_callback: Optional[Any] = Field(default=None, description="Custom progress callback function")
 
     enable_adaptive_chunks: bool = Field(
         default=False,
@@ -828,9 +677,7 @@ class DownloadOptions(BaseModel):
     def verify_checksum(self) -> bool:
         """Backward compatibility property."""
         # Check if verify_checksum was passed in extra fields
-        extra_verify_checksum = getattr(self, "__pydantic_extra__", {}).get(
-            "verify_checksum"
-        )
+        extra_verify_checksum = getattr(self, "__pydantic_extra__", {}).get("verify_checksum")
         if extra_verify_checksum is not None:
             return extra_verify_checksum
         return False  # Default to False for backward compatibility
@@ -839,11 +686,7 @@ class DownloadOptions(BaseModel):
     def chunk_size(self) -> int:
         """Public chunk size value always returning a positive integer."""
         extra_chunk_size = getattr(self, "__pydantic_extra__", {}).get("chunk_size")
-        value = (
-            extra_chunk_size
-            if extra_chunk_size is not None
-            else self.chunk_size_setting
-        )
+        value = extra_chunk_size if extra_chunk_size is not None else self.chunk_size_setting
         # Safety clamp
         try:
             value_int = int(value)
@@ -886,18 +729,12 @@ class DownloadResult(BaseModel):
 
     file_group_id: str = Field(..., description="File identifier")
     group_id: Optional[str] = Field(None, description="Group identifier")
-    local_path: Optional[Path] = Field(
-        None, description="Local path where file was saved"
-    )
+    local_path: Optional[Path] = Field(None, description="Local path where file was saved")
     file_size: Optional[int] = Field(None, description="Size of the downloaded file")
-    download_time: Optional[float] = Field(
-        None, description="Time taken for download in seconds"
-    )
+    download_time: Optional[float] = Field(None, description="Time taken for download in seconds")
     bytes_downloaded: Optional[int] = Field(None, description="Total bytes downloaded")
     status: DownloadStatus = Field(DownloadStatus.FAILED, description="Download status")
-    error_message: Optional[str] = Field(
-        None, description="Error message if download failed"
-    )
+    error_message: Optional[str] = Field(None, description="Error message if download failed")
 
     model_config = {"extra": "allow"}  # Allow extra fields from API
 
@@ -913,20 +750,12 @@ class Instrument(BaseModel):
     """Model representing an instrument from the DataQuery catalog."""
 
     item: int = Field(..., description="Item number")
-    instrument_id: str = Field(
-        ..., alias="instrument-id", description="Unique instrument identifier"
-    )
-    instrument_name: str = Field(
-        ..., alias="instrument-name", description="Instrument short name"
-    )
+    instrument_id: str = Field(..., alias="instrument-id", description="Unique instrument identifier")
+    instrument_name: str = Field(..., alias="instrument-name", description="Instrument short name")
     country: Optional[str] = Field(None, description="ISO-3166-1 alpha-3 country code")
     currency: Optional[str] = Field(None, description="ISO-4217 currency code")
-    instrument_cusip: Optional[str] = Field(
-        None, alias="instrument-cusip", description="Instrument CUSIP"
-    )
-    instrument_isin: Optional[str] = Field(
-        None, alias="instrument-isin", description="Instrument ISIN"
-    )
+    instrument_cusip: Optional[str] = Field(None, alias="instrument-cusip", description="Instrument CUSIP")
+    instrument_isin: Optional[str] = Field(None, alias="instrument-isin", description="Instrument ISIN")
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
@@ -934,19 +763,11 @@ class Instrument(BaseModel):
 class Attribute(BaseModel):
     """Model representing an attribute measure for an instrument."""
 
-    attribute_id: Optional[str] = Field(
-        None, alias="attribute-id", description="Unique attribute measure identifier"
-    )
-    attribute_name: Optional[str] = Field(
-        None, alias="attribute-name", description="Attribute short name"
-    )
-    expression: Optional[str] = Field(
-        None, description="Traditional DataQuery time-series identifier"
-    )
+    attribute_id: Optional[str] = Field(None, alias="attribute-id", description="Unique attribute measure identifier")
+    attribute_name: Optional[str] = Field(None, alias="attribute-name", description="Attribute short name")
+    expression: Optional[str] = Field(None, description="Traditional DataQuery time-series identifier")
     label: Optional[str] = Field(None, description="Name of a time-series data set")
-    last_published: Optional[str] = Field(
-        None, alias="last-published", description="Date/Time data was last published"
-    )
+    last_published: Optional[str] = Field(None, alias="last-published", description="Date/Time data was last published")
     message: Optional[str] = Field(None, description="Attribute level user message")
     time_series: Optional[List[List[Union[str, float, None]]]] = Field(
         None, alias="time-series", description="Time series data"
@@ -958,15 +779,9 @@ class Attribute(BaseModel):
 class Filter(BaseModel):
     """Model representing a filter dimension."""
 
-    filter_name: str = Field(
-        ..., alias="filter-name", description="Name of a filter dimension"
-    )
-    description: Optional[str] = Field(
-        None, alias="filter-description", description="Description of a filter"
-    )
-    values: Optional[List[str]] = Field(
-        None, description="Valid filter value enumerator"
-    )
+    filter_name: str = Field(..., alias="filter-name", description="Name of a filter dimension")
+    description: Optional[str] = Field(None, alias="filter-description", description="Description of a filter")
+    values: Optional[List[str]] = Field(None, description="Valid filter value enumerator")
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
@@ -984,22 +799,12 @@ class InstrumentWithAttributes(BaseModel):
     """Model representing an instrument with its attributes."""
 
     item: int = Field(..., description="Item number")
-    instrument_id: str = Field(
-        ..., alias="instrument-id", description="Unique instrument identifier"
-    )
-    instrument_name: str = Field(
-        ..., alias="instrument-name", description="Instrument short name"
-    )
-    instrument_cusip: Optional[str] = Field(
-        None, alias="instrument-cusip", description="Instrument CUSIP"
-    )
-    instrument_isin: Optional[str] = Field(
-        None, alias="instrument-isin", description="Instrument ISIN"
-    )
+    instrument_id: str = Field(..., alias="instrument-id", description="Unique instrument identifier")
+    instrument_name: str = Field(..., alias="instrument-name", description="Instrument short name")
+    instrument_cusip: Optional[str] = Field(None, alias="instrument-cusip", description="Instrument CUSIP")
+    instrument_isin: Optional[str] = Field(None, alias="instrument-isin", description="Instrument ISIN")
     group: Optional[Dict[str, str]] = Field(None, description="Group information")
-    attributes: Optional[List[Attribute]] = Field(
-        None, description="List of attributes"
-    )
+    attributes: Optional[List[Attribute]] = Field(None, description="List of attributes")
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
@@ -1017,9 +822,7 @@ class InstrumentsResponse(BaseModel):
 
     links: Optional[List[Link]] = Field(None, description="Pagination links")
     items: int = Field(..., description="Total number of items")
-    page_size: int = Field(
-        ..., alias="page-size", description="Number of items per page"
-    )
+    page_size: int = Field(..., alias="page-size", description="Number of items per page")
     instruments: List[Instrument] = Field(..., description="List of instruments")
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
@@ -1030,12 +833,8 @@ class AttributesResponse(BaseModel):
 
     links: Optional[List[Link]] = Field(None, description="Pagination links")
     items: int = Field(..., description="Total number of items")
-    page_size: int = Field(
-        ..., alias="page-size", description="Number of items per page"
-    )
-    instruments: List[InstrumentWithAttributes] = Field(
-        ..., description="List of instruments with attributes"
-    )
+    page_size: int = Field(..., alias="page-size", description="Number of items per page")
+    instruments: List[InstrumentWithAttributes] = Field(..., description="List of instruments with attributes")
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
@@ -1045,9 +844,7 @@ class FiltersResponse(BaseModel):
 
     links: Optional[List[Link]] = Field(None, description="Pagination links")
     items: int = Field(..., description="Total number of items")
-    page_size: int = Field(
-        ..., alias="page-size", description="Number of items per page"
-    )
+    page_size: int = Field(..., alias="page-size", description="Number of items per page")
     filters: List[Filter] = Field(..., description="List of filters")
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
@@ -1058,12 +855,8 @@ class TimeSeriesResponse(BaseModel):
 
     links: Optional[List[Link]] = Field(None, description="Pagination links")
     items: int = Field(..., description="Total number of items")
-    page_size: int = Field(
-        ..., alias="page-size", description="Number of items per page"
-    )
-    instruments: List[InstrumentWithAttributes] = Field(
-        ..., description="List of instruments with time series data"
-    )
+    page_size: int = Field(..., alias="page-size", description="Number of items per page")
+    instruments: List[InstrumentWithAttributes] = Field(..., description="List of instruments with time series data")
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
@@ -1072,17 +865,13 @@ class GridDataSeries(BaseModel):
     """Model representing a grid data series."""
 
     expr: str = Field(..., description="The expression for the grid data")
-    error_code: Optional[str] = Field(
-        None, alias="errorCode", description="Error code for this specific expression"
-    )
+    error_code: Optional[str] = Field(None, alias="errorCode", description="Error code for this specific expression")
     error_message: Optional[str] = Field(
         None,
         alias="errorMessage",
         description="Error message for this specific expression",
     )
-    records: Optional[List[Dict[str, Any]]] = Field(
-        None, description="The grid data records"
-    )
+    records: Optional[List[Dict[str, Any]]] = Field(None, description="The grid data records")
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
@@ -1090,9 +879,7 @@ class GridDataSeries(BaseModel):
 class GridDataResponse(BaseModel):
     """Response model for grid data."""
 
-    error_code: Optional[str] = Field(
-        None, alias="errorCode", description="Error code for the entire API request"
-    )
+    error_code: Optional[str] = Field(None, alias="errorCode", description="Error code for the entire API request")
     error_message: Optional[str] = Field(
         None,
         alias="errorMessage",
@@ -1116,9 +903,7 @@ class ErrorResponse(BaseModel):
     """Error response from the API matching DataQuery specification."""
 
     code: Union[int, str] = Field(..., description="DataQuery error code")
-    description: str = Field(
-        ..., description="Description of the error that has occurred"
-    )
+    description: str = Field(..., description="Description of the error that has occurred")
     interaction_id: Optional[str] = Field(
         None,
         alias="x-dataquery-interaction-id",
@@ -1151,9 +936,7 @@ class InternalServerErrorResponse(ErrorResponse):
 class Information(BaseModel):
     """A DataQuery information message."""
 
-    code: Union[int, str] = Field(
-        ..., description="DataQuery code for information message"
-    )
+    code: Union[int, str] = Field(..., description="DataQuery code for information message")
     description: str = Field(..., description="Description of information provided")
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
@@ -1267,15 +1050,11 @@ class TimeSeriesParameters(BaseModel):
 
     data: DataType = Field(DataType.REFERENCE_DATA, description="Data type to retrieve")
     format: Format = Field(Format.JSON, description="Response format")
-    start_date: Optional[str] = Field(
-        "TODAY-1D", alias="start-date", description="Start date"
-    )
+    start_date: Optional[str] = Field("TODAY-1D", alias="start-date", description="Start date")
     end_date: Optional[str] = Field("TODAY", alias="end-date", description="End date")
     calendar: Calendar = Field(Calendar.CAL_USBANK, description="Calendar convention")
     frequency: Frequency = Field(Frequency.FREQ_DAY, description="Frequency convention")
-    conversion: Conversion = Field(
-        Conversion.CONV_LASTBUS_ABS, description="Conversion convention"
-    )
+    conversion: Conversion = Field(Conversion.CONV_LASTBUS_ABS, description="Conversion convention")
     nan_treatment: NanTreatment = Field(
         NanTreatment.NA_NOTHING,
         alias="nan-treatment",

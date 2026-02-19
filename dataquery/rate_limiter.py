@@ -205,14 +205,9 @@ class EnhancedTokenBucketRateLimiter:
                         continue
 
                     # Check if request has timed out
-                    if (
-                        request.timeout
-                        and time.time() - request.timestamp > request.timeout
-                    ):
+                    if request.timeout and time.time() - request.timestamp > request.timeout:
                         if not request.future.done():
-                            request.future.set_exception(
-                                asyncio.TimeoutError("Request timed out in queue")
-                            )
+                            request.future.set_exception(asyncio.TimeoutError("Request timed out in queue"))
                         continue
 
                     # Try to acquire token
@@ -284,9 +279,7 @@ class EnhancedTokenBucketRateLimiter:
         # If queuing is enabled, we should use the queue for fairness if there's contention
         return await self._optimized_acquire(timeout, operation)
 
-    async def _optimized_acquire(
-        self, timeout: Optional[float] = None, operation: str = "unknown"
-    ) -> bool:
+    async def _optimized_acquire(self, timeout: Optional[float] = None, operation: str = "unknown") -> bool:
         """Optimized token acquisition with minimal overhead."""
         start_time = time.time()
 
@@ -347,9 +340,7 @@ class EnhancedTokenBucketRateLimiter:
         tokens_to_add = time_elapsed * tokens_per_second
 
         # Add tokens up to burst capacity
-        self.state.tokens = min(
-            self.config.burst_capacity, self.state.tokens + tokens_to_add
-        )
+        self.state.tokens = min(self.config.burst_capacity, self.state.tokens + tokens_to_add)
 
         self.state.last_refill = now
 
@@ -488,9 +479,7 @@ class RateLimitContext:
 
     async def __aenter__(self):
         """Enter rate limit context."""
-        self.acquired = await self.rate_limiter.acquire(
-            self.timeout, self.priority, self.operation
-        )
+        self.acquired = await self.rate_limiter.acquire(self.timeout, self.priority, self.operation)
         if not self.acquired:
             raise TimeoutError(f"Rate limit timeout for operation: {self.operation}")
         return self

@@ -44,22 +44,16 @@ class ValidationError(DataQueryError):
 class NotFoundError(DataQueryError):
     """Raised when a requested resource is not found."""
 
-    def __init__(
-        self, resource_type: str, resource_id: str, message: Optional[str] = None
-    ):
+    def __init__(self, resource_type: str, resource_id: str, message: Optional[str] = None):
         if message is None:
             message = f"{resource_type} not found: {resource_id}"
-        super().__init__(
-            message, {"resource_type": resource_type, "resource_id": resource_id}
-        )
+        super().__init__(message, {"resource_type": resource_type, "resource_id": resource_id})
 
 
 class RateLimitError(DataQueryError):
     """Raised when rate limits are exceeded."""
 
-    def __init__(
-        self, message: str = "Rate limit exceeded", retry_after: Optional[int] = None
-    ):
+    def __init__(self, message: str = "Rate limit exceeded", retry_after: Optional[int] = None):
         details = {"retry_after": retry_after} if retry_after else {}
         super().__init__(message, details)
 
@@ -67,9 +61,7 @@ class RateLimitError(DataQueryError):
 class NetworkError(DataQueryError):
     """Raised when network-related errors occur."""
 
-    def __init__(
-        self, message: str = "Network error occurred", status_code: Optional[int] = None
-    ):
+    def __init__(self, message: str = "Network error occurred", status_code: Optional[int] = None):
         details = {"status_code": status_code} if status_code else {}
         super().__init__(message, details)
 
@@ -128,9 +120,7 @@ class FileNotFoundInGroupError(NotFoundError):
     """Raised when a file is not found within a group."""
 
     def __init__(self, file_group_id: str, group_id: str):
-        super().__init__(
-            "File", file_group_id, f"File {file_group_id} not found in group {group_id}"
-        )
+        super().__init__("File", file_group_id, f"File {file_group_id} not found in group {group_id}")
 
 
 # Deprecated alias — avoids shadowing the built-in FileNotFoundError
@@ -153,9 +143,7 @@ class FileTypeError(ValidationError):
         message = f"Invalid file type: {file_type}"
         if allowed_types:
             message += f". Allowed types: {', '.join(allowed_types)}"
-        super().__init__(
-            message, {"file_type": file_type, "allowed_types": allowed_types}
-        )
+        super().__init__(message, {"file_type": file_type, "allowed_types": allowed_types})
 
 
 class WorkflowError(DataQueryError):

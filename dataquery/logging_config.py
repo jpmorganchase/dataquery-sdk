@@ -162,9 +162,7 @@ class PerformanceLogger:
 
         self.logger.debug("Operation started", operation=operation, **kwargs)
 
-    def log_operation_end(
-        self, operation: str, duration: float, success: bool = True, **kwargs
-    ):
+    def log_operation_end(self, operation: str, duration: float, success: bool = True, **kwargs):
         """Log end of operation."""
         if not self.config.enable_performance_logging:
             return
@@ -194,9 +192,7 @@ class PerformanceLogger:
         if not self.config.enable_metrics:
             return
 
-        self.logger.info(
-            "Performance metric", metric_name=name, value=value, unit=unit, **kwargs
-        )
+        self.logger.info("Performance metric", metric_name=name, value=value, unit=unit, **kwargs)
 
 
 class StructuredLogger:
@@ -301,9 +297,7 @@ class LoggingManager:
             if self.config.format == LogFormat.JSON:
                 formatter = logging.Formatter("%(message)s")
             else:
-                formatter = logging.Formatter(
-                    "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-                )
+                formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
             handler.setFormatter(formatter)
 
@@ -346,21 +340,15 @@ class LoggingManager:
         correlation_id: Optional[str] = None,
     ):
         """Log HTTP response."""
-        self.request_logger.log_response(
-            status_code, headers, body, duration, correlation_id
-        )
+        self.request_logger.log_response(status_code, headers, body, duration, correlation_id)
 
     def log_operation_start(self, operation: str, **kwargs):
         """Log operation start."""
         self.performance_logger.log_operation_start(operation, **kwargs)
 
-    def log_operation_end(
-        self, operation: str, duration: float, success: bool = True, **kwargs
-    ):
+    def log_operation_end(self, operation: str, duration: float, success: bool = True, **kwargs):
         """Log operation end."""
-        self.performance_logger.log_operation_end(
-            operation, duration, success, **kwargs
-        )
+        self.performance_logger.log_operation_end(operation, duration, success, **kwargs)
 
     def log_metric(self, name: str, value: float, unit: str = "", **kwargs):
         """Log performance metric."""

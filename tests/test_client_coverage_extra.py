@@ -73,9 +73,7 @@ def _make_bare_client():
     client = object.__new__(DataQueryClient)
     client.logger = StubLogger()
     client.rate_limiter = StubRateLimiter()
-    client.config = SimpleNamespace(
-        api_base_url="https://api.example.com", base_url="https://api.example.com"
-    )
+    client.config = SimpleNamespace(api_base_url="https://api.example.com", base_url="https://api.example.com")
     return client
 
 
@@ -110,9 +108,7 @@ def test_parse_content_disposition(cd, expected):
 
 def test_get_filename_from_response_variants():
     # From content-disposition
-    r1 = SimpleNamespace(
-        headers={"content-disposition": 'attachment; filename="file.csv"'}
-    )
+    r1 = SimpleNamespace(headers={"content-disposition": 'attachment; filename="file.csv"'})
     assert get_filename_from_response(r1, "fgid") == "file.csv"
 
     # From content-type mapping
@@ -222,9 +218,7 @@ async def test_handle_response_status_mappings_and_rate_limit():
 
     # 429 -> rate limit
     with pytest.raises(RateLimitError):
-        await client._handle_response(
-            FakeResponse(status=429, headers={"Retry-After": "1"})
-        )
+        await client._handle_response(FakeResponse(status=429, headers={"Retry-After": "1"}))
     assert client.rate_limiter.rate_limit_called == 1
 
     # 500
@@ -317,9 +311,7 @@ def test_dataframe_conversion_paths(monkeypatch):
 
     sys.modules["pandas"] = _PandasStub()
 
-    df = client.to_dataframe(
-        data, date_columns=["created_date"], numeric_columns=["value"]
-    )
+    df = client.to_dataframe(data, date_columns=["created_date"], numeric_columns=["value"])
     assert set(df.columns) >= {"id", "value", "created_date"}
 
     # Object with model_dump

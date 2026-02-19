@@ -11,18 +11,14 @@ from dataquery import DataQuery
 
 def create_parser() -> argparse.ArgumentParser:
     """Create the top-level CLI parser with subcommands."""
-    parser = argparse.ArgumentParser(
-        description="Command Line Interface for the DataQuery SDK"
-    )
+    parser = argparse.ArgumentParser(description="Command Line Interface for the DataQuery SDK")
     parser.add_argument("--env-file", type=str, default=None, help="Path to .env file")
     subparsers = parser.add_subparsers(dest="command")
 
     # groups
     p_groups = subparsers.add_parser("groups", help="List or search groups")
     p_groups.add_argument("--json", action="store_true", help="Output JSON")
-    p_groups.add_argument(
-        "--limit", type=int, default=None, help="Limit number of results"
-    )
+    p_groups.add_argument("--limit", type=int, default=None, help="Limit number of results")
     p_groups.add_argument("--search", type=str, default=None, help="Search keywords")
 
     # files
@@ -43,22 +39,14 @@ def create_parser() -> argparse.ArgumentParser:
     p_dl.add_argument("--file-group-id", default=None)
     p_dl.add_argument("--file-datetime", default=None)
     p_dl.add_argument("--destination", type=str, default=None)
-    p_dl.add_argument(
-        "--watch", action="store_true", help="Watch a group for new files"
-    )
+    p_dl.add_argument("--watch", action="store_true", help="Watch a group for new files")
     p_dl.add_argument("--group-id", default=None, help="Required with --watch")
     p_dl.add_argument("--json", action="store_true")
-    p_dl.add_argument(
-        "--num-parts", type=int, default=5, help="Number of parallel parts"
-    )
-    p_dl.add_argument(
-        "--chunk-size", type=int, default=None, help="Chunk size in bytes"
-    )
+    p_dl.add_argument("--num-parts", type=int, default=5, help="Number of parallel parts")
+    p_dl.add_argument("--chunk-size", type=int, default=None, help="Chunk size in bytes")
 
     # download-group
-    p_dlg = subparsers.add_parser(
-        "download-group", help="Download all files in a group"
-    )
+    p_dlg = subparsers.add_parser("download-group", help="Download all files in a group")
     p_dlg.add_argument("--group-id", required=True)
     p_dlg.add_argument("--start-date", required=True)
     p_dlg.add_argument("--end-date", required=True)
@@ -101,9 +89,7 @@ async def cmd_groups(args: argparse.Namespace) -> int:
             for g in items:
                 try:
                     d = g.model_dump()
-                    print(
-                        f"{d.get('group_id') or d.get('group-id')}\t{d.get('group_name') or d.get('group-name')}"
-                    )
+                    print(f"{d.get('group_id') or d.get('group-id')}\t{d.get('group_name') or d.get('group-name')}")
                 except Exception:
                     print(str(g))
     return 0
@@ -125,9 +111,7 @@ async def cmd_files(args: argparse.Namespace) -> int:
             for f in files:
                 try:
                     d = f.model_dump()
-                    print(
-                        f"{d.get('file_group_id') or d.get('file-group-id')}\t{d.get('file_type')}"
-                    )
+                    print(f"{d.get('file_group_id') or d.get('file-group-id')}\t{d.get('file_type')}")
                 except Exception:
                     print(str(f))
     return 0
@@ -135,9 +119,7 @@ async def cmd_files(args: argparse.Namespace) -> int:
 
 async def cmd_availability(args: argparse.Namespace) -> int:
     async with DataQuery(args.env_file) as dq:
-        avail = await dq.check_availability_async(
-            args.file_group_id, args.file_datetime
-        )
+        avail = await dq.check_availability_async(args.file_group_id, args.file_datetime)
         if args.json:
             try:
                 print(json.dumps(getattr(avail, "model_dump")(), indent=2))
@@ -210,9 +192,7 @@ async def cmd_download_group(args: argparse.Namespace) -> int:
         if args.json:
             print(json.dumps(results, indent=2))
         else:
-            print(
-                f"Downloaded {results.get('successful', 0)} files to {args.destination}"
-            )
+            print(f"Downloaded {results.get('successful', 0)} files to {args.destination}")
             if results.get("failed", 0) > 0:
                 print(f"Failed: {results.get('failed', 0)}")
     return 0
@@ -221,9 +201,7 @@ async def cmd_download_group(args: argparse.Namespace) -> int:
 def cmd_config_show(args: argparse.Namespace) -> int:
     from dataquery.config import EnvConfig
 
-    EnvConfig.create_client_config(
-        env_file=Path(args.env_file) if getattr(args, "env_file", None) else None
-    )
+    EnvConfig.create_client_config(env_file=Path(args.env_file) if getattr(args, "env_file", None) else None)
     print("Configuration loaded")
     return 0
 

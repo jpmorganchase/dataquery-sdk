@@ -18,9 +18,7 @@ from dataquery.models import (
 @pytest.mark.asyncio
 async def test_init_creates_directory_and_defaults(temp_download_dir):
     client = Mock()
-    manager = AutoDownloadManager(
-        client, group_id="group1", destination_dir=str(temp_download_dir)
-    )
+    manager = AutoDownloadManager(client, group_id="group1", destination_dir=str(temp_download_dir))
 
     assert manager.destination_dir.exists()
     assert manager.download_options.output_dir == str(temp_download_dir)
@@ -54,9 +52,7 @@ def test_get_dates_to_check_modes(temp_download_dir):
 
 def test_file_exists_locally(temp_download_dir):
     client = Mock()
-    manager = AutoDownloadManager(
-        client, group_id="g", destination_dir=str(temp_download_dir)
-    )
+    manager = AutoDownloadManager(client, group_id="g", destination_dir=str(temp_download_dir))
 
     file_id = "fileA"
     date_str = "20240115"
@@ -72,9 +68,7 @@ def test_file_exists_locally(temp_download_dir):
 @pytest.mark.asyncio
 async def test_check_and_download_skips_when_already_downloaded(temp_download_dir):
     client = Mock()
-    manager = AutoDownloadManager(
-        client, group_id="g", destination_dir=str(temp_download_dir)
-    )
+    manager = AutoDownloadManager(client, group_id="g", destination_dir=str(temp_download_dir))
     manager._running = True
     file_id = "fid"
     date_str = "20240115"
@@ -98,9 +92,7 @@ async def test_check_and_download_skips_when_already_downloaded(temp_download_di
 @pytest.mark.asyncio
 async def test_check_and_download_skips_when_exceeded_retries(temp_download_dir):
     client = Mock()
-    manager = AutoDownloadManager(
-        client, group_id="g", destination_dir=str(temp_download_dir), max_retries=2
-    )
+    manager = AutoDownloadManager(client, group_id="g", destination_dir=str(temp_download_dir), max_retries=2)
     manager._running = True
     file_id = "fid"
     date_str = "20240115"
@@ -123,9 +115,7 @@ async def test_check_and_download_skips_when_exceeded_retries(temp_download_dir)
 @pytest.mark.asyncio
 async def test_check_and_download_skips_when_exists_locally(temp_download_dir):
     client = Mock()
-    manager = AutoDownloadManager(
-        client, group_id="g", destination_dir=str(temp_download_dir)
-    )
+    manager = AutoDownloadManager(client, group_id="g", destination_dir=str(temp_download_dir))
     manager._running = True
     file_id = "fid"
     date_str = "20240115"
@@ -148,9 +138,7 @@ async def test_check_and_download_skips_when_exists_locally(temp_download_dir):
 @pytest.mark.asyncio
 async def test_check_and_download_handles_unavailable_entries(temp_download_dir):
     client = Mock()
-    manager = AutoDownloadManager(
-        client, group_id="g", destination_dir=str(temp_download_dir)
-    )
+    manager = AutoDownloadManager(client, group_id="g", destination_dir=str(temp_download_dir))
     manager._running = True
 
     client.list_available_files_async = AsyncMock(
@@ -170,9 +158,7 @@ async def test_check_and_download_handles_unavailable_entries(temp_download_dir)
 @pytest.mark.asyncio
 async def test_check_and_download_triggers_download_on_available(temp_download_dir):
     client = Mock()
-    manager = AutoDownloadManager(
-        client, group_id="g", destination_dir=str(temp_download_dir)
-    )
+    manager = AutoDownloadManager(client, group_id="g", destination_dir=str(temp_download_dir))
     manager._running = True
     file_id = "fid"
     date_str = "20240115"
@@ -209,13 +195,9 @@ async def test_download_file_success_updates_stats_and_progress_callback(
 
     progress_seen = {"called": False}
 
-    async def side_effect_download(
-        file_group_id, file_datetime, options, progress_callback
-    ):  # noqa: ARG001
+    async def side_effect_download(file_group_id, file_datetime, options, progress_callback):  # noqa: ARG001
         # Simulate progress callback invocation
-        progress = DownloadProgress(
-            file_group_id=file_group_id, bytes_downloaded=1024, total_bytes=4096
-        )
+        progress = DownloadProgress(file_group_id=file_group_id, bytes_downloaded=1024, total_bytes=4096)
         progress_callback(progress)
         # Return a successful result
         return DownloadResult(
@@ -238,17 +220,13 @@ async def test_download_file_success_updates_stats_and_progress_callback(
 @pytest.mark.asyncio
 async def test_download_file_failure_increments_failed(temp_download_dir):
     client = Mock()
-    manager = AutoDownloadManager(
-        client, group_id="g", destination_dir=str(temp_download_dir)
-    )
+    manager = AutoDownloadManager(client, group_id="g", destination_dir=str(temp_download_dir))
     file_id = "fid"
     date_str = "20240115"
     file_key = f"{file_id}_{date_str}"
 
     # Return an unsuccessful result
-    client.download_file_async = AsyncMock(
-        return_value=SimpleNamespace(success=False, error_message="oops")
-    )
+    client.download_file_async = AsyncMock(return_value=SimpleNamespace(success=False, error_message="oops"))
 
     await manager._download_file(file_id, date_str, file_key)
     assert manager.stats["download_failures"] == 1
@@ -258,9 +236,7 @@ async def test_download_file_failure_increments_failed(temp_download_dir):
 @pytest.mark.asyncio
 async def test_download_file_exception_increments_and_raises(temp_download_dir):
     client = Mock()
-    manager = AutoDownloadManager(
-        client, group_id="g", destination_dir=str(temp_download_dir)
-    )
+    manager = AutoDownloadManager(client, group_id="g", destination_dir=str(temp_download_dir))
     file_id = "fid"
     date_str = "20240115"
     file_key = f"{file_id}_{date_str}"
@@ -311,9 +287,7 @@ async def test_monitoring_loop_calls_error_callback(temp_download_dir):
     )
 
     # Force an error inside the monitoring loop
-    manager._check_and_download_files = AsyncMock(
-        side_effect=RuntimeError("loop error")
-    )
+    manager._check_and_download_files = AsyncMock(side_effect=RuntimeError("loop error"))
 
     await manager.start()
     # Let the loop run one iteration
@@ -328,9 +302,7 @@ async def test_monitoring_loop_calls_error_callback(temp_download_dir):
 @pytest.mark.asyncio
 async def test_start_and_stop_state_transitions(temp_download_dir):
     client = Mock()
-    manager = AutoDownloadManager(
-        client, group_id="g", destination_dir=str(temp_download_dir), interval_minutes=0
-    )
+    manager = AutoDownloadManager(client, group_id="g", destination_dir=str(temp_download_dir), interval_minutes=0)
 
     # Provide an empty available-files response for the loop
     client.list_available_files_async = AsyncMock(return_value=[])

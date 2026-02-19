@@ -90,9 +90,7 @@ class TestConnectionPoolConfigDetails:
 
     def test_config_with_custom_values(self):
         """Test config with custom values."""
-        config = ConnectionPoolConfig(
-            max_connections=50, max_keepalive_connections=15, enable_cleanup=False
-        )
+        config = ConnectionPoolConfig(max_connections=50, max_keepalive_connections=15, enable_cleanup=False)
         assert config.max_connections == 50
         assert config.max_keepalive_connections == 15
         assert config.enable_cleanup is False
@@ -238,9 +236,7 @@ class TestConnectionPoolIntegration:
 
     def test_config_monitor_integration(self):
         """Test config and monitor integration."""
-        config = ConnectionPoolConfig(
-            max_connections=100, enable_cleanup=True, cleanup_interval=300
-        )
+        config = ConnectionPoolConfig(max_connections=100, enable_cleanup=True, cleanup_interval=300)
         monitor = ConnectionPoolMonitor(config)
 
         # Monitor should use config values
@@ -414,12 +410,8 @@ def test_start_stop_without_event_loop_merged():
 async def test_cleanup_idle_connections_clears_resolver_cache_merged():
     monitor = _make_monitor()
     connector = _DummyConnector()
-    connector._resolver._cache["host1"] = _SimpleNamespace(
-        connection=_SimpleNamespace(_request_count=0)
-    )
-    connector._resolver._cache["host2"] = _SimpleNamespace(
-        connection=_SimpleNamespace(_request_count=1)
-    )
+    connector._resolver._cache["host1"] = _SimpleNamespace(connection=_SimpleNamespace(_request_count=0))
+    connector._resolver._cache["host2"] = _SimpleNamespace(connection=_SimpleNamespace(_request_count=1))
 
     monitor.start_monitoring(connector)
     await monitor.cleanup_idle_connections()

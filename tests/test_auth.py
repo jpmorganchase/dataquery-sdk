@@ -44,9 +44,7 @@ class TestOAuthManager:
 
         oauth_manager = OAuthManager(config)
 
-        with patch.object(
-            oauth_manager.token_manager, "get_valid_token"
-        ) as mock_get_token:
+        with patch.object(oauth_manager.token_manager, "get_valid_token") as mock_get_token:
             mock_get_token.return_value = "Bearer test_token"
 
             token = await oauth_manager.authenticate()
@@ -66,14 +64,10 @@ class TestOAuthManager:
 
         oauth_manager = OAuthManager(config)
 
-        with patch.object(
-            oauth_manager.token_manager, "get_valid_token"
-        ) as mock_get_token:
+        with patch.object(oauth_manager.token_manager, "get_valid_token") as mock_get_token:
             mock_get_token.return_value = None
 
-            with pytest.raises(
-                AuthenticationError, match="Failed to obtain valid authentication token"
-            ):
+            with pytest.raises(AuthenticationError, match="Failed to obtain valid authentication token"):
                 await oauth_manager.authenticate()
 
     @pytest.mark.asyncio
@@ -111,9 +105,7 @@ class TestOAuthManager:
 
     def test_oauth_manager_is_authenticated_with_bearer(self):
         """Test OAuthManager is_authenticated method with bearer token."""
-        config = ClientConfig(
-            base_url="https://api.example.com", bearer_token="test_bearer_token"
-        )
+        config = ClientConfig(base_url="https://api.example.com", bearer_token="test_bearer_token")
 
         oauth_manager = OAuthManager(config)
         assert oauth_manager.is_authenticated() is True
@@ -137,9 +129,7 @@ class TestOAuthManager:
 
         oauth_manager = OAuthManager(config)
 
-        with patch.object(
-            oauth_manager.token_manager, "get_token_info"
-        ) as mock_get_info:
+        with patch.object(oauth_manager.token_manager, "get_token_info") as mock_get_info:
             mock_get_info.return_value = {
                 "status": "valid",
                 "token_type": "Bearer",
@@ -270,9 +260,7 @@ class TestTokenManager:
     @pytest.mark.asyncio
     async def test_token_manager_get_valid_token_bearer(self):
         """Test TokenManager get_valid_token method with bearer token."""
-        config = ClientConfig(
-            base_url="https://api.example.com", bearer_token="test_bearer_token"
-        )
+        config = ClientConfig(base_url="https://api.example.com", bearer_token="test_bearer_token")
 
         token_manager = TokenManager(config)
         token = await token_manager.get_valid_token()
@@ -425,9 +413,7 @@ class TestTokenManager:
         token_manager = TokenManager(config)
 
         with patch("aiohttp.ClientSession", side_effect=Exception("Network error")):
-            with pytest.raises(
-                AuthenticationError, match="Failed to get OAuth token: Network error"
-            ):
+            with pytest.raises(AuthenticationError, match="Failed to get OAuth token: Network error"):
                 await token_manager._get_new_token()
 
     @pytest.mark.asyncio
@@ -500,9 +486,7 @@ class TestTokenManager:
         mock_response.text.return_value = "Invalid refresh token"
 
         mock_session = AsyncMock()
-        mock_session.__aenter__.return_value.post.return_value.__aenter__.return_value = (
-            mock_response
-        )
+        mock_session.__aenter__.return_value.post.return_value.__aenter__.return_value = mock_response
 
         with patch("aiohttp.ClientSession", return_value=mock_session):
             with patch.object(token_manager, "_get_new_token") as mock_get_new:
@@ -845,9 +829,7 @@ class TestTokenManager:
         token_manager.current_token = mock_token
 
         with patch("pathlib.Path.exists", return_value=True):
-            with patch(
-                "pathlib.Path.unlink", side_effect=Exception("File deletion failed")
-            ):
+            with patch("pathlib.Path.unlink", side_effect=Exception("File deletion failed")):
                 # Should not raise exception
                 token_manager.clear_token()
                 assert token_manager.current_token is None
@@ -908,9 +890,7 @@ class TestTokenManager:
         mock_response.text.return_value = "Invalid refresh token"
 
         mock_session = AsyncMock()
-        mock_session.__aenter__.return_value.post.return_value.__aenter__.return_value = (
-            mock_response
-        )
+        mock_session.__aenter__.return_value.post.return_value.__aenter__.return_value = mock_response
 
         with patch("aiohttp.ClientSession", return_value=mock_session):
             with patch.object(token_manager, "_get_new_token") as mock_get_new:

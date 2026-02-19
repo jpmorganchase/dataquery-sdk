@@ -33,20 +33,12 @@ def test_build_api_url_and_files_api_url_variants():
     assert c._build_api_url("/groups") == "https://api.example.com/api/v1/groups"
 
     # files url falls back to api_base when files_base not set
-    assert (
-        c._build_files_api_url("group/file/download")
-        == "https://api.example.com/api/v1/group/file/download"
-    )
+    assert c._build_files_api_url("group/file/download") == "https://api.example.com/api/v1/group/file/download"
 
     # when files_base/context configured, use them
-    cfg2 = make_cfg(
-        files_base_url="https://files.example.com", files_context_path="/files"
-    )
+    cfg2 = make_cfg(files_base_url="https://files.example.com", files_context_path="/files")
     c2 = DataQueryClient(cfg2)
-    assert (
-        c2._build_files_api_url("group/file/download")
-        == "https://files.example.com/files/group/file/download"
-    )
+    assert c2._build_files_api_url("group/file/download") == "https://files.example.com/files/group/file/download"
 
 
 def test_build_api_url_length_validation():
@@ -140,9 +132,7 @@ async def test_async_context_manager_uses_connect_and_close(monkeypatch):
 
 
 class DummyResp:
-    def __init__(
-        self, status=200, headers=None, url="https://api.example.com/x", text_body=""
-    ):
+    def __init__(self, status=200, headers=None, url="https://api.example.com/x", text_body=""):
         self.status = status
         self.headers = headers or {}
         self.url = url

@@ -81,9 +81,7 @@ class TestUtilityFunctions:
             assert paths["base"] == Path("/custom/downloads")
             assert paths["workflow"] == Path("/custom/downloads/custom_workflow")
             assert paths["groups"] == Path("/custom/downloads/custom_groups")
-            assert paths["availability"] == Path(
-                "/custom/downloads/custom_availability"
-            )
+            assert paths["availability"] == Path("/custom/downloads/custom_availability")
             assert paths["default"] == Path("/custom/downloads/custom_files")
 
     def test_get_download_paths_defaults(self):
@@ -111,9 +109,7 @@ class TestConfigManager:
 
     def test_get_client_config_with_env_file(self):
         """Test get_client_config with environment file."""
-        with patch(
-            "dataquery.dataquery.EnvConfig.create_client_config"
-        ) as mock_create_config:
+        with patch("dataquery.dataquery.EnvConfig.create_client_config") as mock_create_config:
             mock_config = ClientConfig(
                 base_url="https://api.example.com",
                 oauth_enabled=False,
@@ -131,9 +127,7 @@ class TestConfigManager:
 
     def test_get_client_config_without_env_file(self):
         """Test get_client_config without environment file."""
-        with patch(
-            "dataquery.dataquery.EnvConfig.create_client_config"
-        ) as mock_create_config:
+        with patch("dataquery.dataquery.EnvConfig.create_client_config") as mock_create_config:
             mock_config = ClientConfig(
                 base_url="https://api.example.com",
                 oauth_enabled=False,
@@ -393,9 +387,7 @@ class TestDataQueryAsyncMethods:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
-                mock_groups = [
-                    Group(item=1, group_id="group1", group_name="Test Group")
-                ]
+                mock_groups = [Group(item=1, group_id="group1", group_name="Test Group")]
                 mock_client.search_groups_async.return_value = mock_groups
 
                 dataquery = DataQuery(config)
@@ -437,9 +429,7 @@ class TestDataQueryAsyncMethods:
                 result = await dataquery.list_files_async("group1", "file_group1")
 
                 assert result == mock_file_list.file_group_ids
-                mock_client.list_files_async.assert_called_once_with(
-                    "group1", "file_group1"
-                )
+                mock_client.list_files_async.assert_called_once_with("group1", "file_group1")
 
     @pytest.mark.asyncio
     async def test_check_availability_async(self):
@@ -455,9 +445,7 @@ class TestDataQueryAsyncMethods:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
-                mock_availability = AvailabilityInfo(
-                    file_date="20200101", is_available=True
-                )
+                mock_availability = AvailabilityInfo(file_date="20200101", is_available=True)
                 mock_client.check_availability_async.return_value = mock_availability
 
                 dataquery = DataQuery(config)
@@ -467,9 +455,7 @@ class TestDataQueryAsyncMethods:
                 result = await dataquery.check_availability_async("file1", "20200101")
 
                 assert result == mock_availability
-                mock_client.check_availability_async.assert_called_once_with(
-                    "file1", "20200101"
-                )
+                mock_client.check_availability_async.assert_called_once_with("file1", "20200101")
 
     @pytest.mark.asyncio
     async def test_download_file_async(self):
@@ -501,15 +487,11 @@ class TestDataQueryAsyncMethods:
                 dataquery._client = mock_client
 
                 options = DownloadOptions(chunk_size=8192)
-                result = await dataquery.download_file_async(
-                    "file1", "20200101", Path("./downloads"), options
-                )
+                result = await dataquery.download_file_async("file1", "20200101", Path("./downloads"), options)
 
                 assert result == mock_result
                 # Fix: The actual method signature is different - destination_path is passed separately
-                mock_client.download_file_async.assert_called_once_with(
-                    "file1", "20200101", options, 5, None
-                )
+                mock_client.download_file_async.assert_called_once_with("file1", "20200101", options, 5, None)
 
     @pytest.mark.asyncio
     async def test_list_available_files_async(self):
@@ -535,9 +517,7 @@ class TestDataQueryAsyncMethods:
                 # Set the client directly to avoid network calls
                 dataquery._client = mock_client
 
-                result = await dataquery.list_available_files_async(
-                    "group1", "file_group1", "20200101", "20200131"
-                )
+                result = await dataquery.list_available_files_async("group1", "file_group1", "20200101", "20200131")
 
                 assert result == mock_files
                 mock_client.list_available_files_async.assert_called_once_with(
@@ -604,14 +584,10 @@ class TestDataQueryAsyncMethods:
                 dataquery = DataQuery(config)
                 dataquery._client = mock_client
 
-                result = await dataquery.list_instruments_async(
-                    "group1", "INSTR1", "page_token"
-                )
+                result = await dataquery.list_instruments_async("group1", "INSTR1", "page_token")
 
                 assert result == mock_instruments
-                mock_client.list_instruments_async.assert_called_once_with(
-                    "group1", "INSTR1", "page_token"
-                )
+                mock_client.list_instruments_async.assert_called_once_with("group1", "INSTR1", "page_token")
 
     @pytest.mark.asyncio
     async def test_search_instruments_async(self):
@@ -643,14 +619,10 @@ class TestDataQueryAsyncMethods:
                 dataquery = DataQuery(config)
                 dataquery._client = mock_client
 
-                result = await dataquery.search_instruments_async(
-                    "group1", "test", "page_token"
-                )
+                result = await dataquery.search_instruments_async("group1", "test", "page_token")
 
                 assert result == mock_instruments
-                mock_client.search_instruments_async.assert_called_once_with(
-                    "group1", "test", "page_token"
-                )
+                mock_client.search_instruments_async.assert_called_once_with("group1", "test", "page_token")
 
     @pytest.mark.asyncio
     async def test_get_instrument_time_series_async(self):
@@ -686,9 +658,7 @@ class TestDataQueryAsyncMethods:
                         )
                     ],
                 )
-                mock_client.get_instrument_time_series_async.return_value = (
-                    mock_time_series
-                )
+                mock_client.get_instrument_time_series_async.return_value = mock_time_series
 
                 dataquery = DataQuery(config)
                 dataquery._client = mock_client
@@ -737,9 +707,7 @@ class TestDataQueryAsyncMethods:
                         )
                     ],
                 )
-                mock_client.get_expressions_time_series_async.return_value = (
-                    mock_time_series
-                )
+                mock_client.get_expressions_time_series_async.return_value = mock_time_series
 
                 dataquery = DataQuery(config)
                 dataquery._client = mock_client
@@ -783,9 +751,7 @@ class TestDataQueryAsyncMethods:
                 result = await dataquery.get_group_filters_async("group1", "page_token")
 
                 assert result == mock_filters
-                mock_client.get_group_filters_async.assert_called_once_with(
-                    "group1", "page_token"
-                )
+                mock_client.get_group_filters_async.assert_called_once_with("group1", "page_token")
 
     @pytest.mark.asyncio
     async def test_get_group_attributes_async(self):
@@ -831,14 +797,10 @@ class TestDataQueryAsyncMethods:
                 dataquery = DataQuery(config)
                 dataquery._client = mock_client
 
-                result = await dataquery.get_group_attributes_async(
-                    "group1", "INSTR1", "page_token"
-                )
+                result = await dataquery.get_group_attributes_async("group1", "INSTR1", "page_token")
 
                 assert result == mock_attributes
-                mock_client.get_group_attributes_async.assert_called_once_with(
-                    "group1", "INSTR1", "page_token"
-                )
+                mock_client.get_group_attributes_async.assert_called_once_with("group1", "INSTR1", "page_token")
 
     @pytest.mark.asyncio
     async def test_get_group_time_series_async(self):
@@ -1029,9 +991,7 @@ class TestDataQuerySyncMethods:
                 mock_client = AsyncMock()  # Use AsyncMock instead of MagicMock
                 mock_client_class.return_value = mock_client
 
-                mock_groups = [
-                    Group(item=1, group_id="group1", group_name="Test Group")
-                ]
+                mock_groups = [Group(item=1, group_id="group1", group_name="Test Group")]
                 mock_client.search_groups_async.return_value = mock_groups
 
                 dataquery = DataQuery(config)
@@ -1057,9 +1017,7 @@ class TestDataQuerySyncMethods:
                 mock_client = AsyncMock()  # Use AsyncMock instead of MagicMock
                 mock_client_class.return_value = mock_client
 
-                mock_files = [
-                    FileInfo(file_group_id="file1", file_type="csv", file_size=1024)
-                ]
+                mock_files = [FileInfo(file_group_id="file1", file_type="csv", file_size=1024)]
                 mock_client.list_files_async.return_value = mock_files
 
                 dataquery = DataQuery(config)
@@ -1086,9 +1044,7 @@ class TestDataQuerySyncMethods:
                 mock_client_class.return_value = mock_client
 
                 # Mock single AvailabilityInfo result
-                mock_availability = AvailabilityInfo(
-                    file_date="20200101", is_available=True
-                )
+                mock_availability = AvailabilityInfo(file_date="20200101", is_available=True)
                 mock_client.check_availability_async.return_value = mock_availability
 
                 dataquery = DataQuery(config)
@@ -1198,11 +1154,7 @@ class TestDataQuerySyncMethods:
                 mock_client = AsyncMock()  # Use AsyncMock instead of MagicMock
                 mock_client_class.return_value = mock_client
 
-                mock_instruments = [
-                    Instrument(
-                        item=1, instrument_id="INSTR1", instrument_name="Instrument 1"
-                    )
-                ]
+                mock_instruments = [Instrument(item=1, instrument_id="INSTR1", instrument_name="Instrument 1")]
                 mock_client.list_instruments_async.return_value = mock_instruments
 
                 dataquery = DataQuery(config)
@@ -1210,9 +1162,7 @@ class TestDataQuerySyncMethods:
                 with patch.object(dataquery, "_run_sync") as mock_run_sync:
                     mock_run_sync.return_value = mock_instruments
 
-                    result = dataquery.list_instruments(
-                        "group1", "INSTR1", "page_token"
-                    )
+                    result = dataquery.list_instruments("group1", "INSTR1", "page_token")
 
                     assert result == mock_instruments
                     mock_run_sync.assert_called_once()
@@ -1248,9 +1198,7 @@ class TestDataQuerySyncMethods:
                 with patch.object(dataquery, "_run_sync") as mock_run_sync:
                     mock_run_sync.return_value = mock_instruments
 
-                    result = dataquery.search_instruments(
-                        "group1", "test", "page_token"
-                    )
+                    result = dataquery.search_instruments("group1", "test", "page_token")
 
                     assert result == mock_instruments
                     mock_run_sync.assert_called_once()
@@ -1288,9 +1236,7 @@ class TestDataQuerySyncMethods:
                         )
                     ],
                 )
-                mock_client.get_instrument_time_series_async.return_value = (
-                    mock_time_series
-                )
+                mock_client.get_instrument_time_series_async.return_value = mock_time_series
 
                 dataquery = DataQuery(config)
 
@@ -1340,9 +1286,7 @@ class TestDataQuerySyncMethods:
                         )
                     ],
                 )
-                mock_client.get_expressions_time_series_async.return_value = (
-                    mock_time_series
-                )
+                mock_client.get_expressions_time_series_async.return_value = mock_time_series
 
                 dataquery = DataQuery(config)
 
@@ -1436,9 +1380,7 @@ class TestDataQuerySyncMethods:
                 with patch.object(dataquery, "_run_sync") as mock_run_sync:
                     mock_run_sync.return_value = mock_attributes
 
-                    result = dataquery.get_group_attributes(
-                        "group1", "INSTR1", "page_token"
-                    )
+                    result = dataquery.get_group_attributes("group1", "INSTR1", "page_token")
 
                     assert result == mock_attributes
                     mock_run_sync.assert_called_once()
@@ -1549,12 +1491,8 @@ class TestDataQueryWorkflowMethods:
                 mock_client_class.return_value = mock_client
 
                 mock_groups = [
-                    Group(
-                        item=1, group_id="group1", group_name="Group 1", file_groups=5
-                    ),
-                    Group(
-                        item=2, group_id="group2", group_name="Group 2", file_groups=3
-                    ),
+                    Group(item=1, group_id="group1", group_name="Group 1", file_groups=5),
+                    Group(item=2, group_id="group2", group_name="Group 2", file_groups=3),
                 ]
 
                 # Mock the list_groups_async method that is called with default limit=100
@@ -1601,9 +1539,7 @@ class TestDataQueryWorkflowMethods:
                 # Set the client directly to avoid network calls
                 dataquery._client = mock_client
 
-                result = await dataquery.run_group_files_async(
-                    "group1", max_concurrent=2
-                )
+                result = await dataquery.run_group_files_async("group1", max_concurrent=2)
 
                 # Fix: Check for the actual keys returned by the method
                 assert "group_id" in result
@@ -1627,9 +1563,7 @@ class TestDataQueryWorkflowMethods:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
-                mock_availability = AvailabilityInfo(
-                    file_date="20200101", is_available=True
-                )
+                mock_availability = AvailabilityInfo(file_date="20200101", is_available=True)
                 mock_client.check_availability_async.return_value = mock_availability
 
                 dataquery = DataQuery(config)
@@ -1716,9 +1650,7 @@ class TestDataQueryWorkflowMethods:
                         "is-available": True,
                     },
                 ]
-                mock_client.list_available_files_async.return_value = (
-                    mock_available_files
-                )
+                mock_client.list_available_files_async.return_value = mock_available_files
 
                 # Mock download results
                 mock_download_result = DownloadResult(
@@ -1793,9 +1725,7 @@ class TestDataQueryWorkflowMethods:
                         "is-available": True,
                     },
                 ]
-                mock_client.list_available_files_async.return_value = (
-                    mock_available_files
-                )
+                mock_client.list_available_files_async.return_value = mock_available_files
 
                 # Mock download method (used in fallback cases)
                 mock_download_result = DownloadResult(
@@ -1818,9 +1748,7 @@ class TestDataQueryWorkflowMethods:
                 }
                 mock_response.content.iter_chunked.return_value = [b"x" * 1024]
 
-                mock_client._enter_request_cm.return_value.__aenter__.return_value = (
-                    mock_response
-                )
+                mock_client._enter_request_cm.return_value.__aenter__.return_value = mock_response
                 mock_client._handle_response.return_value = None
 
                 dataquery = DataQuery(config)
@@ -1920,9 +1848,7 @@ class TestDataQueryWorkflowMethods:
                 mock_client = AsyncMock()  # Use AsyncMock instead of MagicMock
                 mock_client_class.return_value = mock_client
 
-                mock_files = [
-                    FileInfo(file_group_id="file1", file_type="csv", file_size=1024)
-                ]
+                mock_files = [FileInfo(file_group_id="file1", file_type="csv", file_size=1024)]
                 mock_client.list_files_async.return_value = mock_files
 
                 dataquery = DataQuery(config)
@@ -1949,9 +1875,7 @@ class TestDataQueryWorkflowMethods:
                 mock_client_class.return_value = mock_client
 
                 # Mock single AvailabilityInfo result
-                mock_availability = AvailabilityInfo(
-                    file_date="20200101", is_available=True
-                )
+                mock_availability = AvailabilityInfo(file_date="20200101", is_available=True)
                 mock_client.check_availability_async.return_value = mock_availability
 
                 dataquery = DataQuery(config)
@@ -2073,9 +1997,7 @@ class TestDataQueryImprovedSyncCalls:
                 mock_client_class.return_value = mock_client
 
                 mock_client.health_check_async.return_value = True
-                mock_client.list_groups_async.return_value = [
-                    Group(item=1, group_id="group1", group_name="Test Group")
-                ]
+                mock_client.list_groups_async.return_value = [Group(item=1, group_id="group1", group_name="Test Group")]
 
                 dataquery = DataQuery(config)
                 dataquery._client = mock_client
@@ -2087,9 +2009,7 @@ class TestDataQueryImprovedSyncCalls:
 
                     # Sync call from within async context (should work with new approach)
                     with patch.object(dataquery, "_run_sync") as mock_run_sync:
-                        mock_run_sync.return_value = [
-                            Group(item=1, group_id="group1", group_name="Test Group")
-                        ]
+                        mock_run_sync.return_value = [Group(item=1, group_id="group1", group_name="Test Group")]
                         groups = dataquery.list_groups()
                         assert len(groups) == 1
                         assert groups[0].group_id == "group1"
@@ -2116,9 +2036,7 @@ class TestDataQueryImprovedSyncCalls:
                 mock_client_class.return_value = mock_client
 
                 mock_client.health_check_async.return_value = True
-                mock_client.list_groups_async.return_value = [
-                    Group(item=1, group_id="group1", group_name="Test Group")
-                ]
+                mock_client.list_groups_async.return_value = [Group(item=1, group_id="group1", group_name="Test Group")]
 
                 dataquery = DataQuery(config)
                 dataquery._client = mock_client
@@ -2130,9 +2048,7 @@ class TestDataQueryImprovedSyncCalls:
                         health = dataquery.health_check()
                         assert health is True
 
-                        mock_run_sync.return_value = [
-                            Group(item=1, group_id="group1", group_name="Test Group")
-                        ]
+                        mock_run_sync.return_value = [Group(item=1, group_id="group1", group_name="Test Group")]
                         groups = dataquery.list_groups()
                         assert len(groups) == 1
                         return health, len(groups)

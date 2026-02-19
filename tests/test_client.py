@@ -121,9 +121,7 @@ def create_test_client(config=None):
         # Mock auth manager methods
         client.auth_manager = Mock()
         client.auth_manager.is_authenticated = Mock(return_value=True)
-        client.auth_manager.get_headers = AsyncMock(
-            return_value={"Authorization": "Bearer test_token"}
-        )
+        client.auth_manager.get_headers = AsyncMock(return_value={"Authorization": "Bearer test_token"})
         client.auth_manager.get_stats = Mock(return_value={"auth": "stats"})
         client.auth_manager.get_auth_info = Mock(return_value={"authenticated": True})
 
@@ -204,9 +202,7 @@ class TestUtilityFunctions:
 
     def test_parse_content_disposition_filename_star(self):
         """Test parsing content disposition with filename*."""
-        result = parse_content_disposition(
-            "attachment; filename*=UTF-8''test%20file.csv"
-        )
+        result = parse_content_disposition("attachment; filename*=UTF-8''test%20file.csv")
         assert result == "test file.csv"
 
     def test_parse_content_disposition_quoted_filename(self):
@@ -222,9 +218,7 @@ class TestUtilityFunctions:
     def test_parse_content_disposition_comprehensive(self):
         """Test parse_content_disposition with all scenarios."""
         # Test UTF-8 encoded filename
-        result = parse_content_disposition(
-            "attachment; filename*=UTF-8''test%20file.csv"
-        )
+        result = parse_content_disposition("attachment; filename*=UTF-8''test%20file.csv")
         assert result == "test file.csv"
 
         # Test regular filename with quotes
@@ -246,9 +240,7 @@ class TestUtilityFunctions:
     def test_get_filename_from_response_with_content_disposition(self):
         """Test getting filename from response with content-disposition header."""
         mock_response = Mock()
-        mock_response.headers = {
-            "content-disposition": 'attachment; filename="test.csv"'
-        }
+        mock_response.headers = {"content-disposition": 'attachment; filename="test.csv"'}
 
         result = get_filename_from_response(mock_response, "file123")
         assert result == "test.csv"
@@ -359,9 +351,7 @@ class TestUtilityFunctions:
 
     def test_validate_attributes_list_invalid_item(self):
         """Test validating attributes list with invalid item."""
-        with pytest.raises(
-            ValidationError, match="All attribute IDs must be non-empty strings"
-        ):
+        with pytest.raises(ValidationError, match="All attribute IDs must be non-empty strings"):
             validate_attributes_list(["attr1", None, "attr3"])
 
 
@@ -469,9 +459,7 @@ class TestDataQueryClientInitialization:
         config = ClientConfig(base_url="https://api.example.com", oauth_enabled=True)
         client = create_test_client()
 
-        with pytest.raises(
-            ConfigurationError, match="client_id and client_secret are required"
-        ):
+        with pytest.raises(ConfigurationError, match="client_id and client_secret are required"):
             client._validate_config(config)
 
     def test_extract_endpoint_with_base_url(self):
@@ -512,15 +500,11 @@ class TestDataQueryClientInitialization:
         assert endpoint3 == "instruments"
 
         # Test with URL containing fragment
-        endpoint4 = client._extract_endpoint(
-            "https://api.example.com/api/v2/groups#section"
-        )
+        endpoint4 = client._extract_endpoint("https://api.example.com/api/v2/groups#section")
         assert "groups" in endpoint4
 
         # Test with complex path
-        endpoint5 = client._extract_endpoint(
-            "https://api.example.com/research/dataquery/api/v2/group/files"
-        )
+        endpoint5 = client._extract_endpoint("https://api.example.com/research/dataquery/api/v2/group/files")
         assert "files" in endpoint5 or "group/files" in endpoint5
 
         # Test with query parameters
@@ -595,9 +579,7 @@ class TestDataQueryClientInitialization:
         client._validate_request_url(normal_url)  # Should not raise
 
         # Test maximum allowed URL
-        max_url = "https://api.example.com/" + "a" * (
-            2080 - 25
-        )  # Leave room for domain
+        max_url = "https://api.example.com/" + "a" * (2080 - 25)  # Leave room for domain
         client._validate_request_url(max_url)  # Should not raise
 
         # Test too long URL
@@ -718,7 +700,6 @@ class TestDataQueryClientConnections:
             patch("aiohttp.ClientSession") as mock_session,
             patch("aiohttp.TCPConnector"),
         ):
-
             mock_session.return_value = AsyncMock()
 
             await client.connect()
@@ -739,7 +720,6 @@ class TestDataQueryClientConnections:
             patch("aiohttp.ClientSession") as mock_session,
             patch("aiohttp.TCPConnector"),
         ):
-
             mock_session.return_value = AsyncMock()
 
             await client.connect()
@@ -756,7 +736,6 @@ class TestDataQueryClientConnections:
             patch("aiohttp.ClientSession") as mock_session,
             patch("aiohttp.TCPConnector"),
         ):
-
             mock_session.return_value = AsyncMock()
 
             await client.connect()
@@ -783,7 +762,6 @@ class TestDataQueryClientConnections:
             patch("aiohttp.ClientSession") as mock_session_class,
             patch("aiohttp.TCPConnector") as mock_connector_class,
         ):
-
             mock_session = AsyncMock()
             mock_session_class.return_value = mock_session
 
@@ -808,7 +786,6 @@ class TestDataQueryClientConnections:
             patch("aiohttp.ClientSession") as mock_session_class,
             patch("aiohttp.TCPConnector") as mock_connector_class,
         ):
-
             mock_session = AsyncMock()
             mock_session_class.return_value = mock_session
             mock_connector_class.return_value = Mock()
@@ -905,14 +882,9 @@ class TestDataQueryClientConnections:
 
         with (
             patch.object(DataQueryClient, "_setup_enhanced_components"),
-            patch.object(
-                DataQueryClient, "connect", new_callable=AsyncMock
-            ) as mock_connect,
-            patch.object(
-                DataQueryClient, "close", new_callable=AsyncMock
-            ) as mock_close,
+            patch.object(DataQueryClient, "connect", new_callable=AsyncMock) as mock_connect,
+            patch.object(DataQueryClient, "close", new_callable=AsyncMock) as mock_close,
         ):
-
             async with DataQueryClient(config) as client:
                 # Verify connect was called
                 mock_connect.assert_called_once()
@@ -1146,9 +1118,7 @@ class TestDataQueryClientHTTP:
         client.logging_manager.log_operation_start = Mock()
         client.logging_manager.log_operation_end = Mock()
 
-        result = await client._make_authenticated_request(
-            "GET", "https://api.example.com/groups"
-        )
+        result = await client._make_authenticated_request("GET", "https://api.example.com/groups")
 
         # The result should be the return value of execute_with_retry, not the raw response
         assert result is not None
@@ -1159,13 +1129,9 @@ class TestDataQueryClientHTTP:
     async def test_make_authenticated_request_auth_failure_propagates_merged(self):
         client = make_client()
         client.auth_manager.is_authenticated = Mock(return_value=False)
-        with patch.object(
-            client, "_execute_request", new_callable=AsyncMock
-        ) as exec_req:
+        with patch.object(client, "_execute_request", new_callable=AsyncMock) as exec_req:
             with pytest.raises(AuthenticationError):
-                await client._make_authenticated_request(
-                    "GET", "https://api.example.com/groups"
-                )
+                await client._make_authenticated_request("GET", "https://api.example.com/groups")
             exec_req.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -1175,14 +1141,10 @@ class TestDataQueryClientHTTP:
         client = create_test_client(config)
 
         # Mock rate limiter to raise error
-        client.rate_limiter.acquire = AsyncMock(
-            side_effect=RateLimitError("Rate limited")
-        )
+        client.rate_limiter.acquire = AsyncMock(side_effect=RateLimitError("Rate limited"))
 
         with pytest.raises(RateLimitError):
-            await client._make_authenticated_request(
-                "GET", "https://api.example.com/groups"
-            )
+            await client._make_authenticated_request("GET", "https://api.example.com/groups")
 
     @pytest.mark.asyncio
     async def test_execute_request_basic_flow(self):
@@ -1403,9 +1365,7 @@ class TestDataQueryClientAPI:
         }
 
         mock_response = create_mock_response(status=200, json_data=mock_response_data)
-        client._make_authenticated_request = AsyncMock(
-            return_value=AsyncContextManagerMock(mock_response)
-        )
+        client._make_authenticated_request = AsyncMock(return_value=AsyncContextManagerMock(mock_response))
 
         result = await client.list_groups_async(limit=10)
 
@@ -1420,9 +1380,7 @@ class TestDataQueryClientAPI:
 
         mock_response_data = {"groups": []}
         mock_response = create_mock_response(status=200, json_data=mock_response_data)
-        client._make_authenticated_request = AsyncMock(
-            return_value=AsyncContextManagerMock(mock_response)
-        )
+        client._make_authenticated_request = AsyncMock(return_value=AsyncContextManagerMock(mock_response))
 
         result = await client.list_groups_async()
 
@@ -1435,9 +1393,7 @@ class TestDataQueryClientAPI:
         client = create_test_client(config)
 
         # Mock list_files_async to return mock data directly
-        mock_file_info = Mock(
-            file_group_id="file123", filename="data.csv", file_size=1024
-        )
+        mock_file_info = Mock(file_group_id="file123", filename="data.csv", file_size=1024)
         mock_file_list = Mock()
         mock_file_list.file_group_ids = [mock_file_info]
 
@@ -1493,19 +1449,13 @@ class TestDataQueryClientAPI:
 
         mock_response_data = {
             "group-id": "group1",
-            "file-group-ids": [
-                {"file-group-id": "file1", "filename": "data1.csv", "file_size": 1024}
-            ],
+            "file-group-ids": [{"file-group-id": "file1", "filename": "data1.csv", "file_size": 1024}],
         }
 
         mock_response = create_mock_response(200, mock_response_data)
-        client._make_authenticated_request = AsyncMock(
-            return_value=AsyncContextManagerMock(mock_response)
-        )
+        client._make_authenticated_request = AsyncMock(return_value=AsyncContextManagerMock(mock_response))
 
-        result = await client.list_files_async(
-            group_id="group1", file_group_id="file123"
-        )
+        result = await client.list_files_async(group_id="group1", file_group_id="file123")
 
         assert isinstance(result, FileList)
         client._make_authenticated_request.assert_called_once()
@@ -1617,9 +1567,7 @@ class TestDataQueryClientStats:
             delattr(client, "_connection_pool")
 
         # Mock pool monitor
-        client.pool_monitor.get_pool_summary.return_value = {
-            "connections": {"total": 10}
-        }
+        client.pool_monitor.get_pool_summary.return_value = {"connections": {"total": 10}}
 
         stats = client.get_pool_stats()
 
@@ -1632,9 +1580,7 @@ class TestDataQueryClientStats:
         client = create_test_client()
 
         # Mock pool monitor
-        client.pool_monitor.get_pool_summary = Mock(
-            return_value={"connections": {"total": 10}}
-        )
+        client.pool_monitor.get_pool_summary = Mock(return_value={"connections": {"total": 10}})
 
         stats = client.get_pool_stats()
 
@@ -1649,9 +1595,7 @@ class TestDataQueryClientStats:
         if hasattr(client, "_connection_pool"):
             delattr(client, "_connection_pool")
 
-        client.pool_monitor.get_pool_summary.return_value = {
-            "connections": {"total": 10}
-        }
+        client.pool_monitor.get_pool_summary.return_value = {"connections": {"total": 10}}
 
         stats = client.get_pool_stats()
 
@@ -1718,12 +1662,9 @@ class TestDataQueryClientSyncWrappers:
         expected_result = Mock()
 
         with (
-            patch.object(
-                client, "check_availability_async", return_value=expected_result
-            ) as mock_async,
+            patch.object(client, "check_availability_async", return_value=expected_result) as mock_async,
             patch("asyncio.run") as mock_run,
         ):
-
             mock_run.return_value = expected_result
 
             result = client.check_availability("file123", "20240115")
@@ -1833,9 +1774,7 @@ class TestConfigurationValidation:
             oauth_enabled=True,  # This will trigger the error
         )
         client_invalid = create_test_client(invalid_config)
-        with pytest.raises(
-            ConfigurationError, match="client_id and client_secret are required"
-        ):
+        with pytest.raises(ConfigurationError, match="client_id and client_secret are required"):
             client_invalid._validate_config(strict_oauth_check=True)
 
     def test_validate_config_base_url_scenarios(self):
@@ -1843,19 +1782,13 @@ class TestConfigurationValidation:
         client = create_test_client()
 
         # Test empty base URL
-        with pytest.raises(
-            ConfigurationError, match="client_id and client_secret are required"
-        ):
+        with pytest.raises(ConfigurationError, match="client_id and client_secret are required"):
             empty_config = ClientConfig(base_url="", oauth_enabled=True)
             client._validate_config(empty_config)
 
         # Test invalid URL format
-        with pytest.raises(
-            ConfigurationError, match="client_id and client_secret are required"
-        ):
-            invalid_config = ClientConfig(
-                base_url="ftp://invalid.com", oauth_enabled=True
-            )
+        with pytest.raises(ConfigurationError, match="client_id and client_secret are required"):
+            invalid_config = ClientConfig(base_url="ftp://invalid.com", oauth_enabled=True)
             client._validate_config(invalid_config)
 
     def test_validate_config_comprehensive(self):
@@ -1885,9 +1818,7 @@ class TestConfigurationValidation:
         )
 
         # Should still raise because implementation checks for client_id/secret
-        with pytest.raises(
-            ConfigurationError, match="client_id and client_secret are required"
-        ):
+        with pytest.raises(ConfigurationError, match="client_id and client_secret are required"):
             client._validate_config(config_with_bearer)
 
     def test_validate_config_edge_cases(self):

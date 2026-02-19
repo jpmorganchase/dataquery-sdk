@@ -112,11 +112,7 @@ class DataQueryClient:
         # Setup logging
         logging_config = LoggingConfig(
             level=LogLevel(self.config.log_level),
-            format=(
-                LogFormat.JSON
-                if self.config.enable_debug_logging
-                else LogFormat.CONSOLE
-            ),
+            format=(LogFormat.JSON if self.config.enable_debug_logging else LogFormat.CONSOLE),
             enable_request_logging=self.config.enable_debug_logging,
             enable_performance_logging=True,
         )
@@ -159,9 +155,7 @@ class DataQueryClient:
         self.pool_monitor = ConnectionPoolMonitor(pool_config)
 
         # Initialize response cache for read-only operations
-        self._response_cache: OrderedDict[str, tuple] = (
-            OrderedDict()
-        )  # key -> (data, timestamp)
+        self._response_cache: OrderedDict[str, tuple] = OrderedDict()  # key -> (data, timestamp)
         self._cache_ttl = 300  # 5 minutes cache TTL
         self._cache_max_size = 256  # Maximum cache entries (LRU eviction)
 
@@ -180,10 +174,7 @@ class DataQueryClient:
         # Check base URL format
         if not self.config.base_url.strip():
             raise ConfigurationError("base_url is required")
-        if not (
-            self.config.base_url.startswith("http://")
-            or self.config.base_url.startswith("https://")
-        ):
+        if not (self.config.base_url.startswith("http://") or self.config.base_url.startswith("https://")):
             raise ConfigurationError("Invalid base_url format")
 
         # OAuth validation - only when explicitly requested (for testing) or during auth
@@ -266,9 +257,7 @@ class DataQueryClient:
         """Async context manager exit."""
         await self.close()
 
-    def _get_cache_key(
-        self, endpoint: str, params: Optional[Dict[str, Any]] = None
-    ) -> str:
+    def _get_cache_key(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> str:
         """Generate cache key for endpoint and parameters."""
         if params:
             # Sort params for consistent cache keys
@@ -305,9 +294,7 @@ class DataQueryClient:
         """Initialize HTTP session with optimized configuration."""
         if self.session is None:
             # Optimize timeout configuration
-            timeout = aiohttp.ClientTimeout(
-                total=self.config.timeout, connect=300.0, sock_read=self.config.timeout
-            )
+            timeout = aiohttp.ClientTimeout(total=self.config.timeout, connect=300.0, sock_read=self.config.timeout)
 
             # Optimize connector configuration for better performance
             connector = aiohttp.TCPConnector(
@@ -420,9 +407,7 @@ class DataQueryClient:
         # Low priority for other operations
         return QueuePriority.LOW
 
-    def _validate_request_url(
-        self, url: str, params: Optional[Dict[str, Any]] = None
-    ) -> None:
+    def _validate_request_url(self, url: str, params: Optional[Dict[str, Any]] = None) -> None:
         """Validate complete request URL length including parameters."""
         # Build complete URL with parameters for length check
         if params:
@@ -443,9 +428,7 @@ class DataQueryClient:
                 },
             )
 
-    async def _make_authenticated_request(
-        self, method: str, url: str, **kwargs
-    ) -> aiohttp.ClientResponse:
+    async def _make_authenticated_request(self, method: str, url: str, **kwargs) -> aiohttp.ClientResponse:
         """
         Make an authenticated HTTP request with enhanced features.
 
@@ -475,15 +458,11 @@ class DataQueryClient:
             async with RateLimitContext(
                 self.rate_limiter,
                 timeout=self.config.timeout,
-                priority=self._get_operation_priority(
-                    method, self._extract_endpoint(url)
-                ),
+                priority=self._get_operation_priority(method, self._extract_endpoint(url)),
                 operation=f"{method}_{self._extract_endpoint(url)}",
             ):
                 # Execute request with retry logic
-                response = await self.retry_manager.execute_with_retry(
-                    self._execute_request, method, url, **kwargs
-                )
+                response = await self.retry_manager.execute_with_retry(self._execute_request, method, url, **kwargs)
 
             # Record operation success
             duration = time.time() - start_time
@@ -492,23 +471,17 @@ class DataQueryClient:
             # Log request/response if enabled
             if self.config.enable_debug_logging:
                 self.logging_manager.log_request(method, url, kwargs.get("headers", {}))
-                self.logging_manager.log_response(
-                    response.status, dict(response.headers), duration=duration
-                )
+                self.logging_manager.log_response(response.status, dict(response.headers), duration=duration)
 
             return response
 
         except Exception as e:
             # Record operation failure
             duration = time.time() - start_time
-            self.logging_manager.log_operation_end(
-                operation, duration, success=False, error=str(e)
-            )
+            self.logging_manager.log_operation_end(operation, duration, success=False, error=str(e))
             raise
 
-    async def _execute_request(
-        self, method: str, url: str, **kwargs
-    ) -> aiohttp.ClientResponse:
+    async def _execute_request(self, method: str, url: str, **kwargs) -> aiohttp.ClientResponse:
         """Execute a single HTTP request."""
         # Ensure we have fresh authentication headers (prefer per-request freshness; avoid stale session headers)
         try:
@@ -548,9 +521,7 @@ class DataQueryClient:
                     await response.text()
                 except Exception:
                     pass
-                raise NetworkError(
-                    f"Server error: {response.status}", status_code=response.status
-                )
+                raise NetworkError(f"Server error: {response.status}", status_code=response.status)
 
             return response
         except NetworkError:
@@ -577,21 +548,15 @@ class DataQueryClient:
             params["limit"] = str(limit)
 
         try:
-            async with await self._make_authenticated_request(
-                "GET", url, params=params
-            ) as response:
+            async with await self._make_authenticated_request("GET", url, params=params) as response:
                 await self._handle_response(response)
                 data = await response.json()
 
                 group_list = GroupList(**data)
-                self.logger.info(
-                    "Groups listed", count=len(group_list.groups), limit=limit
-                )
+                self.logger.info("Groups listed", count=len(group_list.groups), limit=limit)
 
                 # Log performance metric
-                self.logging_manager.log_metric(
-                    "groups_listed", len(group_list.groups), "count"
-                )
+                self.logging_manager.log_metric("groups_listed", len(group_list.groups), "count")
 
                 return group_list.groups
 
@@ -617,9 +582,7 @@ class DataQueryClient:
                 page_count += 1
                 self.logger.info("Fetching groups page", page=page_count, url=next_url)
 
-                async with await self._make_authenticated_request(
-                    "GET", next_url
-                ) as response:
+                async with await self._make_authenticated_request("GET", next_url) as response:
                     await self._handle_response(response)
                     data = await response.json()
 
@@ -681,29 +644,21 @@ class DataQueryClient:
         url = self._build_api_url("groups/search")
 
         try:
-            async with await self._make_authenticated_request(
-                "GET", url, params=params
-            ) as response:
+            async with await self._make_authenticated_request("GET", url, params=params) as response:
                 await self._handle_response(response)
                 data = await response.json()
 
                 # Assuming the search endpoint returns the same structure as list_groups
                 group_list = GroupList(**data)
-                self.logger.info(
-                    "Groups searched", keywords=keywords, count=len(group_list.groups)
-                )
+                self.logger.info("Groups searched", keywords=keywords, count=len(group_list.groups))
 
                 return group_list.groups
 
         except Exception as e:
-            self.logger.error(
-                "Failed to search groups", keywords=keywords, error=str(e)
-            )
+            self.logger.error("Failed to search groups", keywords=keywords, error=str(e))
             raise
 
-    async def list_files_async(
-        self, group_id: str, file_group_id: Optional[str] = None
-    ) -> FileList:
+    async def list_files_async(self, group_id: str, file_group_id: Optional[str] = None) -> FileList:
         """
         List all files in a group.
 
@@ -721,16 +676,12 @@ class DataQueryClient:
         url = self._build_files_api_url("group/files")
 
         try:
-            async with await self._make_authenticated_request(
-                "GET", url, params=params
-            ) as response:
+            async with await self._make_authenticated_request("GET", url, params=params) as response:
                 await self._handle_response(response)
                 data = await response.json()
 
                 file_list = FileList(**data)
-                self.logger.info(
-                    "Files listed", group_id=group_id, count=file_list.file_count
-                )
+                self.logger.info("Files listed", group_id=group_id, count=file_list.file_count)
 
                 return file_list
 
@@ -756,9 +707,7 @@ class DataQueryClient:
 
         return file_list.file_group_ids[0]
 
-    async def check_availability_async(
-        self, file_group_id: str, file_datetime: str
-    ) -> AvailabilityInfo:
+    async def check_availability_async(self, file_group_id: str, file_datetime: str) -> AvailabilityInfo:
         """
         Check file availability for a specific datetime.
 
@@ -777,9 +726,7 @@ class DataQueryClient:
         url = self._build_files_api_url("group/file/availability")
 
         try:
-            async with await self._make_authenticated_request(
-                "GET", url, params=params
-            ) as response:
+            async with await self._make_authenticated_request("GET", url, params=params) as response:
                 await self._handle_response(response)
                 data = await response.json()
                 # Extract a single availability item matching the requested datetime if present
@@ -887,8 +834,7 @@ class DataQueryClient:
         return DownloadResult(
             file_group_id=file_group_id,
             group_id="",
-            local_path=destination
-            or (Path(self.config.download_dir) / f"{file_group_id}.tmp"),
+            local_path=destination or (Path(self.config.download_dir) / f"{file_group_id}.tmp"),
             file_size=total_bytes,
             download_time=time.time() - start_time,
             bytes_downloaded=bytes_downloaded,
@@ -917,9 +863,7 @@ class DataQueryClient:
         Returns:
             DownloadResult with download information
         """
-        params, options, num_parts = self._prepare_download_params(
-            file_group_id, file_datetime, options, num_parts
-        )
+        params, options, num_parts = self._prepare_download_params(file_group_id, file_datetime, options, num_parts)
 
         start_time = time.time()
         bytes_downloaded = 0
@@ -941,13 +885,9 @@ class DataQueryClient:
 
             # Probe size with a 1-byte range request
             probe_headers = {"Range": "bytes=0-0"}
-            async with await self._enter_request_cm(
-                "GET", url, params=params, headers=probe_headers
-            ) as probe_resp:
+            async with await self._enter_request_cm("GET", url, params=params, headers=probe_headers) as probe_resp:
                 await self._handle_response(probe_resp)
-                content_range = probe_resp.headers.get(
-                    "content-range"
-                ) or probe_resp.headers.get("Content-Range")
+                content_range = probe_resp.headers.get("content-range") or probe_resp.headers.get("Content-Range")
                 if content_range and "/" in content_range:
                     try:
                         total_bytes = int(content_range.split("/")[-1])
@@ -974,17 +914,11 @@ class DataQueryClient:
 
                 # Scale num_parts with file size for large files
                 if total_bytes > 500 * 1024 * 1024:  # >500MB
-                    num_parts = max(
-                        num_parts, min(total_bytes // (100 * 1024 * 1024), 20)
-                    )  # 1 part per 100MB, max 20
+                    num_parts = max(num_parts, min(total_bytes // (100 * 1024 * 1024), 20))  # 1 part per 100MB, max 20
 
                 # Determine filename and destination
-                filename = get_filename_from_response(
-                    probe_resp, file_group_id, file_datetime
-                )
-                destination = self._resolve_destination(
-                    options, file_group_id, filename
-                )
+                filename = get_filename_from_response(probe_resp, file_group_id, file_datetime)
+                destination = self._resolve_destination(options, file_group_id, filename)
 
                 if destination.exists() and not options.overwrite_existing:
                     raise FileExistsError(f"File already exists: {destination}")
@@ -993,9 +927,7 @@ class DataQueryClient:
             if not isinstance(destination, Path):
                 raise ValueError(f"Invalid destination path: {destination}")
             temp_destination = destination.with_suffix(destination.suffix + ".part")
-            with open(
-                temp_destination, "wb", buffering=1024 * 1024
-            ) as f:  # 1MB buffer for network drives
+            with open(temp_destination, "wb", buffering=1024 * 1024) as f:  # 1MB buffer for network drives
                 f.truncate(total_bytes)
 
             # Compute ranges
@@ -1003,9 +935,7 @@ class DataQueryClient:
             ranges = []
             start = 0
             for i in range(num_parts):
-                end = (
-                    (start + part_size - 1) if i < num_parts - 1 else (total_bytes - 1)
-                )
+                end = (start + part_size - 1) if i < num_parts - 1 else (total_bytes - 1)
                 if start > end:
                     break
                 ranges.append((start, end))
@@ -1049,9 +979,7 @@ class DataQueryClient:
             async def download_range(start_byte: int, end_byte: int):
                 nonlocal bytes_downloaded, last_callback_bytes, last_callback_time
                 range_headers = {"Range": f"bytes={start_byte}-{end_byte}"}
-                part_bytes_written = (
-                    0  # Track bytes written by this part for retry rollback
-                )
+                part_bytes_written = 0  # Track bytes written by this part for retry rollback
 
                 for attempt in range(max_part_retries + 1):
                     try:
@@ -1078,12 +1006,8 @@ class DataQueryClient:
                                     fh.seek(pos)
                                     fh.write(data)
 
-                                async for chunk in resp.content.iter_chunked(
-                                    chunk_size
-                                ):
-                                    await loop.run_in_executor(
-                                        None, _seek_write, part_fh, current_pos, chunk
-                                    )
+                                async for chunk in resp.content.iter_chunked(chunk_size):
+                                    await loop.run_in_executor(None, _seek_write, part_fh, current_pos, chunk)
 
                                     chunk_len = len(chunk)
                                     current_pos += chunk_len
@@ -1096,16 +1020,13 @@ class DataQueryClient:
                                         progress.update_progress(bytes_downloaded)
 
                                         current_time = time.time()
-                                        bytes_diff = (
-                                            bytes_downloaded - last_callback_bytes
-                                        )
+                                        bytes_diff = bytes_downloaded - last_callback_bytes
                                         time_diff = current_time - last_callback_time
 
                                         should_callback = (
                                             bytes_diff >= callback_threshold_bytes
                                             or time_diff >= callback_threshold_time
-                                            or bytes_downloaded
-                                            == total_bytes  # Always callback on completion
+                                            or bytes_downloaded == total_bytes  # Always callback on completion
                                         )
 
                                         if should_callback:
@@ -1120,9 +1041,7 @@ class DataQueryClient:
                                                 "Download progress",
                                                 file=file_group_id,
                                                 percentage=f"{progress.percentage:.1f}%",
-                                                downloaded=format_file_size(
-                                                    bytes_downloaded
-                                                ),
+                                                downloaded=format_file_size(bytes_downloaded),
                                             )
                         # Part completed successfully
                         return
@@ -1142,6 +1061,16 @@ class DataQueryClient:
                 bytes_downloaded,
                 start_time,
                 DownloadStatus.COMPLETED,
+            )
+        except FileExistsError as e:
+            return self._create_download_result(
+                file_group_id,
+                destination,
+                0,
+                0,
+                start_time,
+                DownloadStatus.ALREADY_EXISTS,
+                e,
             )
         except Exception as e:
             try:
@@ -1196,9 +1125,7 @@ class DataQueryClient:
         Returns:
             DownloadResult with download information
         """
-        params, options, _ = self._prepare_download_params(
-            file_group_id, file_datetime, options
-        )
+        params, options, _ = self._prepare_download_params(file_group_id, file_datetime, options)
 
         # Add range parameters if specified
         if options.range_header:
@@ -1217,25 +1144,15 @@ class DataQueryClient:
             url = self._build_files_api_url("group/file/download")
 
             # Support either an awaitable that yields a context manager, or a context manager directly
-            async with await self._make_authenticated_request(
-                "GET", url, params=params, headers=headers
-            ) as response:
+            async with await self._make_authenticated_request("GET", url, params=params, headers=headers) as response:
                 await self._handle_response(response)
 
                 # Extract filename from Content-Disposition header or generate one
-                filename = get_filename_from_response(
-                    response, file_group_id, file_datetime
-                )
-                destination = self._resolve_destination(
-                    options, file_group_id, filename
-                )
+                filename = get_filename_from_response(response, file_group_id, file_datetime)
+                destination = self._resolve_destination(options, file_group_id, filename)
 
                 # Check if file exists and handle overwrite
-                if (
-                    isinstance(destination, Path)
-                    and destination.exists()
-                    and not options.overwrite_existing
-                ):
+                if isinstance(destination, Path) and destination.exists() and not options.overwrite_existing:
                     raise FileExistsError(f"File already exists: {destination}")
 
                 # Get content length for progress tracking
@@ -1256,25 +1173,15 @@ class DataQueryClient:
                 temp_destination = destination.with_suffix(destination.suffix + ".part")
 
                 # Optimize chunk size based on file size
-                chunk_size = (
-                    options.chunk_size or 1048576
-                )  # 1MB default for better performance
+                chunk_size = options.chunk_size or 1048576  # 1MB default for better performance
                 if total_bytes > 0:
                     # Use larger chunks for bigger files, cap at 8MB for files >1GB
-                    max_chunk = (
-                        8 * 1024 * 1024
-                        if total_bytes > 1024 * 1024 * 1024
-                        else 1024 * 1024
-                    )
-                    optimal_chunk_size = min(
-                        max(chunk_size, total_bytes // 1000), max_chunk
-                    )
+                    max_chunk = 8 * 1024 * 1024 if total_bytes > 1024 * 1024 * 1024 else 1024 * 1024
+                    optimal_chunk_size = min(max(chunk_size, total_bytes // 1000), max_chunk)
                     chunk_size = optimal_chunk_size
 
                 # Progress update frequency optimization
-                progress_update_interval = max(
-                    1, chunk_size // 4
-                )  # Update every 1/4 chunk
+                progress_update_interval = max(1, chunk_size // 4)  # Update every 1/4 chunk
                 last_progress_update = 0
 
                 # Dynamic buffer size based on chunk size (minimum 1MB, maximum 8MB)
@@ -1285,10 +1192,7 @@ class DataQueryClient:
                         bytes_downloaded += len(chunk)
 
                         # Update progress less frequently for better performance
-                        if (
-                            bytes_downloaded - last_progress_update
-                            >= progress_update_interval
-                        ):
+                        if bytes_downloaded - last_progress_update >= progress_update_interval:
                             progress.update_progress(bytes_downloaded)
                             last_progress_update = bytes_downloaded
 
@@ -1318,14 +1222,20 @@ class DataQueryClient:
                     DownloadStatus.COMPLETED,
                 )
 
+        except FileExistsError as e:
+            return self._create_download_result(
+                file_group_id,
+                destination,
+                0,
+                0,
+                start_time,
+                DownloadStatus.ALREADY_EXISTS,
+                e,
+            )
         except Exception as e:
             # Clean up partial file on error
             try:
-                if (
-                    "temp_destination" in locals()
-                    and isinstance(temp_destination, Path)
-                    and temp_destination.exists()
-                ):
+                if "temp_destination" in locals() and isinstance(temp_destination, Path) and temp_destination.exists():
                     temp_destination.unlink()
             except Exception:
                 pass
@@ -1370,9 +1280,7 @@ class DataQueryClient:
         url = self._build_files_api_url("group/files/available-files")
 
         try:
-            async with await self._make_authenticated_request(
-                "GET", url, params=params
-            ) as response:
+            async with await self._make_authenticated_request("GET", url, params=params) as response:
                 await self._handle_response(response)
                 data = await response.json()
 
@@ -1386,9 +1294,7 @@ class DataQueryClient:
                 return available_files
 
         except Exception as e:
-            self.logger.error(
-                "Failed to list available files", group_id=group_id, error=str(e)
-            )
+            self.logger.error("Failed to list available files", group_id=group_id, error=str(e))
             raise
 
     async def health_check_async(self) -> bool:
@@ -1580,9 +1486,7 @@ class DataQueryClient:
             return TimeSeriesResponse(**payload)
 
     # Group Collection Additional Endpoints
-    async def get_group_filters_async(
-        self, group_id: str, page: Optional[str] = None
-    ) -> "FiltersResponse":
+    async def get_group_filters_async(self, group_id: str, page: Optional[str] = None) -> "FiltersResponse":
         """
         Request the unique list of filter dimensions that are available for a given dataset.
 
@@ -1765,15 +1669,12 @@ class DataQueryClient:
             "retry_manager": self.retry_manager.get_stats(),
             "connection_pool": self.pool_monitor.get_stats(),
             "auth_info": self.auth_manager.get_auth_info(),
-            "connected": self.session is not None
-            and not getattr(self.session, "closed", True),
+            "connected": self.session is not None and not getattr(self.session, "closed", True),
         }
 
     async def _ensure_connected(self):
         """Ensure client is connected."""
-        if self.session is None or (
-            hasattr(self.session, "closed") and self.session.closed
-        ):
+        if self.session is None or (hasattr(self.session, "closed") and self.session.closed):
             await self.connect()
 
     async def _handle_response(self, response: aiohttp.ClientResponse):
@@ -1808,9 +1709,7 @@ class DataQueryClient:
             )
 
         if response.status == 401:
-            raise AuthenticationError(
-                "Authentication failed", details={"interaction_id": interaction_id}
-            )
+            raise AuthenticationError("Authentication failed", details={"interaction_id": interaction_id})
         elif response.status == 403:
             raise AuthenticationError(
                 "Access denied - insufficient permissions",
@@ -1826,9 +1725,7 @@ class DataQueryClient:
                 retry_after=int(response.headers.get("Retry-After", 0)),
             )
         elif response.status >= 500:
-            raise NetworkError(
-                f"Server error: {response.status}", status_code=response.status
-            )
+            raise NetworkError(f"Server error: {response.status}", status_code=response.status)
         elif response.status >= 400:
             raise ValidationError(f"Client error: {response.status}")
 
@@ -1836,9 +1733,7 @@ class DataQueryClient:
         if response.status < 400:
             self.rate_limiter.handle_successful_request()
 
-    async def _enter_request_cm(
-        self, method: str, url: str, **kwargs
-    ) -> aiohttp.ClientResponse:
+    async def _enter_request_cm(self, method: str, url: str, **kwargs) -> aiohttp.ClientResponse:
         """Support both awaitable and direct async context manager returns from mocks.
 
         Some tests monkeypatch `_make_authenticated_request` to return a context
@@ -2049,10 +1944,7 @@ class DataQueryClient:
             )
         """
         if not HAS_PANDAS:
-            raise ImportError(
-                "pandas is required for DataFrame conversion. "
-                "Install it with: pip install pandas"
-            )
+            raise ImportError("pandas is required for DataFrame conversion. Install it with: pip install pandas")
 
         return self._convert_to_dataframe(
             response_data,
@@ -2105,9 +1997,7 @@ class DataQueryClient:
             chunk_records = []
 
             for item in chunk:
-                record = self._extract_object_data(
-                    item, flatten_nested, include_metadata
-                )
+                record = self._extract_object_data(item, flatten_nested, include_metadata)
                 if record:
                     chunk_records.append(record)
 
@@ -2130,15 +2020,11 @@ class DataQueryClient:
         all_records.clear()
 
         # Apply data type conversions
-        df = self._apply_data_transformations(
-            df, date_columns, numeric_columns, custom_transformations
-        )
+        df = self._apply_data_transformations(df, date_columns, numeric_columns, custom_transformations)
 
         return df
 
-    def _extract_object_data(
-        self, obj, flatten_nested: bool = True, include_metadata: bool = False
-    ) -> Dict[str, Any]:
+    def _extract_object_data(self, obj, flatten_nested: bool = True, include_metadata: bool = False) -> Dict[str, Any]:
         """Extract data from a single object."""
         if obj is None:
             return {}
@@ -2149,29 +2035,19 @@ class DataQueryClient:
         if hasattr(obj, "model_dump"):
             try:
                 data = obj.model_dump()
-                record.update(
-                    self._process_dict_data(data, flatten_nested, include_metadata)
-                )
+                record.update(self._process_dict_data(data, flatten_nested, include_metadata))
             except Exception:
                 # Fallback to __dict__ if model_dump fails
                 if hasattr(obj, "__dict__"):
-                    record.update(
-                        self._process_dict_data(
-                            obj.__dict__, flatten_nested, include_metadata
-                        )
-                    )
+                    record.update(self._process_dict_data(obj.__dict__, flatten_nested, include_metadata))
 
         # Handle objects with __dict__
         elif hasattr(obj, "__dict__"):
-            record.update(
-                self._process_dict_data(obj.__dict__, flatten_nested, include_metadata)
-            )
+            record.update(self._process_dict_data(obj.__dict__, flatten_nested, include_metadata))
 
         # Handle dictionary objects
         elif isinstance(obj, dict):
-            record.update(
-                self._process_dict_data(obj, flatten_nested, include_metadata)
-            )
+            record.update(self._process_dict_data(obj, flatten_nested, include_metadata))
 
         # Handle primitive types
         else:
@@ -2208,9 +2084,7 @@ class DataQueryClient:
                         if isinstance(list_item, dict):
                             for nested_key, nested_value in list_item.items():
                                 flattened_key = f"{key}_{i}_{nested_key}"
-                                processed[flattened_key] = self._convert_value(
-                                    nested_value
-                                )
+                                processed[flattened_key] = self._convert_value(nested_value)
                 else:
                     # Simple list - convert to string representation
                     processed[key] = str(value) if value else None
@@ -2263,9 +2137,7 @@ class DataQueryClient:
                 try:
                     df[column] = df[column].apply(transform_func)
                 except Exception as e:
-                    self.logger.warning(
-                        f"Failed to apply transformation to column '{column}': {e}"
-                    )
+                    self.logger.warning(f"Failed to apply transformation to column '{column}': {e}")
 
         # Convert date columns
         for column in date_columns:
@@ -2273,9 +2145,7 @@ class DataQueryClient:
                 try:
                     df[column] = pd.to_datetime(df[column], errors="coerce")
                 except Exception as e:
-                    self.logger.warning(
-                        f"Failed to convert column '{column}' to datetime: {e}"
-                    )
+                    self.logger.warning(f"Failed to convert column '{column}' to datetime: {e}")
 
         # Convert numeric columns
         for column in numeric_columns:
@@ -2283,9 +2153,7 @@ class DataQueryClient:
                 try:
                     df[column] = pd.to_numeric(df[column], errors="coerce")
                 except Exception as e:
-                    self.logger.warning(
-                        f"Failed to convert column '{column}' to numeric: {e}"
-                    )
+                    self.logger.warning(f"Failed to convert column '{column}' to numeric: {e}")
 
         # Auto-detect and convert common patterns
         df = self._auto_convert_columns(df)
@@ -2398,9 +2266,7 @@ class DataQueryClient:
             date_columns=["created_date", "last_updated"],
         )
 
-    def time_series_to_dataframe(
-        self, time_series, include_metadata: bool = False
-    ) -> "pd.DataFrame":
+    def time_series_to_dataframe(self, time_series, include_metadata: bool = False) -> "pd.DataFrame":
         """Convert time series response to DataFrame."""
         # Handle different time series response structures
         if hasattr(time_series, "data"):
@@ -2437,15 +2303,11 @@ class DataQueryClient:
         """Synchronous wrapper for list_all_groups using an event-loop aware runner."""
         return self._run_sync(self.list_all_groups_async())
 
-    def search_groups(
-        self, keywords: str, limit: Optional[int] = None, offset: Optional[int] = None
-    ) -> List[Group]:
+    def search_groups(self, keywords: str, limit: Optional[int] = None, offset: Optional[int] = None) -> List[Group]:
         """Synchronous wrapper using an event-loop aware runner."""
         return self._run_sync(self.search_groups_async(keywords, limit, offset))
 
-    def list_files(
-        self, group_id: str, file_group_id: Optional[str] = None
-    ) -> FileList:
+    def list_files(self, group_id: str, file_group_id: Optional[str] = None) -> FileList:
         """Synchronous wrapper using an event-loop aware runner."""
         return self._run_sync(self.list_files_async(group_id, file_group_id))
 
@@ -2453,13 +2315,9 @@ class DataQueryClient:
         """Synchronous wrapper using an event-loop aware runner."""
         return self._run_sync(self.get_file_info_async(group_id, file_group_id))
 
-    def check_availability(
-        self, file_group_id: str, file_datetime: str
-    ) -> AvailabilityInfo:
+    def check_availability(self, file_group_id: str, file_datetime: str) -> AvailabilityInfo:
         """Synchronous wrapper using an event-loop aware runner."""
-        return self._run_sync(
-            self.check_availability_async(file_group_id, file_datetime)
-        )
+        return self._run_sync(self.check_availability_async(file_group_id, file_datetime))
 
     def download_file(
         self,
@@ -2498,11 +2356,7 @@ class DataQueryClient:
         end_date: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """Synchronous wrapper using an event-loop aware runner."""
-        return self._run_sync(
-            self.list_available_files_async(
-                group_id, file_group_id, start_date, end_date
-            )
-        )
+        return self._run_sync(self.list_available_files_async(group_id, file_group_id, start_date, end_date))
 
     def health_check(self) -> bool:
         """Synchronous wrapper using an event-loop aware runner."""
@@ -2516,13 +2370,9 @@ class DataQueryClient:
         page: Optional[str] = None,
     ) -> "InstrumentsResponse":
         """Synchronous wrapper using an event-loop aware runner."""
-        return self._run_sync(
-            self.list_instruments_async(group_id, instrument_id, page)
-        )
+        return self._run_sync(self.list_instruments_async(group_id, instrument_id, page))
 
-    def search_instruments(
-        self, group_id: str, keywords: str, page: Optional[str] = None
-    ) -> "InstrumentsResponse":
+    def search_instruments(self, group_id: str, keywords: str, page: Optional[str] = None) -> "InstrumentsResponse":
         """Synchronous wrapper using an event-loop aware runner."""
         return self._run_sync(self.search_instruments_async(group_id, keywords, page))
 
@@ -2587,9 +2437,7 @@ class DataQueryClient:
         )
 
     # Group Collection Additional Endpoints - Synchronous wrappers
-    def get_group_filters(
-        self, group_id: str, page: Optional[str] = None
-    ) -> "FiltersResponse":
+    def get_group_filters(self, group_id: str, page: Optional[str] = None) -> "FiltersResponse":
         """Synchronous wrapper using an event-loop aware runner."""
         return self._run_sync(self.get_group_filters_async(group_id, page))
 
@@ -2600,9 +2448,7 @@ class DataQueryClient:
         page: Optional[str] = None,
     ) -> "AttributesResponse":
         """Synchronous wrapper using an event-loop aware runner."""
-        return self._run_sync(
-            self.get_group_attributes_async(group_id, instrument_id, page)
-        )
+        return self._run_sync(self.get_group_attributes_async(group_id, instrument_id, page))
 
     def get_group_time_series(
         self,

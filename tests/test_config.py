@@ -136,9 +136,7 @@ class TestEnvConfig:
             # Should use default values
             assert config.base_url == "https://api-developer.jpmorgan.com"
             assert config.context_path == "/research/dataquery-authe/api/v2"
-            assert (
-                config.oauth_token_url == "https://authe.jpmorgan.com/as/token.oauth2"
-            )
+            assert config.oauth_token_url == "https://authe.jpmorgan.com/as/token.oauth2"
 
     def test_env_config_create_client_config_override_defaults(self):
         """Test create_client_config method overriding default values."""
@@ -281,9 +279,7 @@ class TestEnvConfig:
 
     def test_env_config_validate_config_no_auth_method(self):
         """Test validate_config with no authentication method."""
-        config = ClientConfig(
-            base_url="https://api.example.com", oauth_enabled=False, bearer_token=None
-        )
+        config = ClientConfig(base_url="https://api.example.com", oauth_enabled=False, bearer_token=None)
 
         with pytest.raises(
             ConfigurationError,
@@ -312,9 +308,7 @@ class TestEnvConfig:
             max_retries=-1,
         )
 
-        with pytest.raises(
-            ConfigurationError, match="MAX_RETRIES must be non-negative"
-        ):
+        with pytest.raises(ConfigurationError, match="MAX_RETRIES must be non-negative"):
             EnvConfig.validate_config(config)
 
     def test_env_config_validate_config_invalid_retry_delay(self):
@@ -326,9 +320,7 @@ class TestEnvConfig:
             retry_delay=-1,
         )
 
-        with pytest.raises(
-            ConfigurationError, match="RETRY_DELAY must be non-negative"
-        ):
+        with pytest.raises(ConfigurationError, match="RETRY_DELAY must be non-negative"):
             EnvConfig.validate_config(config)
 
     def test_env_config_validate_config_invalid_pool_connections(self):
@@ -340,9 +332,7 @@ class TestEnvConfig:
             pool_connections=0,
         )
 
-        with pytest.raises(
-            ConfigurationError, match="POOL_CONNECTIONS must be positive"
-        ):
+        with pytest.raises(ConfigurationError, match="POOL_CONNECTIONS must be positive"):
             EnvConfig.validate_config(config)
 
     def test_env_config_validate_config_invalid_pool_maxsize(self):
@@ -366,9 +356,7 @@ class TestEnvConfig:
             requests_per_minute=0,
         )
 
-        with pytest.raises(
-            ConfigurationError, match="REQUESTS_PER_MINUTE must be positive"
-        ):
+        with pytest.raises(ConfigurationError, match="REQUESTS_PER_MINUTE must be positive"):
             EnvConfig.validate_config(config)
 
     def test_env_config_validate_config_invalid_burst_capacity(self):

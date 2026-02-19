@@ -101,10 +101,7 @@ class CircuitBreaker:
         self.failure_count += 1
         self.last_failure_time = datetime.now()
 
-        if (
-            self.state == CircuitState.CLOSED
-            and self.failure_count >= self.config.circuit_breaker_threshold
-        ):
+        if self.state == CircuitState.CLOSED and self.failure_count >= self.config.circuit_breaker_threshold:
             self._open_circuit()
         elif self.state == CircuitState.HALF_OPEN:
             self._open_circuit()
@@ -116,10 +113,8 @@ class CircuitBreaker:
 
         if self.state == CircuitState.OPEN:
             # Check if timeout has passed
-            if (
-                self.last_failure_time
-                and datetime.now() - self.last_failure_time
-                >= timedelta(seconds=self.config.circuit_breaker_timeout)
+            if self.last_failure_time and datetime.now() - self.last_failure_time >= timedelta(
+                seconds=self.config.circuit_breaker_timeout
             ):
                 self._half_open_circuit()
                 return True
@@ -163,9 +158,7 @@ class CircuitBreaker:
             "state": self.state.value,
             "failure_count": self.failure_count,
             "success_count": self.success_count,
-            "last_failure_time": (
-                self.last_failure_time.isoformat() if self.last_failure_time else None
-            ),
+            "last_failure_time": (self.last_failure_time.isoformat() if self.last_failure_time else None),
             "last_state_change": self.last_state_change.isoformat(),
             "threshold": self.config.circuit_breaker_threshold,
             "timeout": self.config.circuit_breaker_timeout,
@@ -178,9 +171,7 @@ class RetryManager:
     def __init__(self, config: RetryConfig):
         self.config = config
         self.stats = RetryStats()
-        self.circuit_breaker = (
-            CircuitBreaker(config) if config.enable_circuit_breaker else None
-        )
+        self.circuit_breaker = CircuitBreaker(config) if config.enable_circuit_breaker else None
 
         # Default retryable exceptions
         if not config.retryable_exceptions:
@@ -219,9 +210,7 @@ class RetryManager:
 
             # Check circuit breaker
             if self.circuit_breaker and not self.circuit_breaker.can_execute():
-                raise NetworkError(
-                    "Circuit breaker is open - service temporarily unavailable"
-                )
+                raise NetworkError("Circuit breaker is open - service temporarily unavailable")
 
             try:
                 # Execute function
@@ -284,9 +273,7 @@ class RetryManager:
 
         # All retries failed
         if last_exception is None:
-            raise NetworkError(
-                "All retry attempts failed - operation could not be completed"
-            )
+            raise NetworkError("All retry attempts failed - operation could not be completed")
         raise last_exception
 
     def _is_retryable_exception(self, exception: Exception) -> bool:
@@ -343,11 +330,7 @@ class RetryManager:
                 "failed_attempts": self.stats.failed_attempts,
                 "retry_count": self.stats.retry_count,
                 "total_retry_time": self.stats.total_retry_time,
-                "last_retry_time": (
-                    self.stats.last_retry_time.isoformat()
-                    if self.stats.last_retry_time
-                    else None
-                ),
+                "last_retry_time": (self.stats.last_retry_time.isoformat() if self.stats.last_retry_time else None),
             },
         }
 
