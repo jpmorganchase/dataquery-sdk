@@ -127,10 +127,6 @@ class FileNotFoundInGroupError(NotFoundError):
 FileNotFoundError = FileNotFoundInGroupError
 
 
-# Deprecated alias — avoids shadowing the built-in FileNotFoundError
-FileNotFoundError = FileNotFoundInGroupError
-
-
 class DateRangeError(ValidationError):
     """Raised when date range validation fails."""
 
