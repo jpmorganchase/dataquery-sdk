@@ -21,3 +21,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Non blocking IO
 ## [0.1.2] - 2026-02-18
 - File already exists status added 
+## [0.1.3] - 2026-02-21
+- Historical file download added 
