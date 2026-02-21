@@ -6,9 +6,8 @@ Downloads files for a group across a large date range by splitting
 into monthly chunks. This avoids timeouts and memory issues when
 downloading many months of data at once.
 
-If the date range is within a single month, it downloads directly.
-If the range spans multiple months, it splits into monthly chunks
-and downloads each month sequentially.
+Uses the built-in DataQuery.download_historical_async() method which
+handles monthly chunking automatically.
 
 Usage:
     python download_historical.py GROUP_ID FROM_DATE TO_DATE DESTINATION
@@ -18,105 +17,18 @@ Options:
     --max-concurrent-files: Max concurrent file downloads per month (default: 5)
     --num-parts: Number of parallel parts per file download (default: 1)
     --delay: Delay between file downloads in seconds (default: 0.04 for 25 TPS)
+    --chunk-delay: Delay between monthly chunks in seconds (default: 2.0)
 """
 
 import argparse
 import asyncio
 import sys
-import time
-from calendar import monthrange
-from datetime import date, datetime
+from datetime import datetime
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from dataquery import DataQuery  # noqa: E402
-
-
-def split_into_monthly_ranges(from_date: str, to_date: str) -> list[tuple[str, str]]:
-    """Split a date range into monthly chunks.
-
-    Args:
-        from_date: Start date in YYYYMMDD format
-        to_date: End date in YYYYMMDD format
-
-    Returns:
-        List of (start_date, end_date) tuples, each covering at most one month.
-    """
-    start = datetime.strptime(from_date, "%Y%m%d").date()
-    end = datetime.strptime(to_date, "%Y%m%d").date()
-
-    ranges = []
-    current = start
-
-    while current <= end:
-        # End of current month
-        last_day = monthrange(current.year, current.month)[1]
-        month_end = date(current.year, current.month, last_day)
-
-        # Clamp to the overall end date
-        chunk_end = min(month_end, end)
-
-        ranges.append((current.strftime("%Y%m%d"), chunk_end.strftime("%Y%m%d")))
-
-        # Move to first day of next month
-        if current.month == 12:
-            current = date(current.year + 1, 1, 1)
-        else:
-            current = date(current.year, current.month + 1, 1)
-
-    return ranges
-
-
-async def download_chunk(
-    dq: DataQuery,
-    group_id: str,
-    start_date: str,
-    end_date: str,
-    destination_dir: Path,
-    max_concurrent: int,
-    num_parts: int,
-    delay: float,
-) -> dict:
-    """Download files for a single monthly chunk."""
-    print(f"\n[Starting] {start_date} to {end_date}")
-    chunk_start = time.time()
-
-    try:
-        report = await dq.run_group_download_async(
-            group_id=group_id,
-            start_date=start_date,
-            end_date=end_date,
-            destination_dir=destination_dir,
-            max_concurrent=max_concurrent,
-            num_parts=num_parts,
-            delay_between_downloads=delay,
-            max_retries=3,
-        )
-
-        elapsed = time.time() - chunk_start
-        success = report.get("successful_downloads", 0)
-        failed = report.get("failed_downloads", 0)
-        total = report.get("total_files", 0)
-
-        print(f"[Done] {start_date}-{end_date}: {success}/{total} files ({failed} failed) in {elapsed:.1f}s")
-
-        return {
-            "start_date": start_date,
-            "end_date": end_date,
-            "report": report,
-            "elapsed_seconds": elapsed,
-        }
-
-    except Exception as e:
-        elapsed = time.time() - chunk_start
-        print(f"[Error] {start_date}-{end_date}: {e} (after {elapsed:.1f}s)")
-        return {
-            "start_date": start_date,
-            "end_date": end_date,
-            "error": str(e),
-            "elapsed_seconds": elapsed,
-        }
 
 
 async def main():
@@ -157,6 +69,12 @@ Examples:
         default=0.04,
         help="Delay between file downloads in seconds (default: 0.04 for 25 TPS)",
     )
+    parser.add_argument(
+        "--chunk-delay",
+        type=float,
+        default=2.0,
+        help="Delay between monthly chunks in seconds (default: 2.0)",
+    )
 
     args = parser.parse_args()
 
@@ -173,12 +91,6 @@ Examples:
         sys.exit(1)
 
     dest_path = Path(args.destination)
-    dest_path.mkdir(parents=True, exist_ok=True)
-
-    # Split into monthly chunks
-    monthly_ranges = split_into_monthly_ranges(args.from_date, args.to_date)
-
-    total_start = time.time()
 
     print("=" * 60)
     print("Historical Download - Monthly Chunking")
@@ -186,61 +98,56 @@ Examples:
     print(f"Group ID:       {args.group_id}")
     print(f"From Date:      {args.from_date}")
     print(f"To Date:        {args.to_date}")
-    print(f"Monthly Chunks: {len(monthly_ranges)}")
     print(f"Destination:    {dest_path}")
     print(f"Concurrent:     {args.max_concurrent_files}")
     print(f"Parts per File: {args.num_parts}")
+    print(f"Chunk Delay:    {args.chunk_delay}s")
     print("=" * 60)
-
-    for i, (s, e) in enumerate(monthly_ranges, 1):
-        print(f"  Chunk {i}: {s} -> {e}")
 
     try:
         async with DataQuery() as dq:
-            results = []
-            for i, (chunk_start, chunk_end) in enumerate(monthly_ranges):
-                result = await download_chunk(
-                    dq=dq,
-                    group_id=args.group_id,
-                    start_date=chunk_start,
-                    end_date=chunk_end,
-                    destination_dir=dest_path,
-                    max_concurrent=args.max_concurrent_files,
-                    num_parts=args.num_parts,
-                    delay=args.delay,
-                )
-                results.append(result)
+            summary = await dq.download_historical_async(
+                group_id=args.group_id,
+                start_date=args.from_date,
+                end_date=args.to_date,
+                destination_dir=dest_path,
+                max_concurrent=args.max_concurrent_files,
+                num_parts=args.num_parts,
+                delay_between_downloads=args.delay,
+                max_retries=3,
+                chunk_delay=args.chunk_delay,
+            )
 
-                # Small delay between chunks to let rate limits recover
-                if i < len(monthly_ranges) - 1:
-                    await asyncio.sleep(2.0)
+        # Print per-chunk results
+        for chunk in summary.get("chunk_results", []):
+            status = "Error" if "error" in chunk else "Done"
+            s = chunk.get("successful_downloads", 0)
+            t = chunk.get("total_files", 0)
+            f = chunk.get("failed_downloads", 0)
+            e = chunk.get("elapsed_seconds", 0)
+            if "error" in chunk:
+                print(f"  [{status}] {chunk['start_date']}-{chunk['end_date']}: {chunk['error']} ({e:.1f}s)")
+            else:
+                print(f"  [{status}] {chunk['start_date']}-{chunk['end_date']}: {s}/{t} files ({f} failed) in {e:.1f}s")
 
-        # Summary
-        total_elapsed = time.time() - total_start
-        total_files = 0
-        total_success = 0
-        total_failed = 0
-        chunks_with_errors = []
-
-        for result in results:
-            if "report" in result:
-                report = result["report"]
-                total_files += report.get("total_files", 0)
-                total_success += report.get("successful_downloads", 0)
-                total_failed += report.get("failed_downloads", 0)
-            if "error" in result:
-                chunks_with_errors.append(f"{result['start_date']}-{result['end_date']}")
+        # Print summary
+        total_files = summary.get("total_files", 0)
+        total_success = summary.get("successful_downloads", 0)
+        total_failed = summary.get("failed_downloads", 0)
+        total_time = summary.get("total_time_formatted", "N/A")
+        chunks = summary.get("monthly_chunks", 0)
+        chunks_with_errors = summary.get("chunks_with_errors", [])
 
         print(f"\n{'=' * 60}")
         print("DOWNLOAD SUMMARY")
         print("=" * 60)
-        print(f"Chunks:         {len(monthly_ranges)}")
+        print(f"Chunks:         {chunks}")
         print(f"Total Files:    {total_files}")
         print(f"Successful:     {total_success}")
         print(f"Failed:         {total_failed}")
         if total_files > 0:
             print(f"Success Rate:   {(total_success / total_files) * 100:.1f}%")
-        print(f"Total Time:     {total_elapsed:.1f}s ({total_elapsed / 60:.1f} minutes)")
+        print(f"Total Time:     {total_time}")
 
         if chunks_with_errors:
             print(f"\nChunks with errors: {', '.join(chunks_with_errors)}")

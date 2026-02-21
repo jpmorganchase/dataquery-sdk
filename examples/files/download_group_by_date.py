@@ -6,7 +6,7 @@ Downloads all files for a group between a from-date and to-date.
 
 Usage:
     python download_group_by_date.py GROUP_ID FROM_DATE TO_DATE DESTINATION
-    python download_group_by_date.py SPECIALIST_SALES 20250101 20250131 ./data
+    .venv\Scripts\python.exe  examples\files\download_group_by_date.py SPECIALIST_SALES 20260218 20260218 ./data
 
 Options:
     --max-concurrent-files: Max concurrent file downloads (default: 5)

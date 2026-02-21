@@ -7,8 +7,10 @@ for all API interactions, encapsulating the client and providing high-level oper
 
 import asyncio
 import time
+from calendar import monthrange
+from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import structlog
 from dotenv import load_dotenv
@@ -778,7 +780,7 @@ class DataQuery:
                 DownloadOptions(
                     destination_path=destination_path,
                     create_directories=True,
-                    overwrite_existing=False,
+                    overwrite_existing=self.client_config.overwrite_existing,
                     chunk_size=8192,
                     max_retries=3,
                     retry_delay=1.0,
@@ -1020,7 +1022,7 @@ class DataQuery:
                     result
                     and hasattr(result, "status")
                     and hasattr(result, "file_group_id")
-                    and result.status.value == "completed"
+                    and result.status.value in ("completed", "already_exists")
                 ):
                     successful.append(result)
                 else:
@@ -1057,7 +1059,7 @@ class DataQuery:
                         result
                         and hasattr(result, "status")
                         and hasattr(result, "file_group_id")
-                        and result.status.value == "completed"
+                        and result.status.value in ("completed", "already_exists")
                     ):
                         successful.append(result)
                         logger.info(
@@ -1162,6 +1164,188 @@ class DataQuery:
             )
             raise
 
+    @staticmethod
+    def _split_into_monthly_ranges(from_date: str, to_date: str) -> List[Tuple[str, str]]:
+        """Split a date range into monthly chunks.
+
+        Args:
+            from_date: Start date in YYYYMMDD format
+            to_date: End date in YYYYMMDD format
+
+        Returns:
+            List of (start_date, end_date) tuples, each covering at most one month.
+        """
+        start = datetime.strptime(from_date, "%Y%m%d").date()
+        end = datetime.strptime(to_date, "%Y%m%d").date()
+
+        ranges: List[Tuple[str, str]] = []
+        current = start
+
+        while current <= end:
+            last_day = monthrange(current.year, current.month)[1]
+            month_end = date(current.year, current.month, last_day)
+            chunk_end = min(month_end, end)
+            ranges.append((current.strftime("%Y%m%d"), chunk_end.strftime("%Y%m%d")))
+
+            if current.month == 12:
+                current = date(current.year + 1, 1, 1)
+            else:
+                current = date(current.year, current.month + 1, 1)
+
+        return ranges
+
+    async def download_historical_async(
+        self,
+        group_id: str,
+        start_date: str,
+        end_date: str,
+        destination_dir: Path = Path("./downloads"),
+        max_concurrent: int = 5,
+        num_parts: int = 1,
+        delay_between_downloads: float = 0.04,
+        max_retries: int = 3,
+        progress_callback: Optional[Callable] = None,
+        chunk_delay: float = 2.0,
+    ) -> Dict[str, Any]:
+        """
+        Download files for a group across a large date range by splitting into monthly chunks.
+
+        If the date range is within a single month it downloads directly.
+        If the range spans multiple months it splits into monthly chunks and downloads
+        each month sequentially, with a configurable delay between chunks to allow
+        rate limits to recover.
+
+        Args:
+            group_id: Group ID to download files from
+            start_date: Start date in YYYYMMDD format (e.g. "20240101")
+            end_date: End date in YYYYMMDD format (e.g. "20251231")
+            destination_dir: Destination directory for downloads
+            max_concurrent: Maximum concurrent file downloads per chunk (default: 5)
+            num_parts: Number of parallel parts per file download (default: 1)
+            delay_between_downloads: Delay in seconds between file downloads (default: 0.04 for 25 TPS)
+            max_retries: Maximum retry attempts for failed downloads (default: 3)
+            progress_callback: Optional progress callback for individual files
+            chunk_delay: Delay in seconds between monthly chunks (default: 2.0)
+
+        Returns:
+            Dictionary with aggregated download results and per-chunk details.
+        """
+        operation_start = time.time()
+
+        monthly_ranges = self._split_into_monthly_ranges(start_date, end_date)
+
+        logger.info(
+            "Starting historical download with monthly chunking",
+            group_id=group_id,
+            start_date=start_date,
+            end_date=end_date,
+            monthly_chunks=len(monthly_ranges),
+        )
+
+        chunk_results: List[Dict[str, Any]] = []
+        total_files = 0
+        total_success = 0
+        total_failed = 0
+
+        for i, (chunk_start, chunk_end) in enumerate(monthly_ranges):
+            logger.info(
+                f"Downloading chunk {i + 1}/{len(monthly_ranges)}",
+                chunk_start=chunk_start,
+                chunk_end=chunk_end,
+            )
+
+            chunk_time = time.time()
+            try:
+                report = await self.run_group_download_async(
+                    group_id=group_id,
+                    start_date=chunk_start,
+                    end_date=chunk_end,
+                    destination_dir=destination_dir,
+                    max_concurrent=max_concurrent,
+                    num_parts=num_parts,
+                    delay_between_downloads=delay_between_downloads,
+                    max_retries=max_retries,
+                    progress_callback=progress_callback,
+                )
+
+                chunk_elapsed = time.time() - chunk_time
+                success = report.get("successful_downloads", 0)
+                failed = report.get("failed_downloads", 0)
+                files = report.get("total_files", 0)
+
+                total_files += files
+                total_success += success
+                total_failed += failed
+
+                chunk_results.append({
+                    "chunk": i + 1,
+                    "start_date": chunk_start,
+                    "end_date": chunk_end,
+                    "total_files": files,
+                    "successful_downloads": success,
+                    "failed_downloads": failed,
+                    "elapsed_seconds": round(chunk_elapsed, 2),
+                    "report": report,
+                })
+
+                logger.info(
+                    f"Chunk {i + 1}/{len(monthly_ranges)} completed",
+                    success=success,
+                    failed=failed,
+                    total=files,
+                    elapsed=f"{chunk_elapsed:.1f}s",
+                )
+
+            except Exception as e:
+                chunk_elapsed = time.time() - chunk_time
+                logger.error(
+                    f"Chunk {i + 1}/{len(monthly_ranges)} failed",
+                    chunk_start=chunk_start,
+                    chunk_end=chunk_end,
+                    error=str(e),
+                )
+                chunk_results.append({
+                    "chunk": i + 1,
+                    "start_date": chunk_start,
+                    "end_date": chunk_end,
+                    "error": str(e),
+                    "elapsed_seconds": round(chunk_elapsed, 2),
+                })
+
+            # Delay between chunks to let rate limits recover
+            if i < len(monthly_ranges) - 1:
+                await asyncio.sleep(chunk_delay)
+
+        total_elapsed = time.time() - operation_start
+        total_minutes = total_elapsed / 60.0
+
+        chunks_with_errors = [
+            f"{c['start_date']}-{c['end_date']}" for c in chunk_results if "error" in c
+        ]
+
+        summary = {
+            "group_id": group_id,
+            "start_date": start_date,
+            "end_date": end_date,
+            "monthly_chunks": len(monthly_ranges),
+            "total_files": total_files,
+            "successful_downloads": total_success,
+            "failed_downloads": total_failed,
+            "success_rate": (total_success / total_files * 100) if total_files else 0.0,
+            "total_time_seconds": round(total_elapsed, 2),
+            "total_time_minutes": round(total_minutes, 2),
+            "total_time_formatted": (
+                f"{int(total_minutes)}m {int(total_elapsed % 60)}s"
+                if total_minutes >= 1
+                else f"{total_elapsed:.1f}s"
+            ),
+            "chunks_with_errors": chunks_with_errors,
+            "chunk_results": chunk_results,
+        }
+
+        logger.info("Historical download completed", **{k: v for k, v in summary.items() if k != "chunk_results"})
+        return summary
+
     async def _download_file_parallel(
         self,
         file_group_id: str,
@@ -1214,7 +1398,10 @@ class DataQuery:
                 return await client.download_file_async(
                     file_group_id=file_group_id,
                     file_datetime=file_datetime,
-                    options=DownloadOptions(destination_path=destination_path),
+                    options=DownloadOptions(
+                        destination_path=destination_path,
+                        overwrite_existing=client.config.overwrite_existing,
+                    ),
                     progress_callback=progress_callback,
                 )
 
@@ -1224,7 +1411,10 @@ class DataQuery:
                 params["file-datetime"] = file_datetime
 
             # Determine destination directory
-            download_options = DownloadOptions(destination_path=destination_path)
+            download_options = DownloadOptions(
+                destination_path=destination_path,
+                overwrite_existing=client.config.overwrite_existing,
+            )
             if download_options.destination_path:
                 resolved_path = Path(download_options.destination_path)
                 if resolved_path.suffix:
@@ -2238,6 +2428,35 @@ class DataQuery:
                 num_parts,
                 progress_callback,
                 delay_between_downloads,
+            )
+        )
+
+    def download_historical(
+        self,
+        group_id: str,
+        start_date: str,
+        end_date: str,
+        destination_dir: Path = Path("./downloads"),
+        max_concurrent: int = 5,
+        num_parts: int = 1,
+        delay_between_downloads: float = 0.04,
+        max_retries: int = 3,
+        progress_callback: Optional[Callable] = None,
+        chunk_delay: float = 2.0,
+    ) -> Dict[str, Any]:
+        """Synchronous wrapper for download_historical_async."""
+        return self._run_sync(
+            self.download_historical_async(
+                group_id=group_id,
+                start_date=start_date,
+                end_date=end_date,
+                destination_dir=destination_dir,
+                max_concurrent=max_concurrent,
+                num_parts=num_parts,
+                delay_between_downloads=delay_between_downloads,
+                max_retries=max_retries,
+                progress_callback=progress_callback,
+                chunk_delay=chunk_delay,
             )
         )
 
