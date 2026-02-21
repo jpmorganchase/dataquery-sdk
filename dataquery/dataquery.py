@@ -1277,16 +1277,18 @@ class DataQuery:
                 total_success += success
                 total_failed += failed
 
-                chunk_results.append({
-                    "chunk": i + 1,
-                    "start_date": chunk_start,
-                    "end_date": chunk_end,
-                    "total_files": files,
-                    "successful_downloads": success,
-                    "failed_downloads": failed,
-                    "elapsed_seconds": round(chunk_elapsed, 2),
-                    "report": report,
-                })
+                chunk_results.append(
+                    {
+                        "chunk": i + 1,
+                        "start_date": chunk_start,
+                        "end_date": chunk_end,
+                        "total_files": files,
+                        "successful_downloads": success,
+                        "failed_downloads": failed,
+                        "elapsed_seconds": round(chunk_elapsed, 2),
+                        "report": report,
+                    }
+                )
 
                 logger.info(
                     f"Chunk {i + 1}/{len(monthly_ranges)} completed",
@@ -1304,13 +1306,15 @@ class DataQuery:
                     chunk_end=chunk_end,
                     error=str(e),
                 )
-                chunk_results.append({
-                    "chunk": i + 1,
-                    "start_date": chunk_start,
-                    "end_date": chunk_end,
-                    "error": str(e),
-                    "elapsed_seconds": round(chunk_elapsed, 2),
-                })
+                chunk_results.append(
+                    {
+                        "chunk": i + 1,
+                        "start_date": chunk_start,
+                        "end_date": chunk_end,
+                        "error": str(e),
+                        "elapsed_seconds": round(chunk_elapsed, 2),
+                    }
+                )
 
             # Delay between chunks to let rate limits recover
             if i < len(monthly_ranges) - 1:
@@ -1319,9 +1323,7 @@ class DataQuery:
         total_elapsed = time.time() - operation_start
         total_minutes = total_elapsed / 60.0
 
-        chunks_with_errors = [
-            f"{c['start_date']}-{c['end_date']}" for c in chunk_results if "error" in c
-        ]
+        chunks_with_errors = [f"{c['start_date']}-{c['end_date']}" for c in chunk_results if "error" in c]
 
         summary = {
             "group_id": group_id,
@@ -1335,9 +1337,7 @@ class DataQuery:
             "total_time_seconds": round(total_elapsed, 2),
             "total_time_minutes": round(total_minutes, 2),
             "total_time_formatted": (
-                f"{int(total_minutes)}m {int(total_elapsed % 60)}s"
-                if total_minutes >= 1
-                else f"{total_elapsed:.1f}s"
+                f"{int(total_minutes)}m {int(total_elapsed % 60)}s" if total_minutes >= 1 else f"{total_elapsed:.1f}s"
             ),
             "chunks_with_errors": chunks_with_errors,
             "chunk_results": chunk_results,
