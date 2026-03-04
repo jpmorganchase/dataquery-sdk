@@ -1893,6 +1893,104 @@ class DataQueryClient:
             )
         )
 
+    async def watch_and_download_async(
+        self,
+        group_id: str,
+        destination_dir: str = "./downloads",
+        file_filter: Optional[Callable] = None,
+        progress_callback: Optional[Callable] = None,
+        error_callback: Optional[Callable] = None,
+        max_retries: int = 3,
+        max_concurrent_downloads: int = 5,
+        initial_check: bool = True,
+        reconnect_delay: float = 5.0,
+        max_reconnect_delay: float = 60.0,
+    ) -> "NotificationDownloadManager":
+        """
+        Subscribe to the /notification SSE endpoint and download new files.
+
+        Starts a :class:`NotificationDownloadManager` that maintains a persistent
+        SSE connection to the DataQuery notification endpoint.  Each time a
+        notification is received it fetches the available-files list for
+        *group_id* and downloads any files not already present in
+        *destination_dir*.
+
+        Args:
+            group_id: ID of the data group to watch.
+            destination_dir: Directory to download files to.
+            file_filter: Optional predicate ``(file_info_dict) -> bool`` to
+                         select which available files to download.
+            progress_callback: Called with :class:`DownloadProgress` updates.
+            error_callback: Called with exceptions from the SSE connection or
+                            download failures.
+            max_retries: Maximum retry attempts per file before giving up.
+            max_concurrent_downloads: Concurrency limit for parallel downloads.
+            initial_check: If ``True`` (default), perform a file-availability
+                           check immediately on start, before any SSE events.
+            reconnect_delay: Initial reconnection delay in seconds.
+            max_reconnect_delay: Maximum reconnection delay in seconds.
+
+        Returns:
+            A running :class:`NotificationDownloadManager` instance.
+
+        Example::
+
+            manager = await client.watch_and_download_async(
+                group_id="economic-data",
+                destination_dir="./data",
+            )
+            try:
+                await asyncio.sleep(3600)  # keep running for 1 hour
+            finally:
+                await manager.stop()
+        """
+        from .sse_subscriber import NotificationDownloadManager
+
+        manager = NotificationDownloadManager(
+            client=self,
+            group_id=group_id,
+            destination_dir=destination_dir,
+            file_filter=file_filter,
+            progress_callback=progress_callback,
+            error_callback=error_callback,
+            max_retries=max_retries,
+            max_concurrent_downloads=max_concurrent_downloads,
+            initial_check=initial_check,
+            reconnect_delay=reconnect_delay,
+            max_reconnect_delay=max_reconnect_delay,
+        )
+        await manager.start()
+        return manager
+
+    def watch_and_download(
+        self,
+        group_id: str,
+        destination_dir: str = "./downloads",
+        file_filter: Optional[Callable] = None,
+        progress_callback: Optional[Callable] = None,
+        error_callback: Optional[Callable] = None,
+        max_retries: int = 3,
+        max_concurrent_downloads: int = 5,
+        initial_check: bool = True,
+        reconnect_delay: float = 5.0,
+        max_reconnect_delay: float = 60.0,
+    ) -> "NotificationDownloadManager":
+        """Synchronous wrapper for :meth:`watch_and_download_async`."""
+        return asyncio.run(
+            self.watch_and_download_async(
+                group_id,
+                destination_dir,
+                file_filter,
+                progress_callback,
+                error_callback,
+                max_retries,
+                max_concurrent_downloads,
+                initial_check,
+                reconnect_delay,
+                max_reconnect_delay,
+            )
+        )
+
     # DataFrame Conversion Utilities
     def to_dataframe(
         self,

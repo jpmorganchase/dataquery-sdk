@@ -29,6 +29,10 @@ from .auth import (
 # Auto-download imports
 from .auto_download import AutoDownloadManager
 
+# Notification-driven download imports
+from .sse_subscriber import NotificationDownloadManager
+from .sse_client import SSEClient, SSEEvent
+
 # Client imports
 from .client import DataQueryClient
 
@@ -162,6 +166,9 @@ __all__ = [
     "format_file_size",
     "format_duration",
     "AutoDownloadManager",
+    "NotificationDownloadManager",
+    "SSEClient",
+    "SSEEvent",
     # Configuration
     "EnvConfig",
     # Utilities

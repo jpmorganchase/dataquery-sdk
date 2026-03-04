@@ -4,7 +4,7 @@ Professional Python SDK for the DataQuery API - High-performance data access wit
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![Linting: Ruff](https://img.shields.io/badge/linting-ruff-261230.svg)](https://github.com/astral-sh/ruff)
 
 ## Features
 
@@ -408,11 +408,11 @@ pytest tests/test_client.py -v
 ### Code Quality
 
 ```bash
-# Format code
-black dataquery/ tests/
+# Lint code
+ruff check dataquery/ tests/ examples/
 
-# Check linting
-flake8 dataquery/ tests/ examples/
+# Format code
+ruff format dataquery/ tests/ examples/
 
 # Type checking
 mypy dataquery/
