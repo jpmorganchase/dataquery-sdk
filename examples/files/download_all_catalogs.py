@@ -40,9 +40,9 @@ async def main():
                 continue
 
             catalogs = [
-                f for f in files
-                if "CATALOG" in (f.get("file-group-id") or "").upper()
-                and f.get("is-available") is True
+                f
+                for f in files
+                if "CATALOG" in (f.get("file-group-id") or "").upper() and f.get("is-available") is True
             ]
 
             if not catalogs:
