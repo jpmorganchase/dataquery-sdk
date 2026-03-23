@@ -74,6 +74,7 @@ class ClientConfig(BaseModel):
     timeout: float = Field(default=600.0, description="Default request timeout in seconds")
     max_retries: int = Field(default=3, description="Maximum retry attempts")
     retry_delay: float = Field(default=1.0, description="Delay between retries in seconds")
+    circuit_breaker_threshold: int = Field(default=5, description="Number of failures before circuit breaker opens")
 
     # Connection pooling
     pool_connections: int = Field(default=10, description="Number of connection pools")

@@ -89,8 +89,8 @@ Examples:
                 start_date=args.from_date,
                 end_date=args.to_date,
                 destination_dir=dest_path,
-                max_concurrent=args.max_concurrent_files,
-                num_parts=args.num_parts,
+                max_concurrent=5,
+                num_parts=1,
                 delay_between_downloads=args.delay,
                 max_retries=3,
             )
