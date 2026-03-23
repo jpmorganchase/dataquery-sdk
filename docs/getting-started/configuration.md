@@ -59,6 +59,7 @@ export DATAQUERY_OAUTH_TOKEN_URL="https://your-custom-auth.com/token"
 - **`DATAQUERY_TIMEOUT`**: Request timeout in seconds (default: `600.0`)
 - **`DATAQUERY_MAX_RETRIES`**: Maximum number of retries (default: `3`)
 - **`DATAQUERY_RETRY_DELAY`**: Delay between retries in seconds (default: `1.0`)
+- **`DATAQUERY_CIRCUIT_BREAKER_THRESHOLD`**: Number of consecutive failures before the circuit breaker opens and temporarily blocks requests (default: `5`)
 - **`DATAQUERY_POOL_CONNECTIONS`**: Connection pool size (default: `10`)
 - **`DATAQUERY_POOL_MAXSIZE`**: Maximum connections in pool (default: `20`)
 
@@ -110,6 +111,7 @@ The SDK comes with the following sensible defaults, so you only need to configur
 | `DATAQUERY_TIMEOUT` | `6000.0` | Request timeout (100 minutes) |
 | `DATAQUERY_MAX_RETRIES` | `3` | Maximum retry attempts |
 | `DATAQUERY_RETRY_DELAY` | `1.0` | Delay between retries (1 second) |
+| `DATAQUERY_CIRCUIT_BREAKER_THRESHOLD` | `5` | Failures before circuit breaker opens |
 | `DATAQUERY_POOL_CONNECTIONS` | `10` | Connection pool size |
 | `DATAQUERY_POOL_MAXSIZE` | `20` | Maximum connections per pool |
 | **Rate Limiting** | | |
@@ -171,6 +173,7 @@ DATAQUERY_LOG_LEVEL=INFO
 DATAQUERY_ENABLE_DEBUG_LOGGING=false
 DATAQUERY_TIMEOUT=600.0
 DATAQUERY_MAX_RETRIES=3
+DATAQUERY_CIRCUIT_BREAKER_THRESHOLD=5
 ```
 
 ## Programmatic Configuration

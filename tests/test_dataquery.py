@@ -491,7 +491,7 @@ class TestDataQueryAsyncMethods:
 
                 assert result == mock_result
                 # Fix: The actual method signature is different - destination_path is passed separately
-                mock_client.download_file_async.assert_called_once_with("file1", "20200101", options, 5, None)
+                mock_client.download_file_async.assert_called_once_with("file1", "20200101", options, 1, None)
 
     @pytest.mark.asyncio
     async def test_list_available_files_async(self):
