@@ -8,7 +8,10 @@ import time
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
+
+if TYPE_CHECKING:
+    from .sse_subscriber import NotificationDownloadManager
 
 import aiohttp
 import structlog
@@ -489,8 +492,10 @@ class DataQueryClient:
             headers = dict(kwargs.get("headers") or {})
             headers.update(auth_headers)
             kwargs["headers"] = headers
+        except AuthenticationError:
+            raise
         except Exception as e:
-            self.logger.warning("Failed to get authentication headers", error=str(e))
+            raise AuthenticationError(f"Failed to obtain auth headers: {e}")
 
         # Apply proxy per-request if configured
         if self.config.proxy_enabled and self.config.proxy_url:
@@ -2102,11 +2107,6 @@ class DataQueryClient:
             if chunk_records:
                 all_records.extend(chunk_records)
 
-            # Force garbage collection for large datasets
-            if len(data) > 5000:
-                import gc
-
-                gc.collect()
 
         if not all_records:
             return pd.DataFrame()

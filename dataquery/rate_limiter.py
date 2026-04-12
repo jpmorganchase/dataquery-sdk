@@ -17,37 +17,13 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 
-class QueuePriority(Enum):
+class QueuePriority(int, Enum):
     """Priority levels for queued requests."""
 
     LOW = 1
     NORMAL = 2
     HIGH = 3
     CRITICAL = 4
-
-    def __lt__(self, other):
-        """Enable comparison of priorities."""
-        if isinstance(other, QueuePriority):
-            return self.value < other.value
-        return NotImplemented
-
-    def __le__(self, other):
-        """Enable comparison of priorities."""
-        if isinstance(other, QueuePriority):
-            return self.value <= other.value
-        return NotImplemented
-
-    def __gt__(self, other):
-        """Enable comparison of priorities."""
-        if isinstance(other, QueuePriority):
-            return self.value > other.value
-        return NotImplemented
-
-    def __ge__(self, other):
-        """Enable comparison of priorities."""
-        if isinstance(other, QueuePriority):
-            return self.value >= other.value
-        return NotImplemented
 
 
 @dataclass

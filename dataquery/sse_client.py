@@ -128,7 +128,7 @@ class SSEClient:
 
     def _build_notification_url(self) -> str:
         base = self.config.api_base_url.rstrip("/")
-        return f"{base}/notification"
+        return f"{base}/sse/event/notification"
 
     async def _get_headers(self) -> dict:
         headers = await self.auth_manager.get_headers()

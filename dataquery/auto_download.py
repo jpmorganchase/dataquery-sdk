@@ -11,8 +11,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set
 
+from ._download_utils import download_and_track, file_exists_locally
 from .config import EnvConfig
-from .models import DownloadOptions, DownloadProgress
+from .models import DownloadOptions
 
 
 class AutoDownloadManager:
@@ -279,108 +280,22 @@ class AutoDownloadManager:
 
     def _file_exists_locally(self, file_group_id: str, date_str: str) -> bool:
         """Check if file already exists in the destination directory."""
-        # Look for files that might match this file_group_id and date
-        # This is a heuristic approach since we don't know the exact filename
-
-        for file_path in self.destination_dir.glob("*"):
-            if file_path.is_file():
-                filename = file_path.name
-                # Check if filename contains the file_group_id and date
-                if file_group_id in filename and date_str in filename:
-                    return True
-
-        return False
+        return file_exists_locally(self.destination_dir, file_group_id, date_str)
 
     async def _download_file(self, file_group_id: str, date_str: str, file_key: str):
         """Download a file."""
-        self.logger.info("Downloading '%s' for %s", file_group_id, date_str)
-
-        # Create progress callback that updates statistics
-        def progress_wrapper(progress: DownloadProgress):
-            # Update statistics
-            current_total = int(self.stats.get("total_bytes_downloaded", 0) or 0)
-            self.stats["total_bytes_downloaded"] = max(
-                current_total, int(getattr(progress, "bytes_downloaded", 0) or 0)
-            )
-
-            # Call user callback if provided
-            if self.progress_callback:
-                try:
-                    if asyncio.iscoroutinefunction(self.progress_callback):
-                        asyncio.create_task(self.progress_callback(progress))
-                    else:
-                        self.progress_callback(progress)
-                except Exception as e:
-                    self.logger.error("Error in progress callback: %s", e)
-
-        try:
-            result = await self.client.download_file_async(
-                file_group_id=file_group_id,
-                file_datetime=date_str,
-                options=self.download_options,
-                progress_callback=progress_wrapper,
-            )
-
-            succeeded = False
-            already_exists = False
-            if result is not None and getattr(result, "status", None) is not None:
-                try:
-                    from .models import (  # import inside to avoid cycles in some tools
-                        DownloadStatus,
-                    )
-
-                    succeeded = result.status == DownloadStatus.COMPLETED
-                    already_exists = result.status == DownloadStatus.ALREADY_EXISTS
-                except Exception:
-                    succeeded = False
-
-            if already_exists:
-                self.logger.info(
-                    "File already exists for '%s' for %s, skipping",
-                    file_group_id,
-                    date_str,
-                )
-                self.stats["files_skipped"] += 1
-                self._downloaded_files.add(file_key)
-                if file_key in self._failed_files:
-                    del self._failed_files[file_key]
-
-            elif succeeded:
-                self.logger.info("Successfully downloaded '%s' for %s", file_group_id, date_str)
-                self.stats["files_downloaded"] += 1
-                self._downloaded_files.add(file_key)
-                # Accumulate total bytes if provided
-                try:
-                    if getattr(result, "file_size", None):
-                        self.stats["total_bytes_downloaded"] += int(result.file_size) or 0
-                except Exception:
-                    pass
-
-                # Reset failure count on success
-                if file_key in self._failed_files:
-                    del self._failed_files[file_key]
-
-            else:
-                error_msg = getattr(result, "error_message", "Unknown error") if result else "No result"
-                self.logger.error(
-                    "Download failed for '%s' for %s: %s",
-                    file_group_id,
-                    date_str,
-                    error_msg,
-                )
-                self._failed_files[file_key] = self._failed_files.get(file_key, 0) + 1
-                self.stats["download_failures"] += 1
-
-        except Exception as e:
-            self.logger.error(
-                "Exception downloading '%s' for %s: %s",
-                file_group_id,
-                date_str,
-                e,
-            )
-            self._failed_files[file_key] = self._failed_files.get(file_key, 0) + 1
-            self.stats["download_failures"] += 1
-            raise
+        await download_and_track(
+            client=self.client,
+            file_group_id=file_group_id,
+            date_str=date_str,
+            file_key=file_key,
+            download_options=self.download_options,
+            stats=self.stats,
+            downloaded_files=self._downloaded_files,
+            failed_files=self._failed_files,
+            progress_callback=self.progress_callback,
+            logger_instance=self.logger,
+        )
 
     async def _safe_call_callback(self, callback: Callable, *args, **kwargs):
         """Safely call a callback function."""

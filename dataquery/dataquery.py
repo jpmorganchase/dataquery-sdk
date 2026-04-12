@@ -58,8 +58,8 @@ class ConfigManager:
             config = EnvConfig.create_client_config(env_file=self.env_file)
             EnvConfig.validate_config(config)
             return config
-        except Exception as e:
-            logger.warning("Failed to load configuration from environment", error=str(e))
+        except ConfigurationError as e:
+            logger.warning("Configuration validation failed, using defaults", error=str(e))
             return self._get_default_config()
 
     def _get_default_config(self) -> ClientConfig:
@@ -162,9 +162,8 @@ class DataQuery:
             if hasattr(self.client_config, key) and value is not None:
                 try:
                     setattr(self.client_config, key, value)
-                except Exception:
-                    # Best-effort: ignore invalid overrides silently to preserve backward compatibility
-                    pass
+                except (TypeError, ValueError) as e:
+                    logger.warning("Override ignored", key=key, error=str(e))
 
         # Validate configuration
         try:
@@ -174,8 +173,6 @@ class DataQuery:
             raise ConfigurationError(f"Configuration validation failed: {e}")
 
         self._client: Optional[DataQueryClient] = None
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._own_loop: bool = False
 
     async def __aenter__(self):
         """Async context manager entry."""
@@ -216,11 +213,6 @@ class DataQuery:
     async def cleanup_async(self):
         """Cleanup resources and ensure proper shutdown."""
         await self.close_async()
-
-        # Force garbage collection to clean up any remaining references
-        import gc
-
-        gc.collect()
 
     def _run_sync(self, coro):
         """
@@ -2465,11 +2457,6 @@ class DataQuery:
         if self._client:
             self._run_sync(self.close_async())
             self._client = None
-
-        # Force garbage collection to clean up any remaining references
-        import gc
-
-        gc.collect()
 
     # Sync wrapper methods with _sync suffix for testing compatibility
 

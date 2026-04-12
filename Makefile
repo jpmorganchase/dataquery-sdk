@@ -11,8 +11,8 @@ help:
 	@echo "  install-dev  - Install package with development dependencies"
 	@echo "  test         - Run tests"
 	@echo "  test-cov     - Run tests with coverage"
-	@echo "  lint         - Run linting (flake8)"
-	@echo "  format       - Format code (black + isort)"
+	@echo "  lint         - Run linting (ruff)"
+	@echo "  format       - Format code (ruff format)"
 	@echo "  type-check   - Run type checking (mypy)"
 	@echo "  security-test - Run security tests"
 	@echo ""
@@ -52,11 +52,11 @@ security-test:
 	pytest tests/test_security.py -v
 
 lint:
-	flake8 dataquery/
+	ruff check dataquery/ tests/ examples/
 
 format:
-	black dataquery/ tests/ examples/
-	isort dataquery/ tests/ examples/
+	ruff format dataquery/ tests/ examples/
+	ruff check --fix dataquery/ tests/ examples/
 
 type-check:
 	mypy dataquery/
@@ -131,11 +131,11 @@ uv-test:
 	uv run pytest tests/ -v
 
 uv-lint:
-	uv run flake8 dataquery/ tests/ examples/
+	uv run ruff check dataquery/ tests/ examples/
 
 uv-format:
-	uv run black dataquery/ tests/ examples/
-	uv run isort dataquery/ tests/ examples/
+	uv run ruff format dataquery/ tests/ examples/
+	uv run ruff check --fix dataquery/ tests/ examples/
 
 uv-type-check:
 	uv run mypy dataquery/
