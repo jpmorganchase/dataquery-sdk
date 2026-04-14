@@ -105,6 +105,31 @@ async with DataQuery() as dq:
     print(groups_df[['group_id', 'group_name', 'description']])
 ```
 
+### 5. Auto-Download Files
+
+```python
+from dataquery import DataQuery
+import asyncio
+
+async with DataQuery() as dq:
+    # Start automatic file monitoring and download
+    manager = await dq.start_auto_download_async(
+        group_id="JPMAQS_GENERIC_RETURNS",
+        destination_dir="./downloads",
+        interval_minutes=30,  # Check every 30 minutes
+        check_current_date_only=True  # Only check today's files
+    )
+    
+    # Run until interrupted (Ctrl+C)
+    try:
+        while True:
+            await asyncio.sleep(60)
+    except KeyboardInterrupt:
+        await manager.stop()
+        stats = manager.get_stats()
+        print(f"Downloaded {stats['files_downloaded']} files")
+```
+
 ## Common Use Cases
 
 ### Download Single File
@@ -431,7 +456,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 For issues and questions:
 - **GitHub Issues**: [Report a bug](https://github.com/dataquery/dataquery-sdk/issues)
 - **Documentation**: [Read the docs](https://github.com/dataquery/dataquery-sdk/wiki)
-- **Email**: support@dataquery.com
+- **Email**: dataquery_support@jpmorgan.com
 
 ## Changelog
 
