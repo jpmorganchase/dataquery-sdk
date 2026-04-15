@@ -311,7 +311,7 @@ class DataQuery:
         file_datetime: Optional[str] = None,
         destination_path: Optional[Path] = None,
         options: Optional[DownloadOptions] = None,
-        num_parts: int = 5,
+        num_parts: int = 1,
         progress_callback: Optional[Callable] = None,
     ) -> DownloadResult:
         """
@@ -351,7 +351,7 @@ class DataQuery:
 
         client = self._ensure_client()
         # Pass parameters in correct order: file_group_id, file_datetime, options, num_parts, progress_callback
-        # Use default num_parts=5
+        # Use default num_parts=1
         return await client.download_file_async(file_group_id, file_datetime, options, num_parts, progress_callback)
 
     async def list_available_files_async(
@@ -818,7 +818,7 @@ class DataQuery:
         end_date: str,
         destination_dir: Path = Path("./downloads"),
         max_concurrent: int = 25,  # Full 25 TPS capacity
-        num_parts: int = 5,
+        num_parts: int = 1,
         progress_callback: Optional[Callable] = None,
         delay_between_downloads: float = 0.04,  # 25 TPS (1/25 = 0.04s)
         max_retries: int = 3,
@@ -1428,7 +1428,7 @@ class DataQuery:
                 validate_file_datetime(file_datetime)
 
             if num_parts is None or num_parts <= 0:
-                num_parts = 5
+                num_parts = 1
 
             # Check if range downloads are disabled - use single stream instead
             if not client.config.enable_range_downloads:
@@ -2139,7 +2139,7 @@ class DataQuery:
         file_datetime: Optional[str] = None,
         destination_path: Optional[Path] = None,
         options: Optional[DownloadOptions] = None,
-        num_parts: int = 5,
+        num_parts: int = 1,
         progress_callback: Optional[Callable] = None,
     ) -> DownloadResult:
         """
@@ -2450,7 +2450,7 @@ class DataQuery:
         end_date: str,
         destination_dir: Path = Path("./downloads"),
         max_concurrent: int = 5,
-        num_parts: int = 5,
+        num_parts: int = 1,
         progress_callback: Optional[Callable] = None,
         delay_between_downloads: float = 1.0,
         file_group_id: Optional[Union[str, List[str]]] = None,
@@ -2540,7 +2540,7 @@ class DataQuery:
         file_datetime: Optional[str] = None,
         destination_path: Optional[Path] = None,
         options: Optional[DownloadOptions] = None,
-        num_parts: int = 5,
+        num_parts: int = 1,
         progress_callback: Optional[Callable] = None,
     ) -> DownloadResult:
         """Synchronous wrapper for download_file with _sync suffix."""

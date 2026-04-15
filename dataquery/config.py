@@ -44,6 +44,7 @@ class EnvConfig:
         "TIMEOUT": "600.0",
         "MAX_RETRIES": "3",
         "RETRY_DELAY": "1.0",
+        "CIRCUIT_BREAKER_THRESHOLD": "5",
         # Connection Pooling
         "POOL_CONNECTIONS": "10",
         "POOL_MAXSIZE": "20",
@@ -116,6 +117,7 @@ class EnvConfig:
         "timeout": "DATAQUERY_TIMEOUT",
         "max_retries": "DATAQUERY_MAX_RETRIES",
         "retry_delay": "DATAQUERY_RETRY_DELAY",
+        "circuit_breaker_threshold": "DATAQUERY_CIRCUIT_BREAKER_THRESHOLD",
         # Connection Pooling
         "pool_connections": "DATAQUERY_POOL_CONNECTIONS",
         "pool_maxsize": "DATAQUERY_POOL_MAXSIZE",
@@ -279,6 +281,7 @@ class EnvConfig:
                 timeout=cls.get_float("TIMEOUT"),
                 max_retries=cls.get_int("MAX_RETRIES"),
                 retry_delay=cls.get_float("RETRY_DELAY"),
+                circuit_breaker_threshold=cls.get_int("CIRCUIT_BREAKER_THRESHOLD"),
                 # Connection pooling
                 pool_connections=cls.get_int("POOL_CONNECTIONS"),
                 pool_maxsize=cls.get_int("POOL_MAXSIZE"),

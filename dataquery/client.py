@@ -137,6 +137,7 @@ class DataQueryClient:
             max_delay=300.0,
             strategy=RetryStrategy.EXPONENTIAL,
             enable_circuit_breaker=True,
+            circuit_breaker_threshold=self.config.circuit_breaker_threshold,
             retryable_exceptions=[
                 ConnectionError,
                 TimeoutError,
@@ -791,7 +792,7 @@ class DataQueryClient:
 
         # Validate num_parts if provided
         if num_parts is not None and (num_parts is None or num_parts <= 0):
-            num_parts = 5
+            num_parts = 1
 
         params = {"file-group-id": file_group_id}
         if file_datetime:
@@ -852,7 +853,7 @@ class DataQueryClient:
         file_group_id: str,
         file_datetime: Optional[str] = None,
         options: Optional[DownloadOptions] = None,
-        num_parts: int = 5,
+        num_parts: int = 1,
         progress_callback: Optional[Callable] = None,
     ) -> DownloadResult:
         """
