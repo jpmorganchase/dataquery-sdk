@@ -5,6 +5,7 @@ Provides OAuth token management and Bearer token authentication.
 """
 
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -46,6 +47,12 @@ class TokenManager:
 
         if base_dir:
             base_dir.mkdir(parents=True, exist_ok=True)
+            # Restrict directory to owner-only (POSIX).
+            try:
+                os.chmod(base_dir, 0o700)
+            except OSError:
+                # Windows or filesystem without POSIX perms — skip silently.
+                pass
             self.token_file = base_dir / "oauth_token.json"
         else:
             self.token_file = None
@@ -245,14 +252,23 @@ class TokenManager:
             # Ensure directory exists
             self.token_file.parent.mkdir(parents=True, exist_ok=True)
 
-            # Write to temporary file first, then rename for atomic operation
+            # Write to a temp file that is created with owner-only permissions
+            # from the start (no TOCTOU window between open() and chmod()),
+            # then atomically rename onto the final path.
             temp_file = self.token_file.with_suffix(".tmp")
-            with open(temp_file, "w") as f:
-                # Set restrictive permissions on the temp file (owner read/write only)
-                import os
-
-                os.chmod(temp_file, 0o600)
-                json.dump(token_data, f, indent=2)
+            flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+            fd = os.open(temp_file, flags, 0o600)
+            try:
+                with os.fdopen(fd, "w") as f:
+                    json.dump(token_data, f, indent=2)
+            except BaseException:
+                # fdopen takes ownership of fd on success; on failure we must
+                # still ensure the descriptor isn't leaked.
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+                raise
 
             # Atomic rename
             temp_file.replace(self.token_file)

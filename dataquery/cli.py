@@ -35,15 +35,24 @@ def create_parser() -> argparse.ArgumentParser:
     p_avail.add_argument("--json", action="store_true")
 
     # download
-    p_dl = subparsers.add_parser("download", help="Download a file or start watch mode")
-    p_dl.add_argument("--file-group-id", default=None)
-    p_dl.add_argument("--file-datetime", default=None)
+    p_dl = subparsers.add_parser(
+        "download",
+        help="Download a single file, or with --watch poll a group for new files",
+        description=(
+            "Two modes:\n"
+            "  single-file  --file-group-id FG --file-datetime YYYYMMDD [--destination DIR]\n"
+            "  watch        --watch --group-id GROUP [--destination DIR]  (Ctrl+C to stop)"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_dl.add_argument("--file-group-id", default=None, help="File-group-id (single-file mode)")
+    p_dl.add_argument("--file-datetime", default=None, help="YYYYMMDD (single-file mode)")
     p_dl.add_argument("--destination", type=str, default=None)
-    p_dl.add_argument("--watch", action="store_true", help="Watch a group for new files")
-    p_dl.add_argument("--group-id", default=None, help="Required with --watch")
+    p_dl.add_argument("--watch", action="store_true", help="Watch a group for new files (uses SSE/polling)")
+    p_dl.add_argument("--group-id", default=None, help="Group to watch (required with --watch)")
     p_dl.add_argument("--json", action="store_true")
-    p_dl.add_argument("--num-parts", type=int, default=5, help="Number of parallel parts")
-    p_dl.add_argument("--chunk-size", type=int, default=None, help="Chunk size in bytes")
+    p_dl.add_argument("--num-parts", type=int, default=5, help="Number of parallel parts (single-file mode)")
+    p_dl.add_argument("--chunk-size", type=int, default=None, help="Chunk size in bytes (single-file mode)")
 
     # download-group
     p_dlg = subparsers.add_parser(
@@ -142,33 +151,40 @@ async def cmd_availability(args: argparse.Namespace) -> int:
 
 
 async def cmd_download(args: argparse.Namespace) -> int:
-    # Watch mode requires group-id
-    if args.watch and not args.group_id:
-        print("--group-id is required when using --watch")
-        return 1
+    if args.watch:
+        if not args.group_id:
+            print("--group-id is required when using --watch")
+            return 1
+    else:
+        if not args.file_group_id:
+            print("--file-group-id is required for a single-file download")
+            return 1
 
     async with DataQuery(args.env_file) as dq:
         if args.watch:
+            mgr = await dq.start_auto_download_async(
+                group_id=args.group_id,
+                destination_dir=(args.destination or "./downloads"),
+            )
             try:
-                mgr = await dq.start_auto_download_async(
-                    group_id=args.group_id,
-                    destination_dir=(args.destination or "./downloads"),
-                )
-                # Simulate quick watch then Ctrl+C
-                await asyncio.sleep(1)
-            except KeyboardInterrupt:
+                # Stay connected until interrupted. Sleeping in short slices
+                # keeps the loop responsive to Ctrl+C on all platforms.
+                while True:
+                    await asyncio.sleep(60)
+            except (KeyboardInterrupt, asyncio.CancelledError):
+                pass
+            finally:
                 try:
                     await mgr.stop()
                 except Exception:
                     pass
-                stats: dict = getattr(mgr, "get_stats", lambda: {})()
-                print(json.dumps(stats))
-                return 0
+            stats: dict = getattr(mgr, "get_stats", lambda: {})()
+            print(json.dumps(stats))
             return 0
-        # single download
+
+        # Single-file download path.
         dest_path = Path(args.destination) if args.destination else None
 
-        # Configure download options
         from dataquery.models import DownloadOptions
 
         options = DownloadOptions(

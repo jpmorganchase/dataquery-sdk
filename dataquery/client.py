@@ -8,7 +8,7 @@ import time
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 if TYPE_CHECKING:
     from .sse_subscriber import NotificationDownloadManager
@@ -24,6 +24,13 @@ except ImportError:
     pd = None
     HAS_PANDAS = False
 
+from ._dataframe_mixin import DataFrameMixin
+from ._query_mixins import (
+    GridMixin,
+    InstrumentsMixin,
+    MetadataMixin,
+    TimeSeriesMixin,
+)
 from .auth import OAuthManager
 from .auto_download import AutoDownloadManager
 from .connection_pool import ConnectionPoolConfig, ConnectionPoolMonitor
@@ -51,8 +58,6 @@ from .models import (
     GridDataResponse,
     Group,
     GroupList,
-    Instrument,
-    InstrumentResponse,
     InstrumentsResponse,
     TimeSeriesResponse,
 )
@@ -73,6 +78,19 @@ from .utils import (
     validate_instruments_list,
 )
 
+# Re-exports for backward compatibility. These validators are used by mixin
+# implementations; callers historically imported them from here.
+__all__ = [
+    "DataQueryClient",
+    "format_duration",
+    "format_file_size",
+    "get_filename_from_response",
+    "validate_attributes_list",
+    "validate_date_format",
+    "validate_file_datetime",
+    "validate_instruments_list",
+]
+
 logger = structlog.get_logger(__name__)
 
 
@@ -86,7 +104,13 @@ def format_duration(seconds: float) -> str:
     return _format_duration(seconds, compact=True)
 
 
-class DataQueryClient:
+class DataQueryClient(
+    DataFrameMixin,
+    InstrumentsMixin,
+    MetadataMixin,
+    TimeSeriesMixin,
+    GridMixin,
+):
     """
     High-level client for the DATAQUERY Data API.
 
@@ -1313,335 +1337,8 @@ class DataQueryClient:
             logger.error("Health check failed", error=str(e))
             return False
 
-    # Instrument Collection Endpoints
-    async def list_instruments_async(
-        self,
-        group_id: str,
-        instrument_id: Optional[str] = None,
-        page: Optional[str] = None,
-    ) -> "InstrumentsResponse":
-        """
-        Request the complete list of instruments and identifiers for a given dataset.
-
-        Args:
-            group_id: Catalog data group identifier
-            instrument_id: Optional instrument identifier to filter results
-            page: Optional page token for pagination
-
-        Returns:
-            InstrumentsResponse containing the list of instruments
-        """
-        params = {"group-id": group_id}
-        if instrument_id:
-            params["instrument-id"] = instrument_id
-        if page:
-            params["page"] = page
-
-        url = self._build_api_url("group/instruments")
-        async with await self._enter_request_cm("GET", url, params=params) as response:
-            await self._handle_response(response)
-            data = await response.json()
-            return InstrumentsResponse(**data)
-
-    async def search_instruments_async(
-        self, group_id: str, keywords: str, page: Optional[str] = None
-    ) -> "InstrumentsResponse":
-        """
-        Search within a dataset using keywords to create subsets of matching instruments.
-
-        Args:
-            group_id: Catalog data group identifier
-            keywords: Keywords to narrow scope of results
-            page: Optional page token for pagination
-
-        Returns:
-            InstrumentsResponse containing the matching instruments
-        """
-        params = {"group-id": group_id, "keywords": keywords}
-        if page:
-            params["page"] = page
-
-        url = self._build_api_url("group/instruments/search")
-        async with await self._enter_request_cm("GET", url, params=params) as response:
-            await self._handle_response(response)
-            data = await response.json()
-            return InstrumentsResponse(**data)
-
-    async def get_instrument_time_series_async(
-        self,
-        instruments: List[str],
-        attributes: List[str],
-        data: str = "REFERENCE_DATA",
-        format: str = "JSON",
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        calendar: str = "CAL_USBANK",
-        frequency: str = "FREQ_DAY",
-        conversion: str = "CONV_LASTBUS_ABS",
-        nan_treatment: str = "NA_NOTHING",
-        page: Optional[str] = None,
-    ) -> "TimeSeriesResponse":
-        """
-        Retrieve time-series data for explicit list of instruments and attributes using identifiers.
-
-        Args:
-            instruments: List of instrument identifiers (max 20)
-            attributes: List of attribute identifiers
-            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL)
-            format: Response format (JSON only)
-            start_date: Start date (YYYYMMDD, TODAY, TODAY-Nx)
-            end_date: End date (YYYYMMDD, TODAY, TODAY-Nx)
-            calendar: Calendar convention
-            frequency: Frequency convention
-            conversion: Conversion convention
-            nan_treatment: Missing data treatment
-            page: Optional page token
-
-        Returns:
-            TimeSeriesResponse containing the time series data
-
-        Raises:
-            ValidationError: If parameters are invalid
-        """
-        # Validate required parameters
-        validate_instruments_list(instruments)
-        validate_attributes_list(attributes)
-
-        # Validate optional date parameters
-        if start_date is not None:
-            validate_date_format(start_date, "start-date")
-        if end_date is not None:
-            validate_date_format(end_date, "end-date")
-
-        params = {
-            "instruments": instruments,
-            "attributes": attributes,
-            "data": data,
-            "format": format,
-            "calendar": calendar,
-            "frequency": frequency,
-            "conversion": conversion,
-            "nan-treatment": nan_treatment,
-        }
-
-        if start_date is not None:
-            params["start-date"] = start_date
-        if end_date is not None:
-            params["end-date"] = end_date
-        if page is not None:
-            params["page"] = page
-
-        url = self._build_api_url("instruments/time-series")
-        async with await self._enter_request_cm("GET", url, params=params) as response:
-            await self._handle_response(response)
-            payload = await response.json()
-            return TimeSeriesResponse(**payload)
-
-    async def get_expressions_time_series_async(
-        self,
-        expressions: List[str],
-        format: str = "JSON",
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        calendar: str = "CAL_USBANK",
-        frequency: str = "FREQ_DAY",
-        conversion: str = "CONV_LASTBUS_ABS",
-        nan_treatment: str = "NA_NOTHING",
-        data: str = "REFERENCE_DATA",
-        page: Optional[str] = None,
-    ) -> "TimeSeriesResponse":
-        """
-        Retrieve time-series data using an explicit list of traditional DataQuery expressions.
-
-        Args:
-            expressions: List of traditional DataQuery expressions
-            format: Response format (JSON)
-            start_date: Start date in YYYYMMDD or TODAY-Nx format
-            end_date: End date in YYYYMMDD or TODAY-Nx format
-            calendar: Calendar convention
-            frequency: Frequency convention
-            conversion: Conversion convention
-            nan_treatment: Missing data treatment
-            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL)
-            page: Optional page token for pagination
-
-        Returns:
-            TimeSeriesResponse containing the time series data
-        """
-        params = {
-            "expressions": ",".join(expressions),
-            "format": format,
-            "calendar": calendar,
-            "frequency": frequency,
-            "conversion": conversion,
-            "nan-treatment": nan_treatment,
-            "data": data,
-        }
-
-        if start_date is not None:
-            params["start-date"] = start_date
-        if end_date is not None:
-            params["end-date"] = end_date
-        if page is not None:
-            params["page"] = page
-
-        url = self._build_api_url("expressions/time-series")
-        async with await self._enter_request_cm("GET", url, params=params) as response:
-            await self._handle_response(response)
-            payload = await response.json()
-            return TimeSeriesResponse(**payload)
-
-    # Group Collection Additional Endpoints
-    async def get_group_filters_async(self, group_id: str, page: Optional[str] = None) -> "FiltersResponse":
-        """
-        Request the unique list of filter dimensions that are available for a given dataset.
-
-        Args:
-            group_id: Catalog data group identifier
-            page: Optional page token for pagination
-
-        Returns:
-            FiltersResponse containing the available filters
-        """
-        params = {"group-id": group_id}
-        if page:
-            params["page"] = page
-
-        url = self._build_api_url("group/filters")
-        async with await self._enter_request_cm("GET", url, params=params) as response:
-            await self._handle_response(response)
-            payload = await response.json()
-            return FiltersResponse(**payload)
-
-    async def get_group_attributes_async(
-        self,
-        group_id: str,
-        instrument_id: Optional[str] = None,
-        page: Optional[str] = None,
-    ) -> "AttributesResponse":
-        """
-        Request the unique list of analytic attributes for each instrument of a given dataset.
-
-        Args:
-            group_id: Catalog data group identifier
-            instrument_id: Optional instrument identifier to filter results
-            page: Optional page token for pagination
-
-        Returns:
-            AttributesResponse containing the attributes for each instrument
-        """
-        params = {"group-id": group_id}
-        if instrument_id:
-            params["instrument-id"] = instrument_id
-        if page:
-            params["page"] = page
-
-        url = self._build_api_url("group/attributes")
-        async with await self._enter_request_cm("GET", url, params=params) as response:
-            await self._handle_response(response)
-            payload = await response.json()
-            return AttributesResponse(**payload)
-
-    async def get_group_time_series_async(
-        self,
-        group_id: str,
-        attributes: List[str],
-        filter: Optional[str] = None,
-        data: str = "REFERENCE_DATA",
-        format: str = "JSON",
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        calendar: str = "CAL_USBANK",
-        frequency: str = "FREQ_DAY",
-        conversion: str = "CONV_LASTBUS_ABS",
-        nan_treatment: str = "NA_NOTHING",
-        page: Optional[str] = None,
-    ) -> "TimeSeriesResponse":
-        """
-        Request time-series data across a subset of instruments and analytics of a given dataset.
-
-        Args:
-            group_id: Catalog data group identifier
-            attributes: List of attribute identifiers
-            filter: Optional filter string (e.g., "currency(USD)")
-            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL)
-            format: Response format (JSON)
-            start_date: Start date in YYYYMMDD or TODAY-Nx format
-            end_date: End date in YYYYMMDD or TODAY-Nx format
-            calendar: Calendar convention
-            frequency: Frequency convention
-            conversion: Conversion convention
-            nan_treatment: Missing data treatment
-            page: Optional page token for pagination
-
-        Returns:
-            TimeSeriesResponse containing the time series data
-        """
-        params = {
-            "group-id": group_id,
-            "attributes": attributes,
-            "data": data,
-            "format": format,
-            "calendar": calendar,
-            "frequency": frequency,
-            "conversion": conversion,
-            "nan-treatment": nan_treatment,
-        }
-
-        if filter is not None:
-            params["filter"] = filter
-        if start_date is not None:
-            params["start-date"] = start_date
-        if end_date is not None:
-            params["end-date"] = end_date
-        if page is not None:
-            params["page"] = page
-
-        url = self._build_api_url("group/time-series")
-        async with await self._enter_request_cm("GET", url, params=params) as response:
-            await self._handle_response(response)
-            payload = await response.json()
-            return TimeSeriesResponse(**payload)
-
-    # Grid Collection Endpoints
-    async def get_grid_data_async(
-        self,
-        expr: Optional[str] = None,
-        grid_id: Optional[str] = None,
-        date: Optional[str] = None,
-    ) -> "GridDataResponse":
-        """
-        Retrieve grid data using an expression or a grid ID.
-
-        Args:
-            expr: The grid expression (mutually exclusive with grid_id)
-            grid_id: The grid ID (mutually exclusive with expr)
-            date: Optional specific snapshot date in YYYYMMDD format
-
-        Returns:
-            GridDataResponse containing the grid data
-
-        Raises:
-            ValueError: If both expr and grid_id are provided or neither is provided
-        """
-        if expr and grid_id:
-            raise ValueError("Cannot specify both expr and grid_id")
-        if not expr and not grid_id:
-            raise ValueError("Must specify either expr or grid_id")
-
-        params = {}
-        if expr is not None:
-            params["expr"] = expr
-        if grid_id is not None:
-            params["gridId"] = grid_id
-        if date is not None:
-            params["date"] = date
-
-        url = self._build_api_url("grid-data")
-        async with await self._enter_request_cm("GET", url, params=params) as response:
-            await self._handle_response(response)
-            payload = await response.json()
-            return GridDataResponse(**payload)
+    # Read-only query methods (instruments, metadata, time series, grid) live
+    # in the query mixins — see _query_mixins.py.
 
     def get_pool_stats(self) -> Dict[str, Any]:
         """Get connection pool statistics including active, idle, and total connections."""
@@ -1997,400 +1694,8 @@ class DataQueryClient:
             )
         )
 
-    # DataFrame Conversion Utilities
-    def to_dataframe(
-        self,
-        response_data,
-        flatten_nested: bool = True,
-        include_metadata: bool = False,
-        date_columns: Optional[List[str]] = None,
-        numeric_columns: Optional[List[str]] = None,
-        custom_transformations: Optional[Dict[str, Callable]] = None,
-    ) -> "pd.DataFrame":
-        """
-        Dynamically convert any API response to a pandas DataFrame.
-
-        This function can handle various response types from the DataQuery API
-        and convert them into a structured pandas DataFrame for analysis.
-
-        Args:
-            response_data: Any API response object (Group, FileInfo, TimeSeriesResponse, etc.)
-            flatten_nested: If True, flatten nested objects into columns
-            include_metadata: If True, include metadata fields in the DataFrame
-            date_columns: List of column names to parse as dates
-            numeric_columns: List of column names to convert to numeric
-            custom_transformations: Dict of column_name -> transformation_function
-
-        Returns:
-            pandas.DataFrame: Converted DataFrame
-
-        Examples:
-            # Convert groups list
-            groups = await dq.list_groups_async()
-            df = dq.to_dataframe(groups)
-
-            # Convert file list with date parsing
-            files = await dq.list_files_async("group-id")
-            df = dq.to_dataframe(
-                files.file_group_ids,
-                date_columns=['last_modified'],
-                include_metadata=True
-            )
-
-            # Convert time series with custom transformations
-            ts = await dq.get_instrument_time_series_async(...)
-            df = dq.to_dataframe(
-                ts,
-                custom_transformations={
-                    'price': lambda x: float(x) if x else 0.0,
-                    'volume': lambda x: int(x) if x else 0
-                }
-            )
-        """
-        if not HAS_PANDAS:
-            raise ImportError("pandas is required for DataFrame conversion. Install it with: pip install pandas")
-
-        return self._convert_to_dataframe(
-            response_data,
-            flatten_nested,
-            include_metadata,
-            date_columns,
-            numeric_columns,
-            custom_transformations,
-        )
-
-    def _convert_to_dataframe(
-        self,
-        data,
-        flatten_nested: bool = True,
-        include_metadata: bool = False,
-        date_columns: Optional[List[str]] = None,
-        numeric_columns: Optional[List[str]] = None,
-        custom_transformations: Optional[Dict[str, Callable]] = None,
-    ) -> "pd.DataFrame":
-        """Internal method to convert data to DataFrame with memory optimization."""
-        try:
-            import pandas as pd
-        except ImportError:
-            raise ImportError("pandas is required for DataFrame conversion")
-
-        # Initialize processing parameters
-        date_columns = date_columns or []
-        numeric_columns = numeric_columns or []
-        custom_transformations = custom_transformations or {}
-
-        # Handle different data types
-        if data is None:
-            return pd.DataFrame()
-
-        # Convert single object to list for uniform processing
-        if not isinstance(data, (list, tuple)):
-            if hasattr(data, "__dict__") or hasattr(data, "__slots__"):
-                # Single Pydantic model or object
-                data = [data]
-            else:
-                # Primitive data type
-                return pd.DataFrame({"value": [data]})
-
-        # Memory optimization: process in chunks for large datasets
-        chunk_size = 1000  # Process 1000 records at a time
-        all_records = []
-
-        for i in range(0, len(data), chunk_size):
-            chunk = data[i : i + chunk_size]
-            chunk_records = []
-
-            for item in chunk:
-                record = self._extract_object_data(item, flatten_nested, include_metadata)
-                if record:
-                    chunk_records.append(record)
-
-            if chunk_records:
-                all_records.extend(chunk_records)
-
-        if not all_records:
-            return pd.DataFrame()
-
-        # Create DataFrame with memory optimization
-        df = pd.DataFrame(all_records)
-
-        # Clear the records list to free memory
-        all_records.clear()
-
-        # Apply data type conversions
-        df = self._apply_data_transformations(df, date_columns, numeric_columns, custom_transformations)
-
-        return df
-
-    def _extract_object_data(self, obj, flatten_nested: bool = True, include_metadata: bool = False) -> Dict[str, Any]:
-        """Extract data from a single object."""
-        if obj is None:
-            return {}
-
-        record = {}
-
-        # Handle Pydantic models
-        if hasattr(obj, "model_dump"):
-            try:
-                data = obj.model_dump()
-                record.update(self._process_dict_data(data, flatten_nested, include_metadata))
-            except Exception:
-                # Fallback to __dict__ if model_dump fails
-                if hasattr(obj, "__dict__"):
-                    record.update(self._process_dict_data(obj.__dict__, flatten_nested, include_metadata))
-
-        # Handle objects with __dict__
-        elif hasattr(obj, "__dict__"):
-            record.update(self._process_dict_data(obj.__dict__, flatten_nested, include_metadata))
-
-        # Handle dictionary objects
-        elif isinstance(obj, dict):
-            record.update(self._process_dict_data(obj, flatten_nested, include_metadata))
-
-        # Handle primitive types
-        else:
-            record["value"] = obj
-
-        return record
-
-    def _process_dict_data(
-        self,
-        data: Dict[str, Any],
-        flatten_nested: bool = True,
-        include_metadata: bool = False,
-    ) -> Dict[str, Any]:
-        """Process dictionary data with nested object handling."""
-        processed = {}
-
-        for key, value in data.items():
-            # Skip private attributes unless metadata is requested
-            if key.startswith("_") and not include_metadata:
-                continue
-
-            # Handle nested objects
-            if isinstance(value, dict) and flatten_nested:
-                # Flatten nested dictionaries
-                for nested_key, nested_value in value.items():
-                    flattened_key = f"{key}_{nested_key}"
-                    processed[flattened_key] = self._convert_value(nested_value)
-
-            elif isinstance(value, (list, tuple)) and flatten_nested:
-                # Handle lists/arrays
-                if value and isinstance(value[0], dict):
-                    # List of dictionaries - create multiple columns
-                    for i, list_item in enumerate(value[:5]):  # Limit to first 5 items
-                        if isinstance(list_item, dict):
-                            for nested_key, nested_value in list_item.items():
-                                flattened_key = f"{key}_{i}_{nested_key}"
-                                processed[flattened_key] = self._convert_value(nested_value)
-                else:
-                    # Simple list - convert to string representation
-                    processed[key] = str(value) if value else None
-
-            else:
-                # Direct value assignment
-                processed[key] = self._convert_value(value)
-
-        return processed
-
-    def _convert_value(self, value) -> Any:
-        """Convert individual values to DataFrame-compatible types."""
-        if value is None:
-            return None
-
-        # Handle datetime objects
-        if hasattr(value, "isoformat"):  # datetime-like objects
-            return value.isoformat()
-
-        # Handle Pydantic models and complex objects
-        if hasattr(value, "model_dump"):
-            try:
-                return str(value.model_dump())
-            except Exception:
-                return str(value)
-
-        # Handle other objects
-        if hasattr(value, "__dict__"):
-            return str(value.__dict__)
-
-        # Return primitive types as-is
-        return value
-
-    def _apply_data_transformations(
-        self,
-        df: "pd.DataFrame",
-        date_columns: List[str],
-        numeric_columns: List[str],
-        custom_transformations: Dict[str, Callable],
-    ) -> "pd.DataFrame":
-        """Apply data type conversions and transformations."""
-        try:
-            import pandas as pd
-        except ImportError:
-            return df
-
-        # Apply custom transformations first
-        for column, transform_func in custom_transformations.items():
-            if column in df.columns:
-                try:
-                    df[column] = df[column].apply(transform_func)
-                except Exception as e:
-                    self.logger.warning(f"Failed to apply transformation to column '{column}': {e}")
-
-        # Convert date columns
-        for column in date_columns:
-            if column in df.columns:
-                try:
-                    df[column] = pd.to_datetime(df[column], errors="coerce")
-                except Exception as e:
-                    self.logger.warning(f"Failed to convert column '{column}' to datetime: {e}")
-
-        # Convert numeric columns
-        for column in numeric_columns:
-            if column in df.columns:
-                try:
-                    df[column] = pd.to_numeric(df[column], errors="coerce")
-                except Exception as e:
-                    self.logger.warning(f"Failed to convert column '{column}' to numeric: {e}")
-
-        # Auto-detect and convert common patterns
-        df = self._auto_convert_columns(df)
-
-        return df
-
-    def _auto_convert_columns(self, df: "pd.DataFrame") -> "pd.DataFrame":
-        """Automatically detect and convert common column patterns."""
-        try:
-            import pandas as pd
-        except ImportError:
-            return df
-
-        for column in df.columns:
-            if df[column].dtype == "object":  # String columns
-                column_lower = column.lower()
-
-                # Auto-detect date columns
-                if any(
-                    date_word in column_lower
-                    for date_word in [
-                        "date",
-                        "time",
-                        "created",
-                        "updated",
-                        "modified",
-                        "expires",
-                    ]
-                ):
-                    try:
-                        # Sample a few non-null values to check if they're dates
-                        sample_values = df[column].dropna().head(3)
-                        if len(sample_values) > 0:
-                            pd.to_datetime(sample_values.iloc[0])  # Test conversion
-                            df[column] = pd.to_datetime(df[column], errors="coerce")
-                            continue
-                    except Exception:
-                        pass
-
-                # Auto-detect numeric columns
-                if any(
-                    num_word in column_lower
-                    for num_word in [
-                        "size",
-                        "count",
-                        "bytes",
-                        "price",
-                        "value",
-                        "amount",
-                        "volume",
-                        "quantity",
-                        "number",
-                        "id",
-                    ]
-                ):
-                    try:
-                        # Try converting to numeric
-                        numeric_series = pd.to_numeric(df[column], errors="coerce")
-                        # If most values converted successfully, use numeric type
-                        if numeric_series.notna().sum() / len(df) > 0.7:
-                            df[column] = numeric_series
-                    except Exception:
-                        pass
-
-        return df
-
-    # Convenience methods for common conversions
-    def groups_to_dataframe(
-        self, groups: Union[List["Group"], "GroupList"], include_metadata: bool = False
-    ) -> "pd.DataFrame":
-        """Convert groups response to DataFrame."""
-        if hasattr(groups, "groups"):
-            groups = groups.groups
-
-        return self.to_dataframe(
-            groups,
-            flatten_nested=True,
-            include_metadata=include_metadata,
-            date_columns=["last_updated", "created_date"],
-        )
-
-    def files_to_dataframe(
-        self, files: Union[List["FileInfo"], "FileList"], include_metadata: bool = False
-    ) -> "pd.DataFrame":
-        """Convert files response to DataFrame."""
-        if hasattr(files, "file_group_ids"):
-            files = files.file_group_ids
-
-        return self.to_dataframe(
-            files,
-            flatten_nested=True,
-            include_metadata=include_metadata,
-            date_columns=["last_modified", "created_date"],
-            numeric_columns=["file_size"],
-        )
-
-    def instruments_to_dataframe(
-        self,
-        instruments: Union[List["Instrument"], "InstrumentResponse"],
-        include_metadata: bool = False,
-    ) -> "pd.DataFrame":
-        """Convert instruments response to DataFrame."""
-        if hasattr(instruments, "instruments"):
-            instruments = instruments.instruments
-
-        return self.to_dataframe(
-            instruments,
-            flatten_nested=True,
-            include_metadata=include_metadata,
-            date_columns=["created_date", "last_updated"],
-        )
-
-    def time_series_to_dataframe(self, time_series, include_metadata: bool = False) -> "pd.DataFrame":
-        """Convert time series response to DataFrame."""
-        # Handle different time series response structures
-        if hasattr(time_series, "data"):
-            data = time_series.data
-        elif hasattr(time_series, "series"):
-            data = time_series.series
-        elif hasattr(time_series, "time_series"):
-            data = time_series.time_series
-        else:
-            data = time_series
-
-        return self.to_dataframe(
-            data,
-            flatten_nested=True,
-            include_metadata=include_metadata,
-            date_columns=["date", "timestamp", "observation_date"],
-            numeric_columns=[
-                "value",
-                "price",
-                "volume",
-                "open",
-                "high",
-                "low",
-                "close",
-            ],
-        )
+    # DataFrame conversion methods (to_dataframe, groups_to_dataframe, etc.)
+    # live in DataFrameMixin — see _dataframe_mixin.py.
 
     # Synchronous wrapper methods
     def list_groups(self, limit: Optional[int] = None) -> List[Group]:
