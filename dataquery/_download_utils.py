@@ -33,9 +33,7 @@ def create_progress_wrapper(
 
     def wrapper(progress: DownloadProgress) -> None:
         current_total = int(stats.get("total_bytes_downloaded", 0) or 0)
-        stats["total_bytes_downloaded"] = max(
-            current_total, int(getattr(progress, "bytes_downloaded", 0) or 0)
-        )
+        stats["total_bytes_downloaded"] = max(current_total, int(getattr(progress, "bytes_downloaded", 0) or 0))
         if user_callback:
             try:
                 if inspect.iscoroutinefunction(user_callback):

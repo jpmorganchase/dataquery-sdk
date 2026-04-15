@@ -46,10 +46,21 @@ def create_parser() -> argparse.ArgumentParser:
     p_dl.add_argument("--chunk-size", type=int, default=None, help="Chunk size in bytes")
 
     # download-group
-    p_dlg = subparsers.add_parser("download-group", help="Download all files in a group")
+    p_dlg = subparsers.add_parser(
+        "download-group",
+        help="Download files in a group for a date range (optionally filtered to one file-group-id)",
+    )
     p_dlg.add_argument("--group-id", required=True)
     p_dlg.add_argument("--start-date", required=True)
     p_dlg.add_argument("--end-date", required=True)
+    p_dlg.add_argument(
+        "--file-group-id",
+        nargs="+",
+        default=None,
+        metavar="FILE_GROUP_ID",
+        help="Optional: restrict the date-range download to one or more file-group-ids "
+        "(space-separated, e.g. --file-group-id FG1 FG2 FG3)",
+    )
     p_dlg.add_argument("--destination", type=str, default="./downloads")
     p_dlg.add_argument("--max-concurrent", type=int, default=3)
     p_dlg.add_argument("--num-parts", type=int, default=5)
@@ -187,6 +198,7 @@ async def cmd_download_group(args: argparse.Namespace) -> int:
             destination_dir=args.destination,
             max_concurrent=args.max_concurrent,
             num_parts=args.num_parts,
+            file_group_id=args.file_group_id,
         )
 
         if args.json:

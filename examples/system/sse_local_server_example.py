@@ -46,7 +46,7 @@ SERVER_BASE = "http://localhost:8080"
 # Users defined in application.properties
 USERS = {
     "alice": {"token": "alice-token-123", "groups": ["group-a", "group-b"]},
-    "bob":   {"token": "bob-token-456",   "groups": ["group-b", "group-c"]},
+    "bob": {"token": "bob-token-456", "groups": ["group-b", "group-c"]},
 }
 
 
@@ -117,10 +117,10 @@ async def run_sse_client(user: str, group_id: str):
 # ── Scenario menu ─────────────────────────────────────────────────────────────
 
 SCENARIOS = {
-    "1": ("alice subscribes to group-a  (allowed)",     "alice", "group-a"),
-    "2": ("alice subscribes to group-b  (allowed)",     "alice", "group-b"),
-    "3": ("bob   subscribes to group-b  (allowed)",     "bob",   "group-b"),
-    "4": ("bob   subscribes to group-a  (403 expected)", "bob",   "group-a"),
+    "1": ("alice subscribes to group-a  (allowed)", "alice", "group-a"),
+    "2": ("alice subscribes to group-b  (allowed)", "alice", "group-b"),
+    "3": ("bob   subscribes to group-b  (allowed)", "bob", "group-b"),
+    "4": ("bob   subscribes to group-a  (403 expected)", "bob", "group-a"),
     "5": ("alice subscribes to group-c  (403 expected)", "alice", "group-c"),
 }
 

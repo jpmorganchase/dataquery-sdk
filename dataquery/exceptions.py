@@ -132,8 +132,7 @@ def __getattr__(name: str) -> type:
         import warnings
 
         warnings.warn(
-            "dataquery.exceptions.FileNotFoundError is deprecated; "
-            "use FileNotFoundInGroupError instead",
+            "dataquery.exceptions.FileNotFoundError is deprecated; use FileNotFoundInGroupError instead",
             DeprecationWarning,
             stacklevel=2,
         )

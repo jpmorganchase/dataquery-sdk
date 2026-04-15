@@ -822,6 +822,7 @@ class DataQuery:
         progress_callback: Optional[Callable] = None,
         delay_between_downloads: float = 0.04,  # 25 TPS (1/25 = 0.04s)
         max_retries: int = 3,
+        file_group_id: Optional[Union[str, List[str]]] = None,
     ) -> dict:
         """
         Download all files in a group for a date range using parallel HTTP range requests.
@@ -840,6 +841,9 @@ class DataQuery:
             progress_callback: Optional progress callback for individual parts aggregation
             delay_between_downloads: Delay in seconds between starting each file download (default 0.04s for 25 TPS)
             max_retries: Maximum number of retry attempts for failed downloads (default 3)
+            file_group_id: Optional restriction to specific file-group-id(s). Accepts a
+                single id or a list of ids. When a list is supplied, availability is
+                queried in parallel per id and the union of dates is downloaded.
 
         Returns:
             Dictionary with download results and statistics
@@ -850,6 +854,7 @@ class DataQuery:
         logger.info(
             "Starting group parallel download for date range",
             group_id=group_id,
+            file_group_id=file_group_id,
             start_date=start_date,
             end_date=end_date,
             max_concurrent=max_concurrent,
@@ -861,11 +866,51 @@ class DataQuery:
         self._ensure_client()
 
         try:
-            # Step 1: Get available files for the date range
+            # Step 1: Get available files for the date range.
+            # If the caller supplied a list of file-group-ids, query each one in
+            # parallel and merge the results; otherwise issue a single request
+            # (either unfiltered or filtered to the one id).
             logger.info("Step 1: Getting Available Files for Date Range")
-            available_files = await self.list_available_files_async(
-                group_id=group_id, start_date=start_date, end_date=end_date
-            )
+            if isinstance(file_group_id, (list, tuple, set)):
+                id_list = [fg for fg in file_group_id if fg]
+                if not id_list:
+                    available_files = await self.list_available_files_async(
+                        group_id=group_id,
+                        start_date=start_date,
+                        end_date=end_date,
+                    )
+                else:
+                    per_id_results = await asyncio.gather(
+                        *(
+                            self.list_available_files_async(
+                                group_id=group_id,
+                                file_group_id=fg,
+                                start_date=start_date,
+                                end_date=end_date,
+                            )
+                            for fg in id_list
+                        )
+                    )
+                    # Merge while de-duplicating on (file-group-id, file-datetime).
+                    seen: set = set()
+                    available_files = []
+                    for batch in per_id_results:
+                        for entry in batch or []:
+                            key = (
+                                entry.get("file-group-id", entry.get("file_group_id")),
+                                entry.get("file-datetime", entry.get("file_datetime")),
+                            )
+                            if key in seen:
+                                continue
+                            seen.add(key)
+                            available_files.append(entry)
+            else:
+                available_files = await self.list_available_files_async(
+                    group_id=group_id,
+                    file_group_id=file_group_id,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
 
             # Filter to only files explicitly marked available
             try:
@@ -2408,6 +2453,7 @@ class DataQuery:
         num_parts: int = 5,
         progress_callback: Optional[Callable] = None,
         delay_between_downloads: float = 1.0,
+        file_group_id: Optional[Union[str, List[str]]] = None,
     ) -> dict:
         """Synchronous wrapper for run_group_download_async."""
         return self._run_sync(
@@ -2420,6 +2466,7 @@ class DataQuery:
                 num_parts,
                 progress_callback,
                 delay_between_downloads,
+                file_group_id=file_group_id,
             )
         )
 
@@ -2529,10 +2576,18 @@ class DataQuery:
         end_date: str,
         destination_dir: Path = Path("./downloads"),
         max_concurrent: int = 5,
+        file_group_id: Optional[Union[str, List[str]]] = None,
     ) -> dict:
         """Synchronous wrapper for run_group_download with _sync suffix."""
         return asyncio.run(
-            self.run_group_download_async(group_id, start_date, end_date, destination_dir, max_concurrent)
+            self.run_group_download_async(
+                group_id,
+                start_date,
+                end_date,
+                destination_dir,
+                max_concurrent,
+                file_group_id=file_group_id,
+            )
         )
 
     # Auto-Download wrappers

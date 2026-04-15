@@ -9,7 +9,7 @@ import asyncio
 import inspect
 import logging
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Awaitable, Callable, Optional, Union
 
 import aiohttp
 
@@ -53,8 +53,8 @@ class SSEClient:
         self,
         config: ClientConfig,
         auth_manager: OAuthManager,
-        on_event: Optional[Callable[[SSEEvent], None]] = None,
-        on_error: Optional[Callable[[Exception], None]] = None,
+        on_event: Optional[Callable[[SSEEvent], Union[None, Awaitable[None]]]] = None,
+        on_error: Optional[Callable[[Exception], Union[None, Awaitable[None]]]] = None,
         reconnect_delay: float = 5.0,
         max_reconnect_delay: float = 60.0,
         sse_timeout: float = 0,  # 0 = no timeout on the streaming read
@@ -181,9 +181,7 @@ class SSEClient:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.get(url, headers=headers, proxy=proxy) as response:
                 if response.status != 200:
-                    raise ConnectionError(
-                        f"SSE endpoint returned HTTP {response.status} for {url}"
-                    )
+                    raise ConnectionError(f"SSE endpoint returned HTTP {response.status} for {url}")
                 logger.info("SSE connection established to %s", url)
                 await self._parse_sse_stream(response)
 

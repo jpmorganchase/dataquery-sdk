@@ -284,17 +284,13 @@ class NotificationDownloadManager:
             return
 
         # Optional user filter
-        if self.file_filter and not self.file_filter(
-            {"file-group-id": file_group_id, "file-datetime": file_date_time}
-        ):
+        if self.file_filter and not self.file_filter({"file-group-id": file_group_id, "file-datetime": file_date_time}):
             logger.debug("File %s filtered out by user predicate", file_key)
             return
 
         # Check availability via the API
         try:
-            availability = await self.client.check_availability_async(
-                file_group_id, file_date_time
-            )
+            availability = await self.client.check_availability_async(file_group_id, file_date_time)
         except Exception as exc:
             logger.error("Availability check failed for %s: %s", file_key, exc)
             await self._dispatch_error(exc)

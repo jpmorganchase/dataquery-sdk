@@ -45,6 +45,7 @@ async def test_cmd_download_group():
     args = argparse.Namespace(
         command="download-group",
         group_id="test_group",
+        file_group_id=None,
         start_date="20240101",
         end_date="20240131",
         destination="/tmp/downloads",
@@ -73,4 +74,5 @@ async def test_cmd_download_group():
             destination_dir="/tmp/downloads",
             max_concurrent=5,
             num_parts=4,
+            file_group_id=None,
         )

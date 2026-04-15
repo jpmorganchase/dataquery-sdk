@@ -2107,7 +2107,6 @@ class DataQueryClient:
             if chunk_records:
                 all_records.extend(chunk_records)
 
-
         if not all_records:
             return pd.DataFrame()
 
