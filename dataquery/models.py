@@ -229,6 +229,29 @@ class ClientConfig(BaseModel):
         """Check if proxy credentials are configured."""
         return bool(self.proxy_username) and bool(self.proxy_password)
 
+    def get_proxy_kwargs(self) -> Dict[str, Any]:
+        """Return aiohttp request/session kwargs for proxy routing.
+
+        Splat into any ``session.get/post/request(...)`` call — empty dict when
+        proxy support is disabled or no URL is configured, so the call becomes
+        a no-op.
+
+        Keeping this on the config (rather than inlined at each call site)
+        ensures auth, SSE, and API requests all route through the same proxy.
+        """
+        if not (self.proxy_enabled and self.proxy_url):
+            return {}
+        kwargs: Dict[str, Any] = {"proxy": self.proxy_url}
+        if self.has_proxy_credentials:
+            # Local import avoids making aiohttp a hard dependency of models.
+            from aiohttp import BasicAuth
+
+            kwargs["proxy_auth"] = BasicAuth(
+                login=self.proxy_username or "",
+                password=self.proxy_password or "",
+            )
+        return kwargs
+
     @property
     def api_base_url(self) -> str:
         """Get the complete API base URL including context path."""

@@ -8,7 +8,7 @@ import time
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
 if TYPE_CHECKING:
     from .sse_subscriber import NotificationDownloadManager
@@ -32,7 +32,6 @@ from ._mixins import (
     TimeSeriesMixin,
 )
 from .auth import OAuthManager
-from .auto_download import AutoDownloadManager
 from .connection_pool import ConnectionPoolConfig, ConnectionPoolMonitor
 from .exceptions import (
     AuthenticationError,
@@ -522,19 +521,10 @@ class DataQueryClient(
         except Exception as e:
             raise AuthenticationError(f"Failed to obtain auth headers: {e}")
 
-        # Apply proxy per-request if configured
-        if self.config.proxy_enabled and self.config.proxy_url:
-            kwargs.setdefault("proxy", self.config.proxy_url)
-            if self.config.has_proxy_credentials:
-                from aiohttp import BasicAuth
-
-                kwargs.setdefault(
-                    "proxy_auth",
-                    BasicAuth(
-                        login=self.config.proxy_username or "",
-                        password=self.config.proxy_password or "",
-                    ),
-                )
+        # Apply proxy per-request if configured — shared helper keeps this in
+        # sync with auth.py and sse_client.py.
+        for key, value in self.config.get_proxy_kwargs().items():
+            kwargs.setdefault(key, value)
 
         # Ensure session is connected
         await self._ensure_connected()
@@ -1489,112 +1479,7 @@ class DataQueryClient(
             # For any exceptions, return without dot for security
             return "bin"
 
-    # Auto-Download Functionality
-    async def start_auto_download_async(
-        self,
-        group_id: str,
-        destination_dir: str = "./downloads",
-        interval_minutes: int = 30,
-        file_filter: Optional[Callable] = None,
-        progress_callback: Optional[Callable] = None,
-        error_callback: Optional[Callable] = None,
-        max_retries: int = 3,
-        check_current_date_only: bool = True,
-        max_concurrent_downloads: Optional[int] = None,
-    ) -> "AutoDownloadManager":
-        """
-        Start automatic file download monitoring and downloading.
-
-        This function continuously monitors a data group for new files and automatically
-        downloads them if they don't already exist in the destination folder.
-
-        Args:
-            group_id: ID of the data group to monitor
-            destination_dir: Directory to download files to
-            interval_minutes: Check interval in minutes (default: 30)
-            file_filter: Optional function to filter files (file_info) -> bool
-            progress_callback: Optional callback for download progress
-            error_callback: Optional callback for errors
-            max_retries: Maximum retry attempts for failed downloads
-            check_current_date_only: If True, only check files for current date
-            max_concurrent_downloads: Maximum concurrent downloads (uses SDK default if None)
-
-        Returns:
-            AutoDownloadManager instance for controlling the auto-download process
-
-        Example:
-            # Basic auto-download
-            manager = await dq.start_auto_download_async("economic-data")
-
-            # Advanced auto-download with filtering
-            def csv_filter(file_info):
-                return file_info.filename.endswith('.csv') if file_info.filename else True
-
-            manager = await dq.start_auto_download_async(
-                group_id="economic-data",
-                destination_dir="./data",
-                interval_minutes=15,
-                file_filter=csv_filter,
-                progress_callback=lambda p: print(f"Progress: {p.bytes_downloaded}/{p.total_bytes}")
-            )
-
-            # Stop auto-download later
-            await manager.stop()
-        """
-
-        manager = AutoDownloadManager(
-            client=self,
-            group_id=group_id,
-            destination_dir=destination_dir,
-            interval_minutes=interval_minutes,
-            file_filter=file_filter,
-            progress_callback=progress_callback,
-            error_callback=error_callback,
-            max_retries=max_retries,
-            check_current_date_only=check_current_date_only,
-            max_concurrent_downloads=max_concurrent_downloads,
-        )
-
-        await manager.start()
-        return manager
-
-    def start_auto_download(
-        self,
-        group_id: str,
-        destination_dir: str = "./downloads",
-        interval_minutes: int = 30,
-        file_filter: Optional[Callable] = None,
-        progress_callback: Optional[Callable] = None,
-        error_callback: Optional[Callable] = None,
-        max_retries: int = 3,
-        check_current_date_only: bool = True,
-        max_concurrent_downloads: Optional[int] = None,
-    ) -> "AutoDownloadManager":
-        """
-        Synchronous wrapper for start_auto_download_async.
-        Note: Will raise an error if called from within an existing event loop.
-
-        Example:
-            # Start auto-download synchronously
-            manager = dq.start_auto_download("economic-data")
-
-            # Stop it later (in async context)
-            import asyncio
-            asyncio.run(manager.stop())
-        """
-        return asyncio.run(
-            self.start_auto_download_async(
-                group_id,
-                destination_dir,
-                interval_minutes,
-                file_filter,
-                progress_callback,
-                error_callback,
-                max_retries,
-                check_current_date_only,
-                max_concurrent_downloads,
-            )
-        )
+    # Auto-download is SSE-only — see watch_and_download_async below.
 
     async def watch_and_download_async(
         self,
@@ -1608,18 +1493,18 @@ class DataQueryClient(
         initial_check: bool = True,
         reconnect_delay: float = 5.0,
         max_reconnect_delay: float = 60.0,
+        file_group_id: Optional[Union[str, List[str]]] = None,
     ) -> "NotificationDownloadManager":
         """
         Subscribe to the /notification SSE endpoint and download new files.
 
         Starts a :class:`NotificationDownloadManager` that maintains a persistent
-        SSE connection to the DataQuery notification endpoint.  Each time a
-        notification is received it fetches the available-files list for
-        *group_id* and downloads any files not already present in
-        *destination_dir*.
+        SSE connection to the DataQuery notification endpoint. ``group_id`` (and
+        optionally ``file_group_id``) are sent as query parameters so the server
+        only emits events for the requested subscription.
 
         Args:
-            group_id: ID of the data group to watch.
+            group_id: Data group to subscribe to (sent as ``group-id``).
             destination_dir: Directory to download files to.
             file_filter: Optional predicate ``(file_info_dict) -> bool`` to
                          select which available files to download.
@@ -1632,20 +1517,24 @@ class DataQueryClient(
                            check immediately on start, before any SSE events.
             reconnect_delay: Initial reconnection delay in seconds.
             max_reconnect_delay: Maximum reconnection delay in seconds.
+            file_group_id: Optional restriction to one or more file-group-ids.
+                           Accepts a single id or a list. Sent to the server as
+                           the ``file-group-id`` query parameter (comma-separated
+                           when a list).
 
         Returns:
             A running :class:`NotificationDownloadManager` instance.
 
         Example::
 
+            # Subscribe to every file in the group.
+            manager = await client.watch_and_download_async(group_id="economic-data")
+
+            # Subscribe to specific files only — the server filters.
             manager = await client.watch_and_download_async(
                 group_id="economic-data",
-                destination_dir="./data",
+                file_group_id=["JPM_CPI", "JPM_GDP"],
             )
-            try:
-                await asyncio.sleep(3600)  # keep running for 1 hour
-            finally:
-                await manager.stop()
         """
         from .sse_subscriber import NotificationDownloadManager
 
@@ -1661,6 +1550,7 @@ class DataQueryClient(
             initial_check=initial_check,
             reconnect_delay=reconnect_delay,
             max_reconnect_delay=max_reconnect_delay,
+            file_group_id=file_group_id,
         )
         await manager.start()
         return manager
@@ -1677,6 +1567,7 @@ class DataQueryClient(
         initial_check: bool = True,
         reconnect_delay: float = 5.0,
         max_reconnect_delay: float = 60.0,
+        file_group_id: Optional[Union[str, List[str]]] = None,
     ) -> "NotificationDownloadManager":
         """Synchronous wrapper for :meth:`watch_and_download_async`."""
         return asyncio.run(
@@ -1691,6 +1582,7 @@ class DataQueryClient(
                 initial_check,
                 reconnect_delay,
                 max_reconnect_delay,
+                file_group_id=file_group_id,
             )
         )
 

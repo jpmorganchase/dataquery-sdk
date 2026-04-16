@@ -113,7 +113,7 @@ class TokenManager:
         )
 
         try:
-            # Make token request
+            # Make token request (honoring proxy config, if any).
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     self.config.oauth_token_url,
@@ -124,6 +124,7 @@ class TokenManager:
                         connect=min(300.0, self.config.timeout * 0.5),
                         sock_read=min(300.0, self.config.timeout * 0.5),
                     ),
+                    **self.config.get_proxy_kwargs(),
                 ) as response:
                     if response.status == 200:
                         data = await response.json()
@@ -170,7 +171,7 @@ class TokenManager:
             if not self.config.oauth_token_url:
                 raise ConfigurationError("OAuth token URL not configured")
 
-            # Make refresh request
+            # Make refresh request (honoring proxy config, if any).
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     self.config.oauth_token_url,
@@ -181,6 +182,7 @@ class TokenManager:
                         connect=min(300.0, self.config.timeout * 0.5),
                         sock_read=min(300.0, self.config.timeout * 0.5),
                     ),
+                    **self.config.get_proxy_kwargs(),
                 ) as response:
                     if response.status == 200:
                         data = await response.json()

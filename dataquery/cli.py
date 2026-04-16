@@ -37,18 +37,32 @@ def create_parser() -> argparse.ArgumentParser:
     # download
     p_dl = subparsers.add_parser(
         "download",
-        help="Download a single file, or with --watch poll a group for new files",
+        help="Download a single file, or with --watch subscribe to the SSE notification stream",
         description=(
             "Two modes:\n"
             "  single-file  --file-group-id FG --file-datetime YYYYMMDD [--destination DIR]\n"
-            "  watch        --watch --group-id GROUP [--destination DIR]  (Ctrl+C to stop)"
+            "  watch        --watch --group-id GROUP [--file-group-id FG1 FG2 ...] [--destination DIR]\n"
+            "               (server-side filtered; Ctrl+C to stop)"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p_dl.add_argument("--file-group-id", default=None, help="File-group-id (single-file mode)")
+    p_dl.add_argument(
+        "--file-group-id",
+        nargs="+",
+        default=None,
+        metavar="FILE_GROUP_ID",
+        help=(
+            "Single-file mode: one id; watch mode: one or more ids sent as the "
+            "'file-group-id' query parameter so the server filters events."
+        ),
+    )
     p_dl.add_argument("--file-datetime", default=None, help="YYYYMMDD (single-file mode)")
     p_dl.add_argument("--destination", type=str, default=None)
-    p_dl.add_argument("--watch", action="store_true", help="Watch a group for new files (uses SSE/polling)")
+    p_dl.add_argument(
+        "--watch",
+        action="store_true",
+        help="Subscribe to the SSE notification stream and download files as they're published",
+    )
     p_dl.add_argument("--group-id", default=None, help="Group to watch (required with --watch)")
     p_dl.add_argument("--json", action="store_true")
     p_dl.add_argument("--num-parts", type=int, default=5, help="Number of parallel parts (single-file mode)")
@@ -160,11 +174,24 @@ async def cmd_download(args: argparse.Namespace) -> int:
             print("--file-group-id is required for a single-file download")
             return 1
 
+    # argparse gives a list (nargs="+"). In single-file mode we need exactly one.
+    file_group_id = args.file_group_id
+    if not args.watch and isinstance(file_group_id, list):
+        if len(file_group_id) != 1:
+            print("--file-group-id must be a single value for single-file download")
+            return 1
+        file_group_id = file_group_id[0]
+
     async with DataQuery(args.env_file) as dq:
         if args.watch:
-            mgr = await dq.start_auto_download_async(
+            # SSE-driven: subscribe to /sse/event/notification with group-id
+            # (and optionally file-group-id) as query parameters so the server
+            # filters events. An initial availability check covers anything
+            # published before the subscription started.
+            mgr = await dq.watch_and_download_async(
                 group_id=args.group_id,
                 destination_dir=(args.destination or "./downloads"),
+                file_group_id=file_group_id,
             )
             try:
                 # Stay connected until interrupted. Sleeping in short slices
@@ -193,7 +220,7 @@ async def cmd_download(args: argparse.Namespace) -> int:
         )
 
         result = await dq.download_file_async(
-            args.file_group_id,
+            file_group_id,
             args.file_datetime,
             options=options,
             num_parts=args.num_parts,

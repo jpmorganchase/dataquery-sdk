@@ -17,7 +17,7 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set, Union
 
 from ._download_utils import download_and_track, file_exists_locally
 from .models import DownloadOptions, DownloadProgress
@@ -73,13 +73,16 @@ class NotificationDownloadManager:
         initial_check: bool = True,
         reconnect_delay: float = 5.0,
         max_reconnect_delay: float = 60.0,
+        file_group_id: Optional[Union[str, List[str]]] = None,
     ):
         """
         Initialise the manager.
 
         Args:
             client: An initialised ``DataQueryClient`` instance.
-            group_id: The data group to watch.
+            group_id: The data group to watch. Sent to the server as the
+                      ``group-id`` query parameter on the SSE subscription so
+                      only notifications for this group are delivered.
             destination_dir: Directory where files will be saved.
             file_filter: Optional predicate called with each available-file
                          dict; return ``False`` to skip that file.
@@ -93,6 +96,11 @@ class NotificationDownloadManager:
                            check immediately on start before SSE events arrive.
             reconnect_delay: Initial SSE reconnection delay in seconds.
             max_reconnect_delay: Maximum SSE reconnection delay in seconds.
+            file_group_id: Optional restriction to one or more file-group-ids.
+                           Sent to the server as the ``file-group-id`` query
+                           parameter (comma-separated when a list) so filtering
+                           happens at the source — the client no longer receives
+                           events for other files.
         """
         self.client = client
         self.group_id = group_id
@@ -103,6 +111,7 @@ class NotificationDownloadManager:
         self.max_retries = max_retries
         self.max_concurrent_downloads = max_concurrent_downloads
         self.initial_check = initial_check
+        self.file_group_id = file_group_id
 
         self.destination_dir.mkdir(parents=True, exist_ok=True)
 
@@ -161,6 +170,15 @@ class NotificationDownloadManager:
             except Exception as exc:
                 logger.warning("Initial availability check failed: %s", exc)
 
+        # Build server-side subscription filter params.
+        sse_params: Dict[str, str] = {"group-id": self.group_id}
+        if self.file_group_id is not None:
+            sse_params["file-group-id"] = (
+                ",".join(self.file_group_id)
+                if isinstance(self.file_group_id, (list, tuple, set))
+                else str(self.file_group_id)
+            )
+
         # Start the SSE client.
         self._sse_client = SSEClient(
             config=self.client.config,
@@ -169,6 +187,7 @@ class NotificationDownloadManager:
             on_error=self._on_sse_error,
             reconnect_delay=self._reconnect_delay,
             max_reconnect_delay=self._max_reconnect_delay,
+            params=sse_params,
         )
         await self._sse_client.start()
 

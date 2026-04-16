@@ -2176,60 +2176,8 @@ class DataQuery:
 
     # Sync wrapper methods with _sync suffix for testing compatibility
 
-    # Auto-Download wrappers
-    async def start_auto_download_async(
-        self,
-        group_id: str,
-        destination_dir: str = "./downloads",
-        interval_minutes: int = 30,
-        file_filter: Optional[Callable] = None,
-        progress_callback: Optional[Callable] = None,
-        error_callback: Optional[Callable] = None,
-        max_retries: int = 3,
-        check_current_date_only: bool = True,
-        max_concurrent_downloads: Optional[int] = None,
-    ):
-        """Proxy to client's start_auto_download_async."""
-        await self.connect_async()
-        client = self._ensure_client()
-        return await client.start_auto_download_async(
-            group_id=group_id,
-            destination_dir=destination_dir,
-            interval_minutes=interval_minutes,
-            file_filter=file_filter,
-            progress_callback=progress_callback,
-            error_callback=error_callback,
-            max_retries=max_retries,
-            check_current_date_only=check_current_date_only,
-            max_concurrent_downloads=max_concurrent_downloads,
-        )
-
-    def start_auto_download(
-        self,
-        group_id: str,
-        destination_dir: str = "./downloads",
-        interval_minutes: int = 30,
-        file_filter: Optional[Callable] = None,
-        progress_callback: Optional[Callable] = None,
-        error_callback: Optional[Callable] = None,
-        max_retries: int = 3,
-        check_current_date_only: bool = True,
-        max_concurrent_downloads: Optional[int] = None,
-    ):
-        """Synchronous proxy to client's start_auto_download_async."""
-        return self._run_sync(
-            self.start_auto_download_async(
-                group_id,
-                destination_dir,
-                interval_minutes,
-                file_filter,
-                progress_callback,
-                error_callback,
-                max_retries,
-                check_current_date_only,
-                max_concurrent_downloads,
-            )
-        )
+    # SSE notification-driven download (the only watch path) — see
+    # watch_and_download_async below.
 
     async def watch_and_download_async(
         self,
@@ -2243,6 +2191,7 @@ class DataQuery:
         initial_check: bool = True,
         reconnect_delay: float = 5.0,
         max_reconnect_delay: float = 60.0,
+        file_group_id: Optional[Union[str, List[str]]] = None,
     ):
         """Proxy to client's watch_and_download_async."""
         await self.connect_async()
@@ -2258,6 +2207,7 @@ class DataQuery:
             initial_check=initial_check,
             reconnect_delay=reconnect_delay,
             max_reconnect_delay=max_reconnect_delay,
+            file_group_id=file_group_id,
         )
 
     def watch_and_download(
@@ -2272,6 +2222,7 @@ class DataQuery:
         initial_check: bool = True,
         reconnect_delay: float = 5.0,
         max_reconnect_delay: float = 60.0,
+        file_group_id: Optional[Union[str, List[str]]] = None,
     ):
         """Synchronous proxy to client's watch_and_download_async."""
         return self._run_sync(
@@ -2286,6 +2237,7 @@ class DataQuery:
                 initial_check,
                 reconnect_delay,
                 max_reconnect_delay,
+                file_group_id=file_group_id,
             )
         )
 

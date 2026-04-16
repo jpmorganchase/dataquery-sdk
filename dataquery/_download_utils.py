@@ -1,7 +1,9 @@
 """
-Shared download utilities for AutoDownloadManager and NotificationDownloadManager.
+Shared download utilities for the SSE-driven NotificationDownloadManager.
 
-Eliminates code duplication between auto_download.py and sse_subscriber.py.
+Helpers for the per-event download path: progress wrappers and the
+`download_and_track` coroutine that records stats and updates the success /
+failure tracking sets after each download attempt.
 """
 
 import asyncio
