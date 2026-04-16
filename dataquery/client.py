@@ -24,8 +24,8 @@ except ImportError:
     pd = None
     HAS_PANDAS = False
 
-from ._dataframe_mixin import DataFrameMixin
-from ._query_mixins import (
+from ._mixins import (
+    DataFrameMixin,
     GridMixin,
     InstrumentsMixin,
     MetadataMixin,
