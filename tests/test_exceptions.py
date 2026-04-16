@@ -9,7 +9,6 @@ from dataquery.exceptions import (
     DataQueryError,
     DateRangeError,
     DownloadError,
-    FileNotFoundError,
     FileNotFoundInGroupError,
     FileTypeError,
     GroupNotFoundError,
@@ -182,28 +181,33 @@ class TestGroupNotFoundError:
 
 
 class TestFileNotFoundError:
-    """Test FileNotFoundError class."""
+    """Test FileNotFoundInGroupError class."""
 
     def test_file_not_found_error_basic(self):
-        """Test basic FileNotFoundError creation."""
-        error = FileNotFoundError("test_file", "test_group")
+        """Test basic FileNotFoundInGroupError creation."""
+        error = FileNotFoundInGroupError("test_file", "test_group")
         assert "File test_file not found in group test_group" in str(error)
         assert error.details["resource_type"] == "File"
         assert error.details["resource_id"] == "test_file"
 
     def test_file_not_found_error_with_file_info(self):
-        """Test FileNotFoundError with file info."""
-        error = FileNotFoundError("file123", "group456")
+        """Test FileNotFoundInGroupError with file info."""
+        error = FileNotFoundInGroupError("file123", "group456")
         assert "File file123 not found in group group456" in str(error)
         assert error.details["resource_id"] == "file123"
 
-    def test_file_not_found_in_group_error_canonical_name(self):
-        """Test FileNotFoundInGroupError canonical name and alias."""
-        error = FileNotFoundInGroupError("test_file", "test_group")
-        assert "File test_file not found in group test_group" in str(error)
-        assert isinstance(error, FileNotFoundInGroupError)
-        # Verify backwards-compatible alias
-        assert FileNotFoundError is FileNotFoundInGroupError
+    def test_deprecated_alias_still_works(self):
+        """Test that the deprecated FileNotFoundError alias still resolves."""
+        import warnings
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            from dataquery.exceptions import FileNotFoundError as DeprecatedAlias
+
+            assert DeprecatedAlias is FileNotFoundInGroupError
+            assert len(w) == 1
+            assert issubclass(w[0].category, DeprecationWarning)
+            assert "deprecated" in str(w[0].message).lower()
 
 
 class TestDateRangeError:
@@ -270,7 +274,7 @@ class TestExceptionHierarchy:
             DownloadError("test_file", "test_group"),
             AvailabilityError("test_file", "test_group"),
             GroupNotFoundError("test_group"),
-            FileNotFoundError("test_file", "test_group"),
+            FileNotFoundInGroupError("test_file", "test_group"),
             DateRangeError("20240101", "20241231"),
             FileTypeError("xyz"),
             WorkflowError("test_workflow"),
@@ -285,7 +289,7 @@ class TestExceptionHierarchy:
         assert isinstance(group_error, NotFoundError)
         assert isinstance(group_error, DataQueryError)
 
-        file_error = FileNotFoundError("test_file", "test_group")
+        file_error = FileNotFoundInGroupError("test_file", "test_group")
         assert isinstance(file_error, NotFoundError)
         assert isinstance(file_error, DataQueryError)
 

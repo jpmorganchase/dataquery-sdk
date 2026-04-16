@@ -1,3 +1,4 @@
+
 # DataQuery SDK
 
 A high-performance Python SDK for efficient data querying and file downloads with parallel processing capabilities.
@@ -74,13 +75,15 @@ pip install dataquery-sdk
 
 ## What's New
 
-### Latest Release: v1.0.0
+### Latest Release: v0.1.3
 
-- ✅ Initial release with parallel download capabilities
-- ✅ Group download functionality with intelligent rate limiting
-- ✅ Command-line interface for batch operations
-- ✅ Comprehensive test suite with 95%+ coverage
-- ✅ Full type hints and documentation
+- Parallel file downloads with HTTP range requests
+- Group download with intelligent rate limiting
+- `ALREADY_EXISTS` download status for skipped files
+- Historical download with monthly chunking
+- Non-blocking I/O optimizations
+- Command-line interface for batch operations
+- Comprehensive test suite with full type hints
 
 ## Performance
 

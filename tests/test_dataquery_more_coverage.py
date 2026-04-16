@@ -76,16 +76,20 @@ async def test_run_group_download_async_filters_availability(monkeypatch):
             # Build a real DataQuery but with client mocked
             dq = DataQuery()
             await dq.connect_async()
-            # Mock the internal method that group download actually calls
-            dq._download_file_parallel = AsyncMock(return_value=mock_download_result)
 
-            report = await dq.run_group_download_async(
-                group_id="G",
-                start_date="20240101",
-                end_date="20240131",
-                max_concurrent=2,
-                num_parts=2,
-            )
+            # The parallel downloader is a module-level helper imported inside
+            # run_group_download_async; patch it at its source module.
+            with patch(
+                "dataquery._parallel_download.download_file_parallel_flattened",
+                new=AsyncMock(return_value=mock_download_result),
+            ):
+                report = await dq.run_group_download_async(
+                    group_id="G",
+                    start_date="20240101",
+                    end_date="20240131",
+                    max_concurrent=2,
+                    num_parts=2,
+                )
             await dq.close_async()
 
         # Only two entries are available True

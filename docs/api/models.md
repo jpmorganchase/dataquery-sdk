@@ -112,10 +112,11 @@ DataQuery SDK provides several model classes for configuration and data handling
 | Status | Description |
 |--------|-------------|
 | `PENDING` | Download is pending |
-| `IN_PROGRESS` | Download is in progress |
+| `DOWNLOADING` | Download is in progress |
 | `COMPLETED` | Download completed successfully |
 | `FAILED` | Download failed |
 | `CANCELLED` | Download was cancelled |
+| `ALREADY_EXISTS` | File already exists at destination (skipped) |
 
 ## :material-code-braces: Examples
 
@@ -161,11 +162,13 @@ DataQuery SDK provides several model classes for configuration and data handling
         print(f"Download Time: {result.download_time:.2f} seconds")
 
         if result.status == DownloadStatus.COMPLETED:
-            print("✅ Download completed successfully!")
+            print("Download completed successfully!")
+        elif result.status == DownloadStatus.ALREADY_EXISTS:
+            print("File already exists, skipped download")
         elif result.status == DownloadStatus.FAILED:
-            print(f"❌ Download failed: {result.error_message}")
+            print(f"Download failed: {result.error_message}")
         else:
-            print(f"⚠️  Download status: {result.status.value}")
+            print(f"Download status: {result.status.value}")
     ```
 
 ### Progress Tracking

@@ -54,9 +54,8 @@ Thank you for your interest in contributing to the DataQuery SDK! This document 
 
 5. Run linting and formatting:
    ```bash
-   uv run black .
-   uv run isort .
-   uv run flake8 dataquery/ tests/
+   uv run ruff check dataquery/ tests/ examples/
+   uv run ruff format dataquery/ tests/ examples/
    uv run mypy dataquery/
    ```
 
@@ -71,9 +70,7 @@ Thank you for your interest in contributing to the DataQuery SDK! This document 
 ### Coding Standards
 
 - **Python Style**: Follow PEP 8
-- **Formatting**: Use Black for code formatting
-- **Import Sorting**: Use isort for import organization
-- **Linting**: Use flake8 for code quality checks
+- **Linting & Formatting**: Use [Ruff](https://github.com/astral-sh/ruff) for linting, formatting, and import sorting
 - **Type Hints**: Use mypy for type checking
 - **Docstrings**: Follow Google docstring format
 

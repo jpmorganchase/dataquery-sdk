@@ -41,7 +41,7 @@ class EnvConfig:
         "BEARER_TOKEN": None,
         "TOKEN_REFRESH_THRESHOLD": "300",
         # HTTP Configuration
-        "TIMEOUT": "6000.0",
+        "TIMEOUT": "600.0",
         "MAX_RETRIES": "3",
         "RETRY_DELAY": "1.0",
         "CIRCUIT_BREAKER_THRESHOLD": "5",

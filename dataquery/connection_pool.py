@@ -164,39 +164,12 @@ class ConnectionPoolMonitor:
             return
 
         try:
-            # Get current pool stats
             pool_stats = self._get_pool_stats()
-
-            # Clean up idle connections
-            if self.connector is not None and hasattr(self.connector, "_resolver"):
-                resolver = self.connector._resolver
-                # Try different possible cache attribute names
-                cache_attr = None
-                for attr_name in ["_cache", "_resolver_cache", "cache"]:
-                    if hasattr(resolver, attr_name):
-                        try:
-                            cache_attr = getattr(resolver, attr_name)
-                            # Verify it's actually a cache-like object
-                            if hasattr(cache_attr, "clear") and hasattr(cache_attr, "__len__"):
-                                break
-                            else:
-                                cache_attr = None
-                        except (AttributeError, TypeError):
-                            cache_attr = None
-                            continue
-
-                if cache_attr:
-                    try:
-                        cache_attr.clear()
-                        logger.debug("Resolver cache cleared successfully")
-                    except Exception as e:
-                        logger.debug("Could not clear resolver cache", error=str(e))
 
             # Update stats
             self.stats.last_cleanup = datetime.now()
             self.stats.cleanup_count += 1
 
-            # Log with simple values to avoid structlog formatting issues
             logger.info(
                 "Connection pool cleanup completed",
                 total_connections=pool_stats.get("total_connections", 0),
@@ -252,89 +225,63 @@ class ConnectionPoolMonitor:
             logger.error("Error during health check", error=str(e))
 
     def _get_pool_stats(self) -> Dict[str, Any]:
-        """Get current connection pool statistics with optimized performance."""
-        if not hasattr(self, "connector"):
-            return {}
+        """Get current connection pool statistics.
+
+        NOTE: aiohttp does not expose public APIs for connection counts.
+        We access ``connector._conns`` which is an internal attribute and
+        may change in future aiohttp versions (especially 4.x).
+        """
+        _empty: Dict[str, Any] = {
+            "total_connections": 0,
+            "active_connections": 0,
+            "idle_connections": 0,
+            "connection_utilization": 0.0,
+            "pool_utilization": 0.0,
+        }
+
+        if not hasattr(self, "connector") or self.connector is None:
+            return _empty
 
         try:
-            # Get basic connector stats efficiently
-            connector_stats = {
+            connector_stats: Dict[str, Any] = {
                 "limit": getattr(self.connector, "limit", 0),
                 "limit_per_host": getattr(self.connector, "limit_per_host", 0),
             }
 
-            # Use aiohttp's built-in stats if available (more efficient)
-            if self.connector is not None and hasattr(self.connector, "closed") and not self.connector.closed:
-                # Try to get stats from aiohttp's internal structures
-                total_connections = 0
-                active_connections = 0
-                idle_connections = 0
-
-                # Check if we have the newer aiohttp stats API
-                if hasattr(self.connector, "_conns") and self.connector._conns is not None:
-                    try:
-                        # More efficient iteration
-                        for host_connections in self.connector._conns.values():
-                            if isinstance(host_connections, (list, tuple)):
-                                total_connections += len(host_connections)
-                                # For performance, assume most connections are idle
-                                # Only check a sample for active status
-                                sample_size = min(5, len(host_connections))
-                                for conn in host_connections[:sample_size]:
-                                    if hasattr(conn, "_request_count") and conn._request_count > 0:
-                                        active_connections += 1
-                                    else:
-                                        idle_connections += 1
-                                # Estimate remaining connections as idle
-                                remaining = len(host_connections) - sample_size
-                                idle_connections += remaining
-                    except Exception:
-                        # Fallback to simple counting
-                        total_connections = 0
-                        try:
-                            for conns in self.connector._conns.values():
-                                if isinstance(conns, (list, tuple)):
-                                    total_connections += len(conns)
-                        except Exception:
-                            total_connections = 0
-                        idle_connections = total_connections
-
-                # Update our internal stats
-                self.stats.total_connections = total_connections
-                self.stats.active_connections = active_connections
-                self.stats.idle_connections = idle_connections
-
-                # Add connection stats to the result
-                connector_stats.update(
-                    {
-                        "total_connections": total_connections,
-                        "active_connections": active_connections,
-                        "idle_connections": idle_connections,
-                        "connection_utilization": (active_connections / max(total_connections, 1)) * 100,
-                        "pool_utilization": (total_connections / max(self.config.max_connections, 1)) * 100,
-                    }
-                )
-
+            if hasattr(self.connector, "closed") and self.connector.closed:
+                connector_stats.update(_empty)
                 return connector_stats
 
-            # Fallback for older aiohttp versions or when connector is closed
-            return {
-                "total_connections": 0,
-                "active_connections": 0,
-                "idle_connections": 0,
-                "connection_utilization": 0.0,
-                "pool_utilization": 0.0,
-            }
+            total_connections = 0
+            # _conns is an aiohttp internal; degrade gracefully if absent
+            conns_map = getattr(self.connector, "_conns", None)
+            if conns_map is not None:
+                try:
+                    for host_connections in conns_map.values():
+                        if isinstance(host_connections, (list, tuple)):
+                            total_connections += len(host_connections)
+                except (AttributeError, TypeError):
+                    total_connections = 0
+
+            self.stats.total_connections = total_connections
+            self.stats.idle_connections = total_connections  # best approximation
+            self.stats.active_connections = 0
+
+            connector_stats.update(
+                {
+                    "total_connections": total_connections,
+                    "active_connections": 0,
+                    "idle_connections": total_connections,
+                    "connection_utilization": 0.0,
+                    "pool_utilization": (total_connections / max(self.config.max_connections, 1)) * 100,
+                }
+            )
+
+            return connector_stats
 
         except Exception as e:
             logger.debug("Could not get pool stats", error=str(e))
-            return {
-                "total_connections": 0,
-                "active_connections": 0,
-                "idle_connections": 0,
-                "connection_utilization": 0.0,
-                "pool_utilization": 0.0,
-            }
+            return _empty
 
     def record_connection_event(self, event_type: str, duration: float = 0.0) -> None:
         """Record a connection event for metrics."""

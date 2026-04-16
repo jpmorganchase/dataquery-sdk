@@ -214,21 +214,18 @@ config = ClientConfig(
 from dataquery.models import ClientConfig
 
 config = ClientConfig(
-    api_key="your-api-key",
+    client_id="your-client-id",
+    client_secret="your-client-secret",
     # Connection settings
     timeout=30.0,
     max_retries=3,
     retry_delay=1.0,
     # Rate limiting
-    requests_per_minute=1000,
-    burst_capacity=10,
+    requests_per_minute=1500,
+    burst_capacity=25,
     # Connection pooling
     pool_connections=10,
-    pool_maxsize=10,
-    # SSL settings
-    verify_ssl=True,
-    ssl_cert_path=None,
-    ssl_key_path=None
+    pool_maxsize=20,
 )
 ```
 
@@ -283,7 +280,7 @@ async with DataQuery() as dq:
 ```python
 import logging
 from dataquery import DataQuery
-from dataquery.models import DataQueryConfig
+from dataquery.models import ClientConfig
 
 # Create custom logger
 logger = logging.getLogger('dataquery')
@@ -303,8 +300,9 @@ handler.setFormatter(formatter)
 logger.addHandler(handler)
 
 # Use with DataQuery
-config = DataQueryConfig(
-    api_key="your-api-key",
+config = ClientConfig(
+    client_id="your-client-id",
+    client_secret="your-client-secret",
     enable_debug_logging=True
 )
 
@@ -321,7 +319,9 @@ async with DataQuery(config=config) as dq:
 from dataquery.models import ClientConfig
 
 config = ClientConfig(
-    api_key="your-api-key",
+    client_id="your-client-id",
+    client_secret="your-client-secret",
+    proxy_enabled=True,
     proxy_url="http://proxy.company.com:8080"
 )
 
@@ -333,8 +333,10 @@ async with DataQuery(config=config) as dq:
 ### SOCKS Proxy
 
 ```python
-config = DataQueryConfig(
-    api_key="your-api-key",
+config = ClientConfig(
+    client_id="your-client-id",
+    client_secret="your-client-secret",
+    proxy_enabled=True,
     proxy_url="socks5://proxy.company.com:1080"
 )
 ```
@@ -342,9 +344,13 @@ config = DataQueryConfig(
 ### Authenticated Proxy
 
 ```python
-config = DataQueryConfig(
-    api_key="your-api-key",
-    proxy_url="http://username:password@proxy.company.com:8080"
+config = ClientConfig(
+    client_id="your-client-id",
+    client_secret="your-client-secret",
+    proxy_enabled=True,
+    proxy_url="http://proxy.company.com:8080",
+    proxy_username="username",
+    proxy_password="password"
 )
 ```
 
@@ -353,20 +359,20 @@ config = DataQueryConfig(
 ### Custom SSL Certificates
 
 ```python
-config = DataQueryConfig(
-    api_key="your-api-key",
-    ssl_cert_path="/path/to/client.crt",
-    ssl_key_path="/path/to/client.key",
-    verify_ssl=True
+config = ClientConfig(
+    client_id="your-client-id",
+    client_secret="your-client-secret",
+    proxy_verify_ssl=True
 )
 ```
 
 ### Disable SSL Verification (Not Recommended)
 
 ```python
-config = DataQueryConfig(
-    api_key="your-api-key",
-    verify_ssl=False  # Only for development/testing
+config = ClientConfig(
+    client_id="your-client-id",
+    client_secret="your-client-secret",
+    proxy_verify_ssl=False  # Only for development/testing
 )
 ```
 
@@ -376,11 +382,12 @@ config = DataQueryConfig(
 
 ```python
 # development.py
-from dataquery.models import DataQueryConfig
+from dataquery.models import ClientConfig
 
-DEV_CONFIG = DataQueryConfig(
-    api_key="dev-api-key",
-    api_url="https://dev-api.dataquery.com",
+DEV_CONFIG = ClientConfig(
+    client_id="dev-client-id",
+    client_secret="dev-client-secret",
+    base_url="https://dev-api.dataquery.com",
     log_level="DEBUG",
     enable_debug_logging=True,
     timeout=60.0
@@ -391,11 +398,12 @@ DEV_CONFIG = DataQueryConfig(
 
 ```python
 # production.py
-from dataquery.models import DataQueryConfig
+from dataquery.models import ClientConfig
 
-PROD_CONFIG = DataQueryConfig(
-    api_key="prod-api-key",
-    api_url="https://api.dataquery.com",
+PROD_CONFIG = ClientConfig(
+    client_id="prod-client-id",
+    client_secret="prod-client-secret",
+    base_url="https://api-developer.jpmorgan.com",
     log_level="WARNING",
     enable_debug_logging=False,
     timeout=30.0,
@@ -407,11 +415,12 @@ PROD_CONFIG = DataQueryConfig(
 
 ```python
 # test_config.py
-from dataquery.models import DataQueryConfig
+from dataquery.models import ClientConfig
 
-TEST_CONFIG = DataQueryConfig(
-    api_key="test-api-key",
-    api_url="https://test-api.dataquery.com",
+TEST_CONFIG = ClientConfig(
+    client_id="test-client-id",
+    client_secret="test-client-secret",
+    base_url="https://test-api.dataquery.com",
     log_level="ERROR",
     timeout=10.0,
     max_retries=1
@@ -423,13 +432,13 @@ TEST_CONFIG = DataQueryConfig(
 The SDK validates configuration on startup:
 
 ```python
-from dataquery.models import DataQueryConfig
+from dataquery.models import ClientConfig
 from dataquery.exceptions import ConfigurationError
 
 try:
-    config = DataQueryConfig(
-        api_key="",  # Invalid: empty API key
-        api_url="invalid-url"  # Invalid: malformed URL
+    config = ClientConfig(
+        client_id="",  # Invalid: empty client ID
+        base_url="invalid-url"  # Invalid: malformed URL
     )
 except ConfigurationError as e:
     print(f"Configuration error: {e}")

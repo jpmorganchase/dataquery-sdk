@@ -999,63 +999,35 @@ class TestAuthenticationFlows:
 
     @pytest.mark.asyncio
     async def test_execute_request_with_auth_headers_failure(self):
-        """Test request execution when auth headers fail."""
+        """Test request execution raises AuthenticationError when auth headers fail."""
+        from dataquery.exceptions import AuthenticationError
+
         client = create_test_client()
 
         # Mock auth headers to fail
         client.auth_manager.get_headers.side_effect = Exception("Auth failed")
 
         mock_session = AsyncMock()
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.text = AsyncMock(return_value='{"success": true}')
-
-        # Make request return an awaitable that resolves to the response
-        mock_ctx = AsyncMock()
-        mock_ctx.__aenter__.return_value = mock_response
-        mock_ctx.__aexit__.return_value = None
-
-        # When awaited, the context manager should enter and return the response
-        async def mock_request(*args, **kwargs):
-            return await mock_ctx.__aenter__()
-
-        mock_session.request = mock_request
         client.session = mock_session
 
-        # Should still work but log warning
-        result = await client._execute_request("GET", "https://api.example.com/test")
-
-        assert result is not None
-        assert result.status == 200
-        client.logger.warning.assert_called_once()
+        with pytest.raises(AuthenticationError, match="Failed to obtain auth headers"):
+            await client._execute_request("GET", "https://api.example.com/test")
 
     @pytest.mark.asyncio
     async def test_execute_request_auth_header_failure(self):
-        """Test request execution when auth headers fail."""
+        """Test request execution raises AuthenticationError when auth headers fail."""
+        from dataquery.exceptions import AuthenticationError
+
         client = create_test_client()
 
         # Make auth headers fail
         client.auth_manager.get_headers.side_effect = Exception("Auth failed")
 
-        # Mock session
-        mock_response = AsyncMock()
-        mock_response.status = 200
-        mock_response.text = AsyncMock(return_value='{"success": true}')
-
-        # Create an async function that returns the response
-        async def mock_request(*args, **kwargs):
-            return mock_response
-
         mock_session = AsyncMock()
-        mock_session.request = mock_request
         client.session = mock_session
 
-        # Should still execute but log warning
-        result = await client._execute_request("GET", "https://api.example.com/test")
-
-        assert result is not None
-        assert result.status == 200
-        client.logger.warning.assert_called_once()
+        with pytest.raises(AuthenticationError, match="Failed to obtain auth headers"):
+            await client._execute_request("GET", "https://api.example.com/test")
 
     @pytest.mark.asyncio
     async def test_execute_request_no_session(self):
