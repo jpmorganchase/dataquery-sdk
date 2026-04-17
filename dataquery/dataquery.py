@@ -2195,6 +2195,7 @@ class DataQuery:
         max_reconnect_delay: float = 60.0,
         file_group_id: Optional[Union[str, List[str]]] = None,
         show_progress: bool = True,
+        enable_event_replay: bool = True,
     ):
         """Proxy to client's auto_download_async."""
         await self.connect_async()
@@ -2212,6 +2213,7 @@ class DataQuery:
             max_reconnect_delay=max_reconnect_delay,
             file_group_id=file_group_id,
             show_progress=show_progress,
+            enable_event_replay=enable_event_replay,
         )
 
     def auto_download(
@@ -2228,6 +2230,7 @@ class DataQuery:
         max_reconnect_delay: float = 60.0,
         file_group_id: Optional[Union[str, List[str]]] = None,
         show_progress: bool = True,
+        enable_event_replay: bool = True,
     ):
         """Synchronous proxy to client's auto_download_async."""
         return self._run_sync(
@@ -2244,6 +2247,7 @@ class DataQuery:
                 max_reconnect_delay,
                 file_group_id=file_group_id,
                 show_progress=show_progress,
+                enable_event_replay=enable_event_replay,
             )
         )
 

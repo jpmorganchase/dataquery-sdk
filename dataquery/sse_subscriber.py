@@ -22,6 +22,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Union
 from ._download_utils import download_and_track, file_exists_locally
 from .models import DownloadOptions, DownloadProgress
 from .sse_client import SSEClient, SSEEvent
+from .sse_event_store import SSEEventIdStore, build_event_id_store
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,7 @@ class NotificationDownloadManager:
         max_reconnect_delay: float = 60.0,
         file_group_id: Optional[Union[str, List[str]]] = None,
         show_progress: bool = True,
+        enable_event_replay: bool = True,
     ):
         """
         Initialise the manager.
@@ -104,6 +106,15 @@ class NotificationDownloadManager:
                            events for other files.
             show_progress: If ``True`` (default), log download progress at
                            DEBUG level when no ``progress_callback`` is set.
+            enable_event_replay: If ``True`` (default), persist the last seen
+                           SSE event id to disk and, on subsequent runs, send
+                           it as the ``last-event-id`` query parameter so the
+                           server replays any events published while the
+                           process was down. When a stored id is found the
+                           initial bulk availability check is skipped because
+                           replay covers that gap precisely. Set ``False`` to
+                           restore the legacy bulk-check-every-startup
+                           behaviour.
         """
         self.client = client
         self.group_id = group_id
@@ -115,6 +126,7 @@ class NotificationDownloadManager:
         self.max_concurrent_downloads = max_concurrent_downloads
         self.initial_check = initial_check
         self.file_group_id = file_group_id
+        self.enable_event_replay = enable_event_replay
 
         self.destination_dir.mkdir(parents=True, exist_ok=True)
 
@@ -122,6 +134,7 @@ class NotificationDownloadManager:
         self._sse_client: Optional[SSEClient] = None
         self._reconnect_delay = reconnect_delay
         self._max_reconnect_delay = max_reconnect_delay
+        self._event_id_store: Optional[SSEEventIdStore] = None
 
         # State
         self._running = False
@@ -167,8 +180,22 @@ class NotificationDownloadManager:
             self.destination_dir,
         )
 
-        # Perform initial availability check before SSE events arrive.
-        if self.initial_check:
+        # Resolve the persistent event-id store and decide whether to replay.
+        # When a stored event id exists, the SSE server replays missed events
+        # so the bulk initial-check is unnecessary (and would re-check files
+        # that the replay is about to deliver).
+        stored_event_id: Optional[str] = None
+        if self.enable_event_replay:
+            self._event_id_store = build_event_id_store(self.client.config, self.group_id, self.file_group_id)
+            if self._event_id_store is not None:
+                stored_event_id = self._event_id_store.load()
+
+        if stored_event_id is not None:
+            logger.info(
+                "Event replay enabled — resuming from event-id %s; skipping initial bulk check.",
+                stored_event_id,
+            )
+        elif self.initial_check:
             try:
                 await self._check_and_download()
             except Exception as exc:
@@ -192,6 +219,7 @@ class NotificationDownloadManager:
             reconnect_delay=self._reconnect_delay,
             max_reconnect_delay=self._max_reconnect_delay,
             params=sse_params,
+            event_id_store=self._event_id_store,
         )
         await self._sse_client.start()
 
@@ -217,6 +245,9 @@ class NotificationDownloadManager:
         start = self.stats.get("start_time")
         if isinstance(start, datetime):
             runtime = (datetime.now() - start).total_seconds()
+        last_event_id = None
+        if self._sse_client is not None:
+            last_event_id = self._sse_client._last_event_id
         return {
             **self.stats,
             "runtime_seconds": runtime,
@@ -225,7 +256,14 @@ class NotificationDownloadManager:
             "destination_dir": str(self.destination_dir),
             "downloaded_file_keys": len(self._downloaded_files),
             "failed_file_keys": len(self._failed_files),
+            "last_event_id": last_event_id,
         }
+
+    def clear_event_id(self) -> None:
+        """Delete the persisted SSE event id so the next start() replays from
+        scratch (or runs the legacy initial bulk check, depending on flags)."""
+        if self._event_id_store is not None:
+            self._event_id_store.clear()
 
     # ------------------------------------------------------------------
     # SSE callbacks

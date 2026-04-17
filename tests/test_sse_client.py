@@ -401,3 +401,105 @@ async def test_run_loop_reconnects_with_exponential_backoff_then_stops():
     # Delays should grow: 1.0, 2.0 ... (capped at 8.0).
     assert delays[0] == pytest.approx(1.0)
     assert delays[1] == pytest.approx(2.0)
+
+
+# ---------------------------------------------------------------------------
+# Event-id store integration (cross-process replay)
+# ---------------------------------------------------------------------------
+
+
+def test_constructor_seeds_last_event_id_from_store(tmp_path):
+    from dataquery.sse_event_store import SSEEventIdStore
+
+    store_path = tmp_path / "state.json"
+    store_path.write_text('{"last_event_id": "evt-99"}')
+    store = SSEEventIdStore(store_path)
+
+    client = SSEClient(config=_make_config(), auth_manager=_make_auth_manager(), event_id_store=store)
+    assert client._last_event_id == "evt-99"
+
+
+def test_constructor_handles_empty_store(tmp_path):
+    from dataquery.sse_event_store import SSEEventIdStore
+
+    store = SSEEventIdStore(tmp_path / "missing.json")
+    client = SSEClient(config=_make_config(), auth_manager=_make_auth_manager(), event_id_store=store)
+    assert client._last_event_id is None
+
+
+def test_build_request_params_injects_last_event_id():
+    client = SSEClient(
+        config=_make_config(),
+        auth_manager=_make_auth_manager(),
+        params={"group-id": "G", "file-group-id": "FG"},
+    )
+    client._last_event_id = "evt-7"
+    params = client._build_request_params()
+    assert params == {"group-id": "G", "file-group-id": "FG", "last-event-id": "evt-7"}
+
+
+def test_build_request_params_omits_last_event_id_when_unset():
+    client = SSEClient(
+        config=_make_config(),
+        auth_manager=_make_auth_manager(),
+        params={"group-id": "G"},
+    )
+    params = client._build_request_params()
+    assert params == {"group-id": "G"}
+
+
+def test_build_request_params_returns_none_when_nothing_to_send():
+    client = SSEClient(config=_make_config(), auth_manager=_make_auth_manager())
+    assert client._build_request_params() is None
+
+
+@pytest.mark.asyncio
+async def test_parse_sse_stream_persists_event_id_to_store(tmp_path):
+    from dataquery.sse_event_store import SSEEventIdStore
+
+    store = SSEEventIdStore(tmp_path / "state.json")
+    client = SSEClient(
+        config=_make_config(),
+        auth_manager=_make_auth_manager(),
+        event_id_store=store,
+    )
+    client._running = True
+
+    content = _FakeContent(
+        [
+            b"data: hello\n",
+            b"id: evt-100\n",
+            b"\n",
+        ]
+    )
+    await client._parse_sse_stream(_FakeResponse(content))
+
+    # The save is fire-and-forget — drain any pending tasks.
+    if client._save_tasks:
+        await asyncio.gather(*client._save_tasks, return_exceptions=True)
+
+    assert store.load() == "evt-100"
+    assert client._last_event_id == "evt-100"
+
+
+@pytest.mark.asyncio
+async def test_stop_drains_pending_save_tasks(tmp_path):
+    """After stop(), any in-flight event-id saves must be flushed so the
+    next process invocation sees the latest id."""
+    from dataquery.sse_event_store import SSEEventIdStore
+
+    store = SSEEventIdStore(tmp_path / "state.json")
+    client = SSEClient(
+        config=_make_config(),
+        auth_manager=_make_auth_manager(),
+        event_id_store=store,
+    )
+    client._connect_and_listen = AsyncMock(return_value=None)  # type: ignore[assignment]
+
+    await client.start()
+    # Simulate a save scheduled while running.
+    client._persist_event_id("evt-final")
+    assert client._save_tasks  # at least one pending
+    await client.stop()
+    assert not client._save_tasks
+    assert store.load() == "evt-final"

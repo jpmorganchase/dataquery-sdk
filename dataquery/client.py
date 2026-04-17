@@ -1485,6 +1485,7 @@ class DataQueryClient(
         max_reconnect_delay: float = 60.0,
         file_group_id: Optional[Union[str, List[str]]] = None,
         show_progress: bool = True,
+        enable_event_replay: bool = True,
     ) -> "NotificationDownloadManager":
         """
         Subscribe to the /notification SSE endpoint and download new files.
@@ -1514,6 +1515,13 @@ class DataQueryClient(
                            when a list).
             show_progress: If ``True`` (default), log download progress at
                            DEBUG level when no ``progress_callback`` is set.
+            enable_event_replay: If ``True`` (default), persist the most
+                           recently received SSE event id to disk and replay
+                           from it on subsequent runs by sending it as the
+                           ``last-event-id`` URL parameter. Replay supersedes
+                           the bulk initial-check whenever a stored id is
+                           found. Set ``False`` to keep the legacy
+                           bulk-check-on-every-startup behaviour.
 
         Returns:
             A running :class:`NotificationDownloadManager` instance.
@@ -1545,6 +1553,7 @@ class DataQueryClient(
             max_reconnect_delay=max_reconnect_delay,
             file_group_id=file_group_id,
             show_progress=show_progress,
+            enable_event_replay=enable_event_replay,
         )
         await manager.start()
         return manager

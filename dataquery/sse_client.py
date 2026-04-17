@@ -15,6 +15,7 @@ import aiohttp
 
 from .auth import OAuthManager
 from .models import ClientConfig
+from .sse_event_store import SSEEventIdStore
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,7 @@ class SSEClient:
         max_reconnect_delay: float = 60.0,
         sse_timeout: float = 0,  # 0 = no timeout on the streaming read
         params: Optional[dict] = None,
+        event_id_store: Optional[SSEEventIdStore] = None,
     ):
         """
         Initialise the SSE client.
@@ -80,6 +82,12 @@ class SSEClient:
                     e.g. ``{"group-id": "G", "file-group-id": "FG"}`` tells the
                     server to only emit events for that group/file-group so no
                     client-side filtering is needed.
+            event_id_store: Optional persistent store for the last seen event
+                    id. When provided, the stored id seeds ``_last_event_id``
+                    on construction (so the very first connection includes it
+                    as ``last-event-id`` query param + ``Last-Event-ID`` header
+                    for cross-process replay) and every received event id is
+                    written back to the store.
         """
         self.config = config
         self.auth_manager = auth_manager
@@ -89,11 +97,18 @@ class SSEClient:
         self.max_reconnect_delay = max_reconnect_delay
         self.sse_timeout = sse_timeout
         self.params = dict(params) if params else None
+        self.event_id_store = event_id_store
 
         self._running = False
         self._task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
         self._last_event_id: Optional[str] = None
+        if event_id_store is not None:
+            stored = event_id_store.load()
+            if stored:
+                self._last_event_id = stored
+                logger.info("Seeded SSE last-event-id from store: %s", stored)
+        self._save_tasks: set[asyncio.Task] = set()
 
     # ------------------------------------------------------------------
     # Public interface
@@ -123,6 +138,8 @@ class SSEClient:
                     await self._task
                 except asyncio.CancelledError:
                     pass
+        if self._save_tasks:
+            await asyncio.gather(*self._save_tasks, return_exceptions=True)
         logger.info("SSEClient stopped")
 
     @property
@@ -175,10 +192,21 @@ class SSEClient:
 
         self._running = False
 
+    def _build_request_params(self) -> Optional[dict]:
+        """Combine the static subscription params with the current
+        ``last-event-id`` (when known) so server-side replay can resume from
+        the last persisted event on every (re)connection.
+        """
+        effective: dict = dict(self.params) if self.params else {}
+        if self._last_event_id is not None:
+            effective["last-event-id"] = self._last_event_id
+        return effective or None
+
     async def _connect_and_listen(self) -> None:
         """Open a single SSE connection and read events until disconnected."""
         url = self._build_notification_url()
         headers = await self._get_headers()
+        request_params = self._build_request_params()
 
         # Use a fresh session per connection to avoid header/state bleed.
         timeout = aiohttp.ClientTimeout(total=None, connect=30.0, sock_read=self.sse_timeout or None)
@@ -186,10 +214,10 @@ class SSEClient:
         proxy_kwargs = self.config.get_proxy_kwargs()
 
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url, headers=headers, params=self.params, **proxy_kwargs) as response:
+            async with session.get(url, headers=headers, params=request_params, **proxy_kwargs) as response:
                 if response.status != 200:
                     raise ConnectionError(f"SSE endpoint returned HTTP {response.status} for {url}")
-                logger.info("SSE connection established to %s (params=%s)", url, self.params)
+                logger.info("SSE connection established to %s (params=%s)", url, request_params)
                 await self._parse_sse_stream(response)
 
     async def _parse_sse_stream(self, response: aiohttp.ClientResponse) -> None:
@@ -226,6 +254,7 @@ class SSEClient:
                     )
                     if event.id is not None:
                         self._last_event_id = event.id
+                        self._persist_event_id(event.id)
                     await self._dispatch_event(event)
                 # Reset buffers for the next event.
                 event_type = "message"
@@ -256,6 +285,24 @@ class SSEClient:
                     retry_ms = int(field_value)
                 except ValueError:
                     pass
+
+    def _persist_event_id(self, event_id: str) -> None:
+        """Fire-and-forget save of the latest event id to the persistent store.
+
+        We don't ``await`` the save inside the parse loop — a slow disk would
+        block event dispatch and grow the read buffer. The save task is tracked
+        so it can be awaited on stop().
+        """
+        if self.event_id_store is None:
+            return
+        try:
+            task = asyncio.create_task(self.event_id_store.save(event_id))
+        except RuntimeError:
+            # No running loop (shouldn't happen inside _parse_sse_stream, but
+            # be defensive): fall back to scheduling on the current loop.
+            return
+        self._save_tasks.add(task)
+        task.add_done_callback(self._save_tasks.discard)
 
     async def _dispatch_event(self, event: SSEEvent) -> None:
         if not self.on_event:

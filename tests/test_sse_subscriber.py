@@ -27,8 +27,15 @@ from dataquery.sse_subscriber import NotificationDownloadManager
 class _FakeClient:
     """Minimal stand-in for ``DataQueryClient`` that the subscriber uses."""
 
-    def __init__(self):
-        self.config = SimpleNamespace()
+    def __init__(self, download_dir: str = ""):
+        # Replay-related code reads ``download_dir`` / ``token_storage_*`` on
+        # ``client.config`` to find the persistence directory; provide them so
+        # build_event_id_store() doesn't blow up on missing attrs.
+        self.config = SimpleNamespace(
+            download_dir=download_dir,
+            token_storage_enabled=False,
+            token_storage_dir=None,
+        )
         self.auth_manager = SimpleNamespace()
         self.check_availability_async = AsyncMock()
         self.list_available_files_async = AsyncMock(return_value=[])
@@ -423,3 +430,135 @@ async def test_on_sse_error_records_error_and_invokes_callback(tmp_path):
 
     assert len(seen) == 1
     assert mgr.stats["errors"]
+
+
+# ---------------------------------------------------------------------------
+# Cross-process event replay
+# ---------------------------------------------------------------------------
+
+
+async def _run_start_with_fake_sse(mgr: NotificationDownloadManager):
+    """Stub SSEClient out so start() can run without a real connection.
+
+    Returns the kwargs the SSEClient constructor was called with.
+    """
+    captured: dict = {}
+
+    class _FakeSSE:
+        def __init__(self, *_args, **kwargs):
+            captured.update(kwargs)
+            self._started = False
+
+        async def start(self) -> "_FakeSSE":
+            self._started = True
+            return self
+
+        async def stop(self) -> None:
+            self._started = False
+
+    import dataquery.sse_subscriber as sse_sub
+
+    original = sse_sub.SSEClient
+    sse_sub.SSEClient = _FakeSSE  # type: ignore[assignment]
+    try:
+        await mgr.start()
+    finally:
+        sse_sub.SSEClient = original  # type: ignore[assignment]
+        await mgr.stop()
+    return captured
+
+
+@pytest.mark.asyncio
+async def test_replay_skips_initial_check_when_event_id_persisted(tmp_path):
+    """If a stored last-event-id exists, the bulk initial check must be
+    skipped — replay handles that gap precisely."""
+    # Pre-seed the on-disk store as if a previous run had saved an event id.
+    state_dir = tmp_path / ".sse_state"
+    state_dir.mkdir()
+    from dataquery.sse_event_store import _fingerprint_subscription
+
+    fingerprint = _fingerprint_subscription("G", None)
+    (state_dir / f"sse_{fingerprint}.json").write_text('{"last_event_id": "evt-prev"}')
+
+    client = _FakeClient(download_dir=str(tmp_path))
+    mgr = NotificationDownloadManager(
+        client=client,
+        group_id="G",
+        destination_dir=str(tmp_path),
+        initial_check=True,  # would normally bulk-check; replay should override.
+    )
+
+    captured = await _run_start_with_fake_sse(mgr)
+
+    # The bulk listing API must NOT have been called.
+    client.list_available_files_async.assert_not_called()
+    # The store must have been wired into the SSEClient.
+    assert captured.get("event_id_store") is not None
+
+
+@pytest.mark.asyncio
+async def test_replay_disabled_runs_legacy_initial_check(tmp_path):
+    """``enable_event_replay=False`` must restore the legacy bulk-check path."""
+    # Seed a stored id — it must be ignored when replay is disabled.
+    state_dir = tmp_path / ".sse_state"
+    state_dir.mkdir()
+    from dataquery.sse_event_store import _fingerprint_subscription
+
+    fingerprint = _fingerprint_subscription("G", None)
+    (state_dir / f"sse_{fingerprint}.json").write_text('{"last_event_id": "evt-prev"}')
+
+    client = _FakeClient(download_dir=str(tmp_path))
+    mgr = NotificationDownloadManager(
+        client=client,
+        group_id="G",
+        destination_dir=str(tmp_path),
+        initial_check=True,
+        enable_event_replay=False,
+    )
+
+    captured = await _run_start_with_fake_sse(mgr)
+
+    client.list_available_files_async.assert_called_once()
+    assert captured.get("event_id_store") is None
+
+
+@pytest.mark.asyncio
+async def test_replay_runs_initial_check_on_first_run(tmp_path):
+    """No stored id ⇒ legacy bulk check still runs on the very first start."""
+    client = _FakeClient(download_dir=str(tmp_path))
+    mgr = NotificationDownloadManager(
+        client=client,
+        group_id="G",
+        destination_dir=str(tmp_path),
+        initial_check=True,
+    )
+
+    captured = await _run_start_with_fake_sse(mgr)
+
+    client.list_available_files_async.assert_called_once()
+    # Store still attached so future event ids are persisted.
+    assert captured.get("event_id_store") is not None
+
+
+@pytest.mark.asyncio
+async def test_clear_event_id_removes_store_file(tmp_path):
+    state_dir = tmp_path / ".sse_state"
+    state_dir.mkdir()
+    from dataquery.sse_event_store import _fingerprint_subscription
+
+    fingerprint = _fingerprint_subscription("G", None)
+    state_file = state_dir / f"sse_{fingerprint}.json"
+    state_file.write_text('{"last_event_id": "evt-x"}')
+
+    client = _FakeClient(download_dir=str(tmp_path))
+    mgr = NotificationDownloadManager(
+        client=client,
+        group_id="G",
+        destination_dir=str(tmp_path),
+        initial_check=False,
+    )
+    await _run_start_with_fake_sse(mgr)
+
+    assert state_file.exists()
+    mgr.clear_event_id()
+    assert not state_file.exists()
