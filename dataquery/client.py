@@ -8,7 +8,7 @@ import time
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
 if TYPE_CHECKING:
     from .sse_subscriber import NotificationDownloadManager
@@ -32,7 +32,6 @@ from ._mixins import (
     TimeSeriesMixin,
 )
 from .auth import OAuthManager
-from .auto_download import AutoDownloadManager
 from .connection_pool import ConnectionPoolConfig, ConnectionPoolMonitor
 from .exceptions import (
     AuthenticationError,
@@ -522,19 +521,10 @@ class DataQueryClient(
         except Exception as e:
             raise AuthenticationError(f"Failed to obtain auth headers: {e}")
 
-        # Apply proxy per-request if configured
-        if self.config.proxy_enabled and self.config.proxy_url:
-            kwargs.setdefault("proxy", self.config.proxy_url)
-            if self.config.has_proxy_credentials:
-                from aiohttp import BasicAuth
-
-                kwargs.setdefault(
-                    "proxy_auth",
-                    BasicAuth(
-                        login=self.config.proxy_username or "",
-                        password=self.config.proxy_password or "",
-                    ),
-                )
+        # Apply proxy per-request if configured — shared helper keeps this in
+        # sync with auth.py and sse_client.py.
+        for key, value in self.config.get_proxy_kwargs().items():
+            kwargs.setdefault(key, value)
 
         # Ensure session is connected
         await self._ensure_connected()
@@ -814,15 +804,14 @@ class DataQueryClient(
         if options is None:
             options = DownloadOptions()
 
-        # Validate num_parts if provided
-        if num_parts is not None and (num_parts is None or num_parts <= 0):
+        if not num_parts or num_parts <= 0:
             num_parts = 1
 
         params = {"file-group-id": file_group_id}
         if file_datetime:
             params["file-datetime"] = file_datetime
 
-        return params, options, num_parts if num_parts is not None else 5
+        return params, options, num_parts
 
     def _resolve_destination(
         self,
@@ -887,7 +876,8 @@ class DataQueryClient(
             file_group_id: File ID to download
             file_datetime: Optional datetime of the file (YYYYMMDD, YYYYMMDDTHHMM, or YYYYMMDDTHHMMSS)
             options: Download options
-            num_parts: Number of parallel parts to split the file into (default 5)
+            num_parts: Number of parallel parts to split the file into (default 1,
+                single-stream). Set >1 to enable parallel HTTP range requests.
             progress_callback: Optional progress callback function
 
         Returns:
@@ -901,8 +891,8 @@ class DataQueryClient(
         temp_destination: Optional[Path] = None
         total_bytes: int = 0
 
-        # Check if range downloads are disabled - use single stream instead
-        if not self.config.enable_range_downloads:
+        # Single part or range downloads disabled → skip the probe/preallocate overhead.
+        if num_parts <= 1 or not self.config.enable_range_downloads:
             return await self._download_file_single_stream(
                 file_group_id=file_group_id,
                 file_datetime=file_datetime,
@@ -932,7 +922,7 @@ class DataQueryClient(
                         progress_callback=progress_callback,
                     )
 
-                    # If file is small (<10MB), prefer a single-stream download
+                # Small files → single stream (per-part overhead isn't worth it).
                 ten_mb = 10 * 1024 * 1024
                 if total_bytes and total_bytes < ten_mb:
                     return await self._download_file_single_stream(
@@ -941,10 +931,6 @@ class DataQueryClient(
                         options=options,
                         progress_callback=progress_callback,
                     )
-
-                # Scale num_parts with file size for large files
-                if total_bytes > 500 * 1024 * 1024:  # >500MB
-                    num_parts = max(num_parts, min(total_bytes // (100 * 1024 * 1024), 20))  # 1 part per 100MB, max 20
 
                 # Determine filename and destination
                 filename = get_filename_from_response(probe_resp, file_group_id, file_datetime)
@@ -977,13 +963,7 @@ class DataQueryClient(
                 start_time=datetime.now(),
             )
 
-            # Scale chunk size with file size for parallel parts
-            part_size = total_bytes // num_parts
             chunk_size = options.chunk_size or 1048576  # 1MB default
-            if part_size > 100 * 1024 * 1024:  # Part >100MB: use 4MB chunks
-                chunk_size = max(chunk_size, 4 * 1024 * 1024)
-            elif part_size > 50 * 1024 * 1024:  # Part >50MB: use 2MB chunks
-                chunk_size = max(chunk_size, 2 * 1024 * 1024)
 
             # Progress callback optimization: track last callback state
             last_callback_bytes = 0
@@ -1067,7 +1047,7 @@ class DataQueryClient(
                                         if progress_callback:
                                             progress_callback(progress)
                                         elif options.show_progress:
-                                            self.logger.info(
+                                            self.logger.debug(
                                                 "Download progress",
                                                 file=file_group_id,
                                                 percentage=f"{progress.percentage:.1f}%",
@@ -1230,7 +1210,7 @@ class DataQueryClient(
                             if progress_callback:
                                 progress_callback(progress)
                             elif options.show_progress:
-                                self.logger.info(
+                                self.logger.debug(
                                     "Download progress",
                                     file=file_group_id,
                                     percentage=f"{progress.percentage:.1f}%",
@@ -1489,112 +1469,7 @@ class DataQueryClient(
             # For any exceptions, return without dot for security
             return "bin"
 
-    # Auto-Download Functionality
-    async def start_auto_download_async(
-        self,
-        group_id: str,
-        destination_dir: str = "./downloads",
-        interval_minutes: int = 30,
-        file_filter: Optional[Callable] = None,
-        progress_callback: Optional[Callable] = None,
-        error_callback: Optional[Callable] = None,
-        max_retries: int = 3,
-        check_current_date_only: bool = True,
-        max_concurrent_downloads: Optional[int] = None,
-    ) -> "AutoDownloadManager":
-        """
-        Start automatic file download monitoring and downloading.
-
-        This function continuously monitors a data group for new files and automatically
-        downloads them if they don't already exist in the destination folder.
-
-        Args:
-            group_id: ID of the data group to monitor
-            destination_dir: Directory to download files to
-            interval_minutes: Check interval in minutes (default: 30)
-            file_filter: Optional function to filter files (file_info) -> bool
-            progress_callback: Optional callback for download progress
-            error_callback: Optional callback for errors
-            max_retries: Maximum retry attempts for failed downloads
-            check_current_date_only: If True, only check files for current date
-            max_concurrent_downloads: Maximum concurrent downloads (uses SDK default if None)
-
-        Returns:
-            AutoDownloadManager instance for controlling the auto-download process
-
-        Example:
-            # Basic auto-download
-            manager = await dq.start_auto_download_async("economic-data")
-
-            # Advanced auto-download with filtering
-            def csv_filter(file_info):
-                return file_info.filename.endswith('.csv') if file_info.filename else True
-
-            manager = await dq.start_auto_download_async(
-                group_id="economic-data",
-                destination_dir="./data",
-                interval_minutes=15,
-                file_filter=csv_filter,
-                progress_callback=lambda p: print(f"Progress: {p.bytes_downloaded}/{p.total_bytes}")
-            )
-
-            # Stop auto-download later
-            await manager.stop()
-        """
-
-        manager = AutoDownloadManager(
-            client=self,
-            group_id=group_id,
-            destination_dir=destination_dir,
-            interval_minutes=interval_minutes,
-            file_filter=file_filter,
-            progress_callback=progress_callback,
-            error_callback=error_callback,
-            max_retries=max_retries,
-            check_current_date_only=check_current_date_only,
-            max_concurrent_downloads=max_concurrent_downloads,
-        )
-
-        await manager.start()
-        return manager
-
-    def start_auto_download(
-        self,
-        group_id: str,
-        destination_dir: str = "./downloads",
-        interval_minutes: int = 30,
-        file_filter: Optional[Callable] = None,
-        progress_callback: Optional[Callable] = None,
-        error_callback: Optional[Callable] = None,
-        max_retries: int = 3,
-        check_current_date_only: bool = True,
-        max_concurrent_downloads: Optional[int] = None,
-    ) -> "AutoDownloadManager":
-        """
-        Synchronous wrapper for start_auto_download_async.
-        Note: Will raise an error if called from within an existing event loop.
-
-        Example:
-            # Start auto-download synchronously
-            manager = dq.start_auto_download("economic-data")
-
-            # Stop it later (in async context)
-            import asyncio
-            asyncio.run(manager.stop())
-        """
-        return asyncio.run(
-            self.start_auto_download_async(
-                group_id,
-                destination_dir,
-                interval_minutes,
-                file_filter,
-                progress_callback,
-                error_callback,
-                max_retries,
-                check_current_date_only,
-                max_concurrent_downloads,
-            )
-        )
+    # Auto-download is SSE-only — see watch_and_download_async below.
 
     async def watch_and_download_async(
         self,
@@ -1608,18 +1483,19 @@ class DataQueryClient(
         initial_check: bool = True,
         reconnect_delay: float = 5.0,
         max_reconnect_delay: float = 60.0,
+        file_group_id: Optional[Union[str, List[str]]] = None,
+        show_progress: bool = True,
     ) -> "NotificationDownloadManager":
         """
         Subscribe to the /notification SSE endpoint and download new files.
 
         Starts a :class:`NotificationDownloadManager` that maintains a persistent
-        SSE connection to the DataQuery notification endpoint.  Each time a
-        notification is received it fetches the available-files list for
-        *group_id* and downloads any files not already present in
-        *destination_dir*.
+        SSE connection to the DataQuery notification endpoint. ``group_id`` (and
+        optionally ``file_group_id``) are sent as query parameters so the server
+        only emits events for the requested subscription.
 
         Args:
-            group_id: ID of the data group to watch.
+            group_id: Data group to subscribe to (sent as ``group-id``).
             destination_dir: Directory to download files to.
             file_filter: Optional predicate ``(file_info_dict) -> bool`` to
                          select which available files to download.
@@ -1632,20 +1508,26 @@ class DataQueryClient(
                            check immediately on start, before any SSE events.
             reconnect_delay: Initial reconnection delay in seconds.
             max_reconnect_delay: Maximum reconnection delay in seconds.
+            file_group_id: Optional restriction to one or more file-group-ids.
+                           Accepts a single id or a list. Sent to the server as
+                           the ``file-group-id`` query parameter (comma-separated
+                           when a list).
+            show_progress: If ``True`` (default), log download progress at
+                           DEBUG level when no ``progress_callback`` is set.
 
         Returns:
             A running :class:`NotificationDownloadManager` instance.
 
         Example::
 
+            # Subscribe to every file in the group.
+            manager = await client.watch_and_download_async(group_id="economic-data")
+
+            # Subscribe to specific files only — the server filters.
             manager = await client.watch_and_download_async(
                 group_id="economic-data",
-                destination_dir="./data",
+                file_group_id=["JPM_CPI", "JPM_GDP"],
             )
-            try:
-                await asyncio.sleep(3600)  # keep running for 1 hour
-            finally:
-                await manager.stop()
         """
         from .sse_subscriber import NotificationDownloadManager
 
@@ -1661,6 +1543,8 @@ class DataQueryClient(
             initial_check=initial_check,
             reconnect_delay=reconnect_delay,
             max_reconnect_delay=max_reconnect_delay,
+            file_group_id=file_group_id,
+            show_progress=show_progress,
         )
         await manager.start()
         return manager
@@ -1677,6 +1561,8 @@ class DataQueryClient(
         initial_check: bool = True,
         reconnect_delay: float = 5.0,
         max_reconnect_delay: float = 60.0,
+        file_group_id: Optional[Union[str, List[str]]] = None,
+        show_progress: bool = True,
     ) -> "NotificationDownloadManager":
         """Synchronous wrapper for :meth:`watch_and_download_async`."""
         return asyncio.run(
@@ -1691,6 +1577,8 @@ class DataQueryClient(
                 initial_check,
                 reconnect_delay,
                 max_reconnect_delay,
+                file_group_id=file_group_id,
+                show_progress=show_progress,
             )
         )
 

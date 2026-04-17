@@ -42,17 +42,10 @@ logger = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 _SMALL_FILE_THRESHOLD = 10 * 1024 * 1024  # 10 MB — below this, single-stream wins
-_LARGE_FILE_THRESHOLD = 500 * 1024 * 1024  # 500 MB — above this, scale up parts
-_MAX_AUTO_PARTS = 20
 _PROBE_HEADERS = {"Range": "bytes=0-0"}
 _DEFAULT_CHUNK_SIZE = 1024 * 1024  # 1 MB
 _CALLBACK_BYTE_THRESHOLD = 1024 * 1024  # invoke callback every 1 MB at most
 _CALLBACK_TIME_THRESHOLD = 0.5  # ...or every 500 ms, whichever first
-
-
-# ---------------------------------------------------------------------------
-# Hoisted blocking helpers (run inside the executor)
-# ---------------------------------------------------------------------------
 
 
 def _seek_write(fh: IO[bytes], pos: int, data: bytes) -> None:
@@ -62,11 +55,7 @@ def _seek_write(fh: IO[bytes], pos: int, data: bytes) -> None:
 
 
 def _preallocate_file(path: Path, size: int) -> None:
-    """Sync truncate to ``size`` bytes; runs in the default thread executor.
-
-    Truncating a multi-GB file synchronously stalls the event loop for tens
-    to hundreds of milliseconds on most filesystems, so it must be off-loop.
-    """
+    """Sync truncate to ``size`` bytes; runs in the default thread executor."""
     with open(path, "wb", buffering=1024 * 1024) as f:
         f.truncate(size)
 
@@ -97,39 +86,26 @@ async def download_file_parallel_flattened(
     """
     if file_datetime:
         validate_file_datetime(file_datetime)
-
-    if num_parts is None or num_parts <= 0:
+    if not num_parts or num_parts <= 0:
         num_parts = 1
-
-    # Fast path: range downloads disabled → single-stream.
-    if not client.config.enable_range_downloads:
-        return await client.download_file_async(
-            file_group_id=file_group_id,
-            file_datetime=file_datetime,
-            options=DownloadOptions(
-                destination_path=destination_path,
-                overwrite_existing=client.config.overwrite_existing,
-            ),
-            progress_callback=progress_callback,
-        )
-
-    params: dict = {"file-group-id": file_group_id}
-    if file_datetime:
-        params["file-datetime"] = file_datetime
 
     download_options = DownloadOptions(
         destination_path=destination_path,
         overwrite_existing=client.config.overwrite_existing,
     )
 
-    if download_options.destination_path:
-        resolved_path = Path(download_options.destination_path)
-        destination_dir = resolved_path.parent if resolved_path.suffix else resolved_path
-    else:
-        destination_dir = Path(client.config.download_dir)
+    # Single part or range downloads disabled → skip the probe/preallocate overhead.
+    if num_parts <= 1 or not client.config.enable_range_downloads:
+        return await client.download_file_async(
+            file_group_id=file_group_id,
+            file_datetime=file_datetime,
+            options=download_options,
+            progress_callback=progress_callback,
+        )
 
-    if download_options.create_directories:
-        destination_dir.mkdir(parents=True, exist_ok=True)
+    params: dict = {"file-group-id": file_group_id}
+    if file_datetime:
+        params["file-datetime"] = file_datetime
 
     start_time = time.time()
     bytes_downloaded = 0
@@ -139,14 +115,13 @@ async def download_file_parallel_flattened(
     loop = asyncio.get_running_loop()
 
     try:
-        # ---- Step 1: probe file size (1-byte range) and pick filename. ----
         url = client._build_files_api_url("group/file/download")
 
+        # Step 1: probe file size with a 1-byte range request.
         async with global_semaphore:
             async with await client._enter_request_cm("GET", url, params=params, headers=_PROBE_HEADERS) as probe_resp:
                 await client._handle_response(probe_resp)
 
-                # aiohttp uses a CI multi-dict; one .get() is enough.
                 content_range = probe_resp.headers.get("Content-Range")
                 if content_range and "/" in content_range:
                     try:
@@ -171,24 +146,19 @@ async def download_file_parallel_flattened(
                         progress_callback=progress_callback,
                     )
 
-                # Large files → scale parts up to _MAX_AUTO_PARTS.
-                if total_bytes > _LARGE_FILE_THRESHOLD:
-                    num_parts = max(num_parts, min(total_bytes // (100 * 1024 * 1024), _MAX_AUTO_PARTS))
-
                 filename = get_filename_from_response(probe_resp, file_group_id, file_datetime)
-                destination = destination_dir / filename
 
-        # ---- File-system check happens outside the semaphore. ----
-        # destination.exists() is purely local I/O and shouldn't burn an API
-        # rate-limit slot.
+        # Step 2: resolve destination and check for existing file.
+        destination = client._resolve_destination(download_options, file_group_id, filename)
+
         if destination.exists() and not download_options.overwrite_existing:
             raise FileExistsError(f"File already exists: {destination}")
 
-        # ---- Step 2: preallocate the temp file off the event loop. ----
+        # Step 3: preallocate temp file off the event loop.
         temp_destination = destination.with_suffix(destination.suffix + ".part")
         await loop.run_in_executor(None, _preallocate_file, temp_destination, total_bytes)
 
-        # ---- Step 3: compute byte ranges. ----
+        # Step 4: compute byte ranges.
         part_size = total_bytes // num_parts
         ranges: list[tuple[int, int]] = []
         cursor = 0
@@ -199,12 +169,7 @@ async def download_file_parallel_flattened(
             ranges.append((cursor, end))
             cursor = end + 1
 
-        # Chunk size scales with part size for very large parts.
         chunk_size = download_options.chunk_size or _DEFAULT_CHUNK_SIZE
-        if part_size > 100 * 1024 * 1024:
-            chunk_size = max(chunk_size, 4 * 1024 * 1024)
-        elif part_size > 50 * 1024 * 1024:
-            chunk_size = max(chunk_size, 2 * 1024 * 1024)
 
         progress = DownloadProgress(
             file_group_id=file_group_id,
@@ -212,24 +177,16 @@ async def download_file_parallel_flattened(
             start_time=datetime.now(),
         )
 
-        # Mutable state shared across part coroutines. asyncio is
-        # single-threaded and the bookkeeping below contains no `await`, so
-        # no Lock is needed — the previous explicit lock added contention
-        # without providing protection.
         last_callback_bytes = 0
         last_callback_time = time.time()
-
         max_part_retries = download_options.max_retries
         part_retry_delay = download_options.retry_delay
-
-        # Disable total timeout for large file parts; keep per-socket-read timeout.
         range_timeout = aiohttp.ClientTimeout(total=None, sock_read=client.config.timeout)
 
         throttler: Optional[BandwidthThrottler] = None
         if download_options.max_bandwidth_mbps:
             throttler = BandwidthThrottler(max_bytes_per_second=int(download_options.max_bandwidth_mbps * 125000))
 
-        # Hoist hot-loop lookups into locals.
         show_progress = download_options.show_progress
         run_in_executor = loop.run_in_executor
         update_progress = progress.update_progress
@@ -237,12 +194,11 @@ async def download_file_parallel_flattened(
         async def download_range(start_byte: int, end_byte: int) -> None:
             nonlocal bytes_downloaded, last_callback_bytes, last_callback_time
             range_headers = {"Range": f"bytes={start_byte}-{end_byte}"}
-            part_bytes_written = 0  # rollback accounting across retries
+            part_bytes_written = 0
 
             for attempt in range(max_part_retries + 1):
                 try:
                     if attempt > 0 and part_bytes_written > 0:
-                        # Roll back the counter for what this part previously wrote.
                         bytes_downloaded -= part_bytes_written
                         part_bytes_written = 0
                         await asyncio.sleep(part_retry_delay * (2 ** (attempt - 1)))
@@ -270,26 +226,19 @@ async def download_file_parallel_flattened(
                                     part_bytes_written += chunk_len
                                     bytes_downloaded += chunk_len
 
-                                    # Callback-gating: check the cheap byte
-                                    # threshold first to avoid time.time() on
-                                    # every chunk.
-                                    bytes_diff = bytes_downloaded - last_callback_bytes
-                                    if bytes_diff >= _CALLBACK_BYTE_THRESHOLD or bytes_downloaded == total_bytes:
-                                        should_callback = True
-                                    else:
-                                        should_callback = time.time() - last_callback_time >= _CALLBACK_TIME_THRESHOLD
-
-                                    if should_callback:
+                                    # Byte threshold checked first to avoid time.time() syscall on every chunk.
+                                    if (
+                                        bytes_downloaded - last_callback_bytes >= _CALLBACK_BYTE_THRESHOLD
+                                        or bytes_downloaded == total_bytes
+                                        or time.time() - last_callback_time >= _CALLBACK_TIME_THRESHOLD
+                                    ):
                                         last_callback_bytes = bytes_downloaded
                                         last_callback_time = time.time()
-                                        # Update progress only at callback
-                                        # boundaries — the model fields aren't
-                                        # observed between callbacks.
                                         update_progress(bytes_downloaded)
                                         if progress_callback:
                                             progress_callback(progress)
                                         elif show_progress:
-                                            logger.info(
+                                            logger.debug(
                                                 "Download progress (flattened)",
                                                 file=file_group_id,
                                                 percentage=f"{progress.percentage:.1f}%",
@@ -297,68 +246,55 @@ async def download_file_parallel_flattened(
                                                     bytes_downloaded, precision=2, strict=True
                                                 ),
                                             )
-                    return  # part complete
+                    return
                 except Exception:
                     if attempt == max_part_retries:
                         raise
 
-        # ---- Step 4: launch all ranges concurrently. ----
+        # Step 5: launch all ranges concurrently.
         await asyncio.gather(*(download_range(s, e) for s, e in ranges))
-
-        # Make sure the final state is reflected even if no callback fired
-        # at the exact end (e.g. last chunk crossed neither threshold).
         update_progress(bytes_downloaded)
-
         temp_destination.replace(destination)
-        download_time = time.time() - start_time
-        return DownloadResult(
-            file_group_id=file_group_id,
-            group_id="",
-            local_path=destination,
-            file_size=total_bytes,
-            download_time=download_time,
-            bytes_downloaded=bytes_downloaded,
-            status=DownloadStatus.COMPLETED,
-            error_message=None,
+
+        return client._create_download_result(
+            file_group_id,
+            destination,
+            total_bytes,
+            bytes_downloaded,
+            start_time,
+            DownloadStatus.COMPLETED,
         )
 
     except FileExistsError as e:
-        return DownloadResult(
-            file_group_id=file_group_id,
-            group_id="",
-            local_path=destination,
-            file_size=0,
-            download_time=time.time() - start_time,
-            bytes_downloaded=0,
-            status=DownloadStatus.ALREADY_EXISTS,
-            error_message=f"FileExistsError: {e}",
+        return client._create_download_result(
+            file_group_id,
+            destination,
+            0,
+            0,
+            start_time,
+            DownloadStatus.ALREADY_EXISTS,
+            e,
         )
     except Exception as e:
-        # On error, salvage the file if all bytes arrived; otherwise clean up.
+        # Salvage: if all bytes arrived despite the error, finalize the file.
         try:
             if temp_destination and temp_destination.exists():
                 if total_bytes and bytes_downloaded >= total_bytes:
                     if destination is None:
                         destination = temp_destination.with_suffix("")
                     temp_destination.replace(destination)
-                    return DownloadResult(
-                        file_group_id=file_group_id,
-                        group_id="",
-                        local_path=destination,
-                        file_size=total_bytes,
-                        download_time=time.time() - start_time,
-                        bytes_downloaded=bytes_downloaded,
-                        status=DownloadStatus.COMPLETED,
-                        error_message=None,
+                    return client._create_download_result(
+                        file_group_id,
+                        destination,
+                        total_bytes,
+                        bytes_downloaded,
+                        start_time,
+                        DownloadStatus.COMPLETED,
                     )
                 else:
                     temp_destination.unlink(missing_ok=True)
         except Exception:
             pass
 
-        logger.error(
-            "Flattened parallel download failed for file",
-            file_group_id=file_group_id,
-            error=str(e),
-        )
+        logger.error("Flattened parallel download failed", file_group_id=file_group_id, error=str(e))
         return None

@@ -64,6 +64,19 @@ class _FakeResponse:
 # ---------------------------------------------------------------------------
 
 
+def test_params_default_none_when_not_provided():
+    client = SSEClient(config=_make_config(), auth_manager=_make_auth_manager())
+    assert client.params is None
+
+
+def test_params_copied_defensively_from_constructor():
+    src = {"group-id": "G", "file-group-id": "FG"}
+    client = SSEClient(config=_make_config(), auth_manager=_make_auth_manager(), params=src)
+    # Mutating the original must not affect the client.
+    src["group-id"] = "OTHER"
+    assert client.params == {"group-id": "G", "file-group-id": "FG"}
+
+
 def test_build_notification_url_strips_trailing_slash():
     cfg = _make_config()
     client = SSEClient(config=cfg, auth_manager=_make_auth_manager())

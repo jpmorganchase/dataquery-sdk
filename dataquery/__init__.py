@@ -21,7 +21,6 @@ __license__ = "MIT"
 __url__ = "https://github.com/jpmorganchase/dataquery-sdk"
 
 # Core
-from .auto_download import AutoDownloadManager
 from .client import DataQueryClient
 from .config import EnvConfig
 from .dataquery import DataQuery
@@ -93,8 +92,7 @@ __all__ = [
     "WorkflowError",
     # Configuration
     "EnvConfig",
-    # Auto-download / SSE
-    "AutoDownloadManager",
+    # SSE notification-driven download
     "NotificationDownloadManager",
     "SSEClient",
     "SSEEvent",

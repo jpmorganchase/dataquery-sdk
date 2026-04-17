@@ -330,6 +330,77 @@ def test_repr_and_str(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# SSE subscription params (server-side filter)
+# ---------------------------------------------------------------------------
+
+
+async def _sse_params_from_start(mgr: NotificationDownloadManager) -> dict:
+    """Call mgr.start() with SSEClient stubbed; return the params it received."""
+    captured: dict = {}
+
+    class _FakeSSE:
+        def __init__(self, *_args, **kwargs):
+            captured.update(kwargs.get("params") or {})
+            self._started = False
+
+        async def start(self) -> "_FakeSSE":
+            self._started = True
+            return self
+
+        async def stop(self) -> None:
+            self._started = False
+
+    import dataquery.sse_subscriber as sse_sub
+
+    original = sse_sub.SSEClient
+    sse_sub.SSEClient = _FakeSSE  # type: ignore[assignment]
+    try:
+        await mgr.start()
+    finally:
+        sse_sub.SSEClient = original  # type: ignore[assignment]
+        await mgr.stop()
+    return captured
+
+
+@pytest.mark.asyncio
+async def test_sse_params_group_only(tmp_path):
+    mgr = NotificationDownloadManager(
+        client=_FakeClient(),
+        group_id="G",
+        destination_dir=str(tmp_path),
+        initial_check=False,
+    )
+    params = await _sse_params_from_start(mgr)
+    assert params == {"group-id": "G"}
+
+
+@pytest.mark.asyncio
+async def test_sse_params_with_single_file_group_id(tmp_path):
+    mgr = NotificationDownloadManager(
+        client=_FakeClient(),
+        group_id="G",
+        destination_dir=str(tmp_path),
+        initial_check=False,
+        file_group_id="FG_ABC",
+    )
+    params = await _sse_params_from_start(mgr)
+    assert params == {"group-id": "G", "file-group-id": "FG_ABC"}
+
+
+@pytest.mark.asyncio
+async def test_sse_params_with_multiple_file_group_ids(tmp_path):
+    mgr = NotificationDownloadManager(
+        client=_FakeClient(),
+        group_id="G",
+        destination_dir=str(tmp_path),
+        initial_check=False,
+        file_group_id=["FG1", "FG2", "FG3"],
+    )
+    params = await _sse_params_from_start(mgr)
+    assert params == {"group-id": "G", "file-group-id": "FG1,FG2,FG3"}
+
+
+# ---------------------------------------------------------------------------
 # SSE error dispatch
 # ---------------------------------------------------------------------------
 
