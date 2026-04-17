@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Download progress logging demoted from INFO to DEBUG. Per-chunk progress
   lines no longer flood the default log output; enable DEBUG to see them.
 - `show_progress` parameter threaded through the full watch/SSE chain:
-  `DataQuery.watch_and_download_async` → `DataQueryClient.watch_and_download_async`
+  `DataQuery.auto_download_async` → `DataQueryClient.auto_download_async`
   → `NotificationDownloadManager`. Pass `show_progress=False` to suppress all
   progress logging.
 - `num_parts=1` (the default) now skips the range-download probe and goes
@@ -39,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `DataQueryClient.start_auto_download`, `DataQuery.start_auto_download_async`,
     `DataQuery.start_auto_download`.
   - Migration: replace `dq.start_auto_download_async(group_id, ...)` with
-    `dq.watch_and_download_async(group_id, ...)`. The SSE manager exposes the
+    `dq.auto_download_async(group_id, ...)`. The SSE manager exposes the
     same `start()`, `stop()`, `get_stats()` surface.
 
 ### Changed
