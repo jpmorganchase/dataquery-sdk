@@ -2247,64 +2247,6 @@ class DataQuery:
             )
         )
 
-    async def watch_and_download_async(
-        self,
-        group_id: str,
-        destination_dir: str = "./downloads",
-        file_filter: Optional[Callable] = None,
-        progress_callback: Optional[Callable] = None,
-        error_callback: Optional[Callable] = None,
-        max_retries: int = 3,
-        max_concurrent_downloads: int = 5,
-        initial_check: bool = True,
-        reconnect_delay: float = 5.0,
-        max_reconnect_delay: float = 60.0,
-    ):
-        """Proxy to client's watch_and_download_async."""
-        await self.connect_async()
-        client = self._ensure_client()
-        return await client.watch_and_download_async(
-            group_id=group_id,
-            destination_dir=destination_dir,
-            file_filter=file_filter,
-            progress_callback=progress_callback,
-            error_callback=error_callback,
-            max_retries=max_retries,
-            max_concurrent_downloads=max_concurrent_downloads,
-            initial_check=initial_check,
-            reconnect_delay=reconnect_delay,
-            max_reconnect_delay=max_reconnect_delay,
-        )
-
-    def watch_and_download(
-        self,
-        group_id: str,
-        destination_dir: str = "./downloads",
-        file_filter: Optional[Callable] = None,
-        progress_callback: Optional[Callable] = None,
-        error_callback: Optional[Callable] = None,
-        max_retries: int = 3,
-        max_concurrent_downloads: int = 5,
-        initial_check: bool = True,
-        reconnect_delay: float = 5.0,
-        max_reconnect_delay: float = 60.0,
-    ):
-        """Synchronous proxy to client's watch_and_download_async."""
-        return self._run_sync(
-            self.watch_and_download_async(
-                group_id,
-                destination_dir,
-                file_filter,
-                progress_callback,
-                error_callback,
-                max_retries,
-                max_concurrent_downloads,
-                initial_check,
-                reconnect_delay,
-                max_reconnect_delay,
-            )
-        )
-
     # DataFrame conversion proxies
     def to_dataframe(
         self,
