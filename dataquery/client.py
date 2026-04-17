@@ -1558,39 +1558,6 @@ class DataQueryClient(
         await manager.start()
         return manager
 
-    def auto_download(
-        self,
-        group_id: str,
-        destination_dir: str = "./downloads",
-        file_filter: Optional[Callable] = None,
-        progress_callback: Optional[Callable] = None,
-        error_callback: Optional[Callable] = None,
-        max_retries: int = 3,
-        max_concurrent_downloads: int = 5,
-        initial_check: bool = True,
-        reconnect_delay: float = 5.0,
-        max_reconnect_delay: float = 60.0,
-        file_group_id: Optional[Union[str, List[str]]] = None,
-        show_progress: bool = True,
-    ) -> "NotificationDownloadManager":
-        """Synchronous wrapper for :meth:`auto_download_async`."""
-        return asyncio.run(
-            self.auto_download_async(
-                group_id,
-                destination_dir,
-                file_filter,
-                progress_callback,
-                error_callback,
-                max_retries,
-                max_concurrent_downloads,
-                initial_check,
-                reconnect_delay,
-                max_reconnect_delay,
-                file_group_id=file_group_id,
-                show_progress=show_progress,
-            )
-        )
-
     # DataFrame conversion methods (to_dataframe, groups_to_dataframe, etc.)
     # live in DataFrameMixin — see _dataframe_mixin.py.
 
