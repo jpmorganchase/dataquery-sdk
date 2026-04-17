@@ -8,12 +8,12 @@ Python SDK for the J.P. Morgan DataQuery API — authenticated file downloads, t
 
 ## Features
 
-- **Parallel file downloads** — HTTP range requests split every file into configurable chunks, with bounded concurrency across files
+- **Parallel file downloads** — when `num_parts > 1`, HTTP range requests split the file into parallel chunks with bounded concurrency; `num_parts=1` (default) uses a simple streaming GET
 - **Historical and date-range downloads** — fetch every file in a group (optionally filtered to one or many `file-group-id`s) between two dates
 - **Notification-driven downloads (SSE)** — subscribe to the `/notification` stream and auto-download files as soon as they are published
 - **Time-series queries** — by expression, by instrument, or by group with attribute / filter projections
 - **OAuth 2.0 with token caching and refresh** — or supply a bearer token directly
-- **Token-bucket rate limiter** — 1500 rpm / 25 tps defaults, configurable
+- **Token-bucket rate limiter** — 300 rpm / 5 tps defaults (configurable up to API limits)
 - **Retry + circuit breaker** — exponential backoff, configurable failure threshold
 - **Sync and async APIs** — every operation has `_async` and sync variants
 - **Optional pandas integration** — `to_dataframe(...)` on any response
@@ -158,37 +158,12 @@ async with DataQuery() as dq:
     )
 ```
 
-## Notification-driven downloads (SSE)
+## Auto-download (coming soon)
 
-Subscribe to the DataQuery `/notification` SSE stream. When the server publishes a
-new file, the manager calls availability for exactly that file and downloads it.
-An initial bulk availability check covers anything published before the subscription
-started.
-
-```python
-import asyncio
-from dataquery import DataQuery
-
-async def main():
-    async with DataQuery() as dq:
-        manager = await dq.watch_and_download_async(
-            group_id="JPMAQS_GENERIC_RETURNS",
-            destination_dir="./downloads",
-            max_concurrent_downloads=5,
-            initial_check=True,
-        )
-        try:
-            while True:
-                await asyncio.sleep(60)
-        except KeyboardInterrupt:
-            await manager.stop()
-            print(manager.stats)
-
-asyncio.run(main())
-```
-
-A polling-based equivalent (without SSE) is available via
-`start_auto_download_async(..., interval_minutes=30)`.
+Real-time notification-driven downloads via the DataQuery SSE stream are under
+active development and will be available in a future release. Once released,
+`auto_download_async` will subscribe to the `/notification` endpoint and
+download files automatically as they are published — no polling required.
 
 ## CLI
 
@@ -270,8 +245,8 @@ All environment variables use the `DATAQUERY_` prefix.
 | `DATAQUERY_MAX_RETRIES` | `3` |
 | `DATAQUERY_RETRY_DELAY` | `1.0` |
 | `DATAQUERY_CIRCUIT_BREAKER_THRESHOLD` | `5` |
-| `DATAQUERY_REQUESTS_PER_MINUTE` | `1500` |
-| `DATAQUERY_BURST_CAPACITY` | `25` |
+| `DATAQUERY_REQUESTS_PER_MINUTE` | `300` |
+| `DATAQUERY_BURST_CAPACITY` | `5` |
 | `DATAQUERY_POOL_CONNECTIONS` | `10` |
 | `DATAQUERY_POOL_MAXSIZE` | `20` |
 
@@ -351,6 +326,11 @@ start_date="TODAY-1Y"
 `run_group_download_async` uses a flattened concurrency model — total concurrent
 HTTP requests = `max_concurrent × num_parts`.
 
+With `num_parts=1` (the default) each file downloads as a single streaming GET.
+Set `num_parts > 1` to enable parallel HTTP range requests per file — the SDK
+probes the file size first, then downloads byte ranges concurrently. Files under
+10 MB always use a single stream regardless of `num_parts`.
+
 ```python
 await dq.run_group_download_async(
     group_id="JPMAQS_GENERIC_RETURNS",
@@ -358,7 +338,7 @@ await dq.run_group_download_async(
     end_date="20250131",
     destination_dir="./data",
     max_concurrent=5,   # parallel files
-    num_parts=4,        # parallel chunks per file
+    num_parts=4,        # parallel chunks per file (1 = single stream)
     max_retries=3,
 )
 ```
@@ -382,8 +362,7 @@ exceeded.
 | Downloads | `download_file_async(file_group_id, file_datetime, ...)` | single file |
 | | `run_group_download_async(group_id, start_date, end_date, file_group_id=None, ...)` | date range, single or list of ids |
 | | `download_historical_async(...)` | chunked historical backfill |
-| | `watch_and_download_async(group_id, ...)` | SSE notifications |
-| | `start_auto_download_async(group_id, interval_minutes, ...)` | polling |
+| | `auto_download_async(group_id, ...)` | SSE notifications (the only watch path) |
 | Time series | `get_expressions_time_series_async(expressions, start_date, end_date)` | |
 | | `get_instrument_time_series_async(instruments, attributes, start_date, end_date)` | |
 | | `get_group_time_series_async(group_id, attributes, filter, start_date, end_date)` | |
@@ -405,7 +384,7 @@ The `examples/` directory is organised by feature:
 - `examples/instruments/` — instrument discovery + time series
 - `examples/groups/` and `examples/groups_advanced/` — group discovery and time series
 - `examples/grid/` — grid data
-- `examples/system/` — SSE, auto-download, diagnostics
+- `examples/system/` — SSE notification subscriber, diagnostics
 
 Run any example directly:
 
