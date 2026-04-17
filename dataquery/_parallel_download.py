@@ -45,7 +45,7 @@ _SMALL_FILE_THRESHOLD = 10 * 1024 * 1024  # 10 MB — below this, single-stream 
 _PROBE_HEADERS = {"Range": "bytes=0-0"}
 _DEFAULT_CHUNK_SIZE = 1024 * 1024  # 1 MB
 _CALLBACK_BYTE_THRESHOLD = 1024 * 1024  # invoke callback every 1 MB at most
-_CALLBACK_TIME_THRESHOLD = 10  # ...or every 500 ms, whichever first
+_CALLBACK_TIME_THRESHOLD = 0.5  # ...or every 500 ms, whichever first
 
 
 def _seek_write(fh: IO[bytes], pos: int, data: bytes) -> None:

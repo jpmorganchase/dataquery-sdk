@@ -323,7 +323,8 @@ class DataQuery:
                              from the Content-Disposition header in the response. If not provided,
                              uses the default download directory from configuration.
             options: Download options
-            num_parts: Number of parallel parts to split the file into (default 5)
+            num_parts: Number of parallel parts to split the file into (default 1,
+                single-stream). Set >1 to enable parallel HTTP range requests.
             progress_callback: Optional progress callback function
 
         Returns:

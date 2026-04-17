@@ -18,7 +18,6 @@ from dataquery.auth import TokenManager
 from dataquery.models import ClientConfig, OAuthToken, TokenResponse
 from dataquery.sse_client import SSEClient
 
-
 # ---------------------------------------------------------------------------
 # ClientConfig.get_proxy_kwargs — the single source of truth
 # ---------------------------------------------------------------------------

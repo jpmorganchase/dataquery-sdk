@@ -922,7 +922,7 @@ class DataQueryClient(
                         progress_callback=progress_callback,
                     )
 
-                    # If file is small (<10MB), prefer a single-stream download
+                # Small files → single stream (per-part overhead isn't worth it).
                 ten_mb = 10 * 1024 * 1024
                 if total_bytes and total_bytes < ten_mb:
                     return await self._download_file_single_stream(
