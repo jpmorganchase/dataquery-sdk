@@ -2192,6 +2192,7 @@ class DataQuery:
         reconnect_delay: float = 5.0,
         max_reconnect_delay: float = 60.0,
         file_group_id: Optional[Union[str, List[str]]] = None,
+        show_progress: bool = True,
     ):
         """Proxy to client's watch_and_download_async."""
         await self.connect_async()
@@ -2208,6 +2209,7 @@ class DataQuery:
             reconnect_delay=reconnect_delay,
             max_reconnect_delay=max_reconnect_delay,
             file_group_id=file_group_id,
+            show_progress=show_progress,
         )
 
     def watch_and_download(
@@ -2223,6 +2225,7 @@ class DataQuery:
         reconnect_delay: float = 5.0,
         max_reconnect_delay: float = 60.0,
         file_group_id: Optional[Union[str, List[str]]] = None,
+        show_progress: bool = True,
     ):
         """Synchronous proxy to client's watch_and_download_async."""
         return self._run_sync(
@@ -2238,6 +2241,7 @@ class DataQuery:
                 reconnect_delay,
                 max_reconnect_delay,
                 file_group_id=file_group_id,
+                show_progress=show_progress,
             )
         )
 

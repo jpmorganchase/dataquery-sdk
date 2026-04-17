@@ -74,6 +74,7 @@ class NotificationDownloadManager:
         reconnect_delay: float = 5.0,
         max_reconnect_delay: float = 60.0,
         file_group_id: Optional[Union[str, List[str]]] = None,
+        show_progress: bool = True,
     ):
         """
         Initialise the manager.
@@ -101,6 +102,8 @@ class NotificationDownloadManager:
                            parameter (comma-separated when a list) so filtering
                            happens at the source — the client no longer receives
                            events for other files.
+            show_progress: If ``True`` (default), log download progress at
+                           DEBUG level when no ``progress_callback`` is set.
         """
         self.client = client
         self.group_id = group_id
@@ -143,6 +146,7 @@ class NotificationDownloadManager:
             destination_path=self.destination_dir,
             overwrite_existing=False,
             chunk_size=8192,
+            show_progress=show_progress,
         )
 
     # ------------------------------------------------------------------

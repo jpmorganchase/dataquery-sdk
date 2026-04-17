@@ -804,15 +804,14 @@ class DataQueryClient(
         if options is None:
             options = DownloadOptions()
 
-        # Validate num_parts if provided
-        if num_parts is not None and (num_parts is None or num_parts <= 0):
+        if not num_parts or num_parts <= 0:
             num_parts = 1
 
         params = {"file-group-id": file_group_id}
         if file_datetime:
             params["file-datetime"] = file_datetime
 
-        return params, options, num_parts if num_parts is not None else 5
+        return params, options, num_parts
 
     def _resolve_destination(
         self,
@@ -877,7 +876,8 @@ class DataQueryClient(
             file_group_id: File ID to download
             file_datetime: Optional datetime of the file (YYYYMMDD, YYYYMMDDTHHMM, or YYYYMMDDTHHMMSS)
             options: Download options
-            num_parts: Number of parallel parts to split the file into (default 5)
+            num_parts: Number of parallel parts to split the file into (default 1,
+                single-stream). Set >1 to enable parallel HTTP range requests.
             progress_callback: Optional progress callback function
 
         Returns:
@@ -891,8 +891,8 @@ class DataQueryClient(
         temp_destination: Optional[Path] = None
         total_bytes: int = 0
 
-        # Check if range downloads are disabled - use single stream instead
-        if not self.config.enable_range_downloads:
+        # Single part or range downloads disabled → skip the probe/preallocate overhead.
+        if num_parts <= 1 or not self.config.enable_range_downloads:
             return await self._download_file_single_stream(
                 file_group_id=file_group_id,
                 file_datetime=file_datetime,
@@ -932,10 +932,6 @@ class DataQueryClient(
                         progress_callback=progress_callback,
                     )
 
-                # Scale num_parts with file size for large files
-                if total_bytes > 500 * 1024 * 1024:  # >500MB
-                    num_parts = max(num_parts, min(total_bytes // (100 * 1024 * 1024), 20))  # 1 part per 100MB, max 20
-
                 # Determine filename and destination
                 filename = get_filename_from_response(probe_resp, file_group_id, file_datetime)
                 destination = self._resolve_destination(options, file_group_id, filename)
@@ -967,13 +963,7 @@ class DataQueryClient(
                 start_time=datetime.now(),
             )
 
-            # Scale chunk size with file size for parallel parts
-            part_size = total_bytes // num_parts
             chunk_size = options.chunk_size or 1048576  # 1MB default
-            if part_size > 100 * 1024 * 1024:  # Part >100MB: use 4MB chunks
-                chunk_size = max(chunk_size, 4 * 1024 * 1024)
-            elif part_size > 50 * 1024 * 1024:  # Part >50MB: use 2MB chunks
-                chunk_size = max(chunk_size, 2 * 1024 * 1024)
 
             # Progress callback optimization: track last callback state
             last_callback_bytes = 0
@@ -1057,7 +1047,7 @@ class DataQueryClient(
                                         if progress_callback:
                                             progress_callback(progress)
                                         elif options.show_progress:
-                                            self.logger.info(
+                                            self.logger.debug(
                                                 "Download progress",
                                                 file=file_group_id,
                                                 percentage=f"{progress.percentage:.1f}%",
@@ -1220,7 +1210,7 @@ class DataQueryClient(
                             if progress_callback:
                                 progress_callback(progress)
                             elif options.show_progress:
-                                self.logger.info(
+                                self.logger.debug(
                                     "Download progress",
                                     file=file_group_id,
                                     percentage=f"{progress.percentage:.1f}%",
@@ -1494,6 +1484,7 @@ class DataQueryClient(
         reconnect_delay: float = 5.0,
         max_reconnect_delay: float = 60.0,
         file_group_id: Optional[Union[str, List[str]]] = None,
+        show_progress: bool = True,
     ) -> "NotificationDownloadManager":
         """
         Subscribe to the /notification SSE endpoint and download new files.
@@ -1521,6 +1512,8 @@ class DataQueryClient(
                            Accepts a single id or a list. Sent to the server as
                            the ``file-group-id`` query parameter (comma-separated
                            when a list).
+            show_progress: If ``True`` (default), log download progress at
+                           DEBUG level when no ``progress_callback`` is set.
 
         Returns:
             A running :class:`NotificationDownloadManager` instance.
@@ -1551,6 +1544,7 @@ class DataQueryClient(
             reconnect_delay=reconnect_delay,
             max_reconnect_delay=max_reconnect_delay,
             file_group_id=file_group_id,
+            show_progress=show_progress,
         )
         await manager.start()
         return manager
@@ -1568,6 +1562,7 @@ class DataQueryClient(
         reconnect_delay: float = 5.0,
         max_reconnect_delay: float = 60.0,
         file_group_id: Optional[Union[str, List[str]]] = None,
+        show_progress: bool = True,
     ) -> "NotificationDownloadManager":
         """Synchronous wrapper for :meth:`watch_and_download_async`."""
         return asyncio.run(
@@ -1583,6 +1578,7 @@ class DataQueryClient(
                 reconnect_delay,
                 max_reconnect_delay,
                 file_group_id=file_group_id,
+                show_progress=show_progress,
             )
         )
 
