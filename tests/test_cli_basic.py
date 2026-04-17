@@ -186,7 +186,7 @@ async def test_cli_download_watch_quick_exit(monkeypatch, capsys):
     fake_dq = MagicMock()
     fake_dq.__aenter__ = AsyncMock(return_value=fake_dq)
     fake_dq.__aexit__ = AsyncMock(return_value=None)
-    fake_dq.start_auto_download_async = AsyncMock(return_value=_Mgr())
+    fake_dq.auto_download_async = AsyncMock(return_value=_Mgr())
     monkeypatch.setattr(cli, "DataQuery", MagicMock(return_value=fake_dq))
 
     async def boom(_):

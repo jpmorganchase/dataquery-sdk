@@ -641,33 +641,41 @@ class TestTokenManager:
                 assert token_manager.current_token is None
 
     @pytest.mark.asyncio
-    async def test_token_manager_save_token(self):
-        """Test TokenManager _save_token method."""
+    async def test_token_manager_save_token(self, tmp_path):
+        """Saved token file is written with owner-only 0o600 permissions."""
+        import stat
+
         config = ClientConfig(
             base_url="https://api.example.com",
             oauth_enabled=True,
             client_id="test_client",
             client_secret="test_secret",
             oauth_token_url="https://api.example.com/oauth/token",
-            download_dir="./downloads",
+            download_dir=str(tmp_path),
         )
 
         token_manager = TokenManager(config)
+        assert token_manager.token_file is not None
 
-        # Create a token
-        mock_token = MagicMock()
-        mock_token.access_token = "test_access_token"
-        mock_token.token_type = "Bearer"
-        mock_token.expires_at = datetime.now() + timedelta(hours=1)
-        mock_token.refresh_token = "test_refresh_token"
-        token_manager.current_token = mock_token
+        # Real OAuthToken so model_dump() works.
+        token_manager.current_token = OAuthToken(
+            access_token="test_access_token",
+            token_type="Bearer",
+            expires_in=3600,
+            refresh_token="test_refresh_token",
+            issued_at=datetime.now(),
+        )
 
-        with patch("pathlib.Path.mkdir") as mock_mkdir:
-            with patch("builtins.open", mock_open()) as mock_file:
-                await token_manager._save_token()
+        await token_manager._save_token()
 
-                mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
-                mock_file.assert_called_once()
+        assert token_manager.token_file.exists()
+        # JSON payload was written.
+        saved = json.loads(token_manager.token_file.read_text())
+        assert saved["access_token"] == "test_access_token"
+        # On POSIX systems the file must be owner-only (0o600). Skip on Windows.
+        if os.name == "posix":
+            mode = stat.S_IMODE(os.stat(token_manager.token_file).st_mode)
+            assert mode == 0o600
 
     @pytest.mark.asyncio
     async def test_token_manager_save_token_no_token(self):

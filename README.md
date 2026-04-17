@@ -1,6 +1,6 @@
 # DataQuery SDK
 
-Professional Python SDK for the DataQuery API - High-performance data access with parallel downloads, time series queries, and seamless OAuth 2.0 authentication.
+Python SDK for the J.P. Morgan DataQuery API — authenticated file downloads, time-series queries, and real-time notification-driven downloads with OAuth 2.0, rate limiting, and automatic retries built in.
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -8,236 +8,278 @@ Professional Python SDK for the DataQuery API - High-performance data access wit
 
 ## Features
 
-- **High-Performance Downloads**: Parallel file downloads with automatic retry and progress tracking
-- **Time Series Queries**: Query data by expressions, instruments, or groups with flexible filtering
-- **OAuth 2.0 Authentication**: Automatic token management and refresh
-- **Connection Pooling**: Optimized HTTP connections with configurable rate limiting
-- **Pandas Integration**: Direct conversion to DataFrames for analysis
-- **Async & Sync APIs**: Use async/await or synchronous methods based on your needs
+- **Parallel file downloads** — when `num_parts > 1`, HTTP range requests split the file into parallel chunks with bounded concurrency; `num_parts=1` (default) uses a simple streaming GET
+- **Historical and date-range downloads** — fetch every file in a group (optionally filtered to one or many `file-group-id`s) between two dates
+- **Notification-driven downloads (SSE)** — subscribe to the `/notification` stream and auto-download files as soon as they are published
+- **Time-series queries** — by expression, by instrument, or by group with attribute / filter projections
+- **OAuth 2.0 with token caching and refresh** — or supply a bearer token directly
+- **Token-bucket rate limiter** — 300 rpm / 5 tps defaults (configurable up to API limits)
+- **Retry + circuit breaker** — exponential backoff, configurable failure threshold
+- **Sync and async APIs** — every operation has `_async` and sync variants
+- **Optional pandas integration** — `to_dataframe(...)` on any response
+- **CLI** — `dataquery groups | files | availability | download | download-group | auth | config`
 
 ## Installation
 
 ```bash
+# Core install
 pip install dataquery-sdk
+
+# With pandas DataFrame conversion
+pip install "dataquery-sdk[pandas]"
+
+# With dev tooling (ruff, mypy, pytest)
+pip install "dataquery-sdk[dev]"
 ```
 
-## Quick Start
+Python 3.10+ is required.
 
-### 1. Configure Credentials
+## Configure credentials
 
-Set your API credentials as environment variables:
+Set OAuth client credentials via environment variables:
 
 ```bash
 export DATAQUERY_CLIENT_ID="your_client_id"
 export DATAQUERY_CLIENT_SECRET="your_client_secret"
 ```
 
-Or create a `.env` file in your project directory:
+Or create a `.env` file in the working directory:
 
 ```env
 DATAQUERY_CLIENT_ID=your_client_id
 DATAQUERY_CLIENT_SECRET=your_client_secret
 ```
 
-### 2. Download Files
-
-**Synchronous (Python Scripts)**
+Or pass them directly to the constructor:
 
 ```python
 from dataquery import DataQuery
 
-# Download all files for a date range
+dq = DataQuery(client_id="...", client_secret="...")
+```
+
+A starter `.env` can be generated with `dataquery config template --output .env`.
+
+## Quick start
+
+### Download files for a date range
+
+```python
+from dataquery import DataQuery
+
+# async
+async with DataQuery() as dq:
+    result = await dq.run_group_download_async(
+        group_id="JPMAQS_GENERIC_RETURNS",
+        start_date="20250101",
+        end_date="20250131",
+        destination_dir="./data",
+    )
+    print(f"{result['successful_downloads']}/{result['total_files']} files downloaded")
+
+# sync
 with DataQuery() as dq:
-    results = dq.run_group_download(
+    result = dq.run_group_download(
         group_id="JPMAQS_GENERIC_RETURNS",
         start_date="20250101",
         end_date="20250131",
-        destination_dir="./data"
+        destination_dir="./data",
     )
-    print(f"Downloaded {results['successful_downloads']} files")
 ```
 
-**Asynchronous (Jupyter Notebooks)**
+### Restrict a date-range download to specific file-group-ids
+
+`file_group_id` accepts a single id or a list. When a list is supplied, availability
+queries run in parallel per id and the union of dates is downloaded.
 
 ```python
-from dataquery import DataQuery
-
-# Download all files for a date range
 async with DataQuery() as dq:
-    results = await dq.run_group_download_async(
+    result = await dq.run_group_download_async(
         group_id="JPMAQS_GENERIC_RETURNS",
         start_date="20250101",
         end_date="20250131",
-        destination_dir="./data"
+        destination_dir="./data",
+        file_group_id=["FG_ABC", "FG_DEF", "FG_XYZ"],
     )
-    print(f"Downloaded {results['successful_downloads']} files")
 ```
 
-### 3. Query Time Series Data
+### Download a single file
 
 ```python
-from dataquery import DataQuery
-
-async with DataQuery() as dq:
-    # Query by expression
-    result = await dq.get_expressions_time_series_async(
-        expressions=["DB(MTE,IRISH EUR 1.100 15-May-2029 LON,,IE00BH3SQ895,MIDPRC)"],
-        start_date="20240101",
-        end_date="20240131"
-    )
-    
-    # Convert to pandas DataFrame
-    df = dq.to_dataframe(result)
-    print(df.head())
-```
-
-### 4. Discover Available Data
-
-```python
-from dataquery import DataQuery
-
-async with DataQuery() as dq:
-    # List all available groups
-    groups = await dq.list_groups_async(limit=100)
-    
-    # Convert to DataFrame for easy viewing
-    groups_df = dq.to_dataframe(groups)
-    print(groups_df[['group_id', 'group_name', 'description']])
-```
-
-## Common Use Cases
-
-### Download Single File
-
-```python
-from dataquery import DataQuery
 from pathlib import Path
+from dataquery import DataQuery
 
 async with DataQuery() as dq:
     result = await dq.download_file_async(
         file_group_id="JPMAQS_GENERIC_RETURNS",
         file_datetime="20250115",
-        destination_path=Path("./downloads")
+        destination_path=Path("./downloads"),
+        num_parts=5,  # parallel chunks
     )
-    print(f"Downloaded: {result.local_path}")
+    print(f"Downloaded: {result.local_path} ({result.file_size} bytes)")
 ```
 
-### Query with Filters
+### Time-series queries
 
 ```python
 async with DataQuery() as dq:
-    # Get time series for Ireland bonds only
-    result = await dq.get_group_time_series_async(
+    # By expression
+    ts = await dq.get_expressions_time_series_async(
+        expressions=["DB(MTE,IRISH EUR 1.100 15-May-2029 LON,,IE00BH3SQ895,MIDPRC)"],
+        start_date="20240101",
+        end_date="20240131",
+    )
+
+    # By group with attributes + filter
+    ts = await dq.get_group_time_series_async(
         group_id="FI_GO_BO_EA",
         attributes=["MIDPRC", "REPO_1M"],
         filter="country(IRL)",
         start_date="20240101",
-        end_date="20240131"
+        end_date="20240131",
     )
-    
-    df = dq.to_dataframe(result)
+
+    df = dq.to_dataframe(ts)  # requires pandas extra
 ```
 
-### Search for Instruments
+### Discover available data
 
 ```python
 async with DataQuery() as dq:
-    # Search for instruments by keywords
-    results = await dq.search_instruments_async(
-        group_id="FI_GO_BO_EA",
-        keywords="irish"
-    )
-    
-    # Use the results to query time series
-    instrument_ids = [inst.instrument_id for inst in results.instruments[:5]]
-    data = await dq.get_instrument_time_series_async(
-        instruments=instrument_ids,
-        attributes=["MIDPRC"],
-        start_date="20240101",
-        end_date="20240131"
-    )
-```
-
-## Performance Optimization
-
-### Parallel Downloads
-
-```python
-async with DataQuery() as dq:
-    # Download multiple files concurrently with parallel chunks
-    results = await dq.run_group_download_async(
+    groups = await dq.list_groups_async(limit=100)
+    files = await dq.list_files_async(group_id="JPMAQS_GENERIC_RETURNS")
+    available = await dq.list_available_files_async(
         group_id="JPMAQS_GENERIC_RETURNS",
         start_date="20250101",
         end_date="20250131",
-        destination_dir="./data",
-        max_concurrent=5,  # Download 5 files simultaneously
-        num_parts=4        # Split each file into 4 parallel chunks
+    )
+    instruments = await dq.search_instruments_async(
+        group_id="FI_GO_BO_EA", keywords="irish"
     )
 ```
 
-**Recommended Settings:**
-- `max_concurrent`: 3-5 (concurrent file downloads)
-- `num_parts`: 2-8 (parallel chunks per file)
+## Auto-download (coming soon)
 
-### Rate Limiting
+Real-time notification-driven downloads via the DataQuery SSE stream are under
+active development and will be available in a future release. Once released,
+`auto_download_async` will subscribe to the `/notification` endpoint and
+download files automatically as they are published — no polling required.
 
-Configure rate limits to avoid API throttling:
+## CLI
 
-```python
-from dataquery import DataQuery, ClientConfig
+The installer registers a `dataquery` script:
 
-config = ClientConfig(
-    client_id="your_client_id",
-    client_secret="your_client_secret",
-    rate_limit_rpm=300,  # Requests per minute
-    max_retries=3,
-    timeout=60.0
-)
+```bash
+# List / search groups
+dataquery groups --limit 100
+dataquery groups --search "fixed income" --json
 
-async with DataQuery(config=config) as dq:
-    # Your code here
-    pass
+# List files in a group
+dataquery files --group-id JPMAQS_GENERIC_RETURNS --json
+
+# Check availability for a single file
+dataquery availability --file-group-id JPMAQS_GENERIC_RETURNS --file-datetime 20250115
+
+# Download a single file
+dataquery download --file-group-id JPMAQS_GENERIC_RETURNS \
+                   --file-datetime 20250115 \
+                   --destination ./downloads \
+                   --num-parts 5
+
+# Watch a group and download as new files arrive
+dataquery download --watch --group-id JPMAQS_GENERIC_RETURNS --destination ./downloads
+
+# Download everything in a date range
+dataquery download-group --group-id JPMAQS_GENERIC_RETURNS \
+                         --start-date 20250101 --end-date 20250131 \
+                         --destination ./data \
+                         --max-concurrent 5 --num-parts 4
+
+# Restrict to one or more file-group-ids
+dataquery download-group --group-id JPMAQS_GENERIC_RETURNS \
+                         --file-group-id FG_ABC FG_DEF \
+                         --start-date 20250101 --end-date 20250131
+
+# Config utilities
+dataquery config show
+dataquery config validate
+dataquery config template --output .env
+
+# Verify auth
+dataquery auth test
 ```
+
+Every subcommand accepts `--env-file PATH` (to point at a non-default `.env`) and
+most accept `--json` for machine-readable output.
 
 ## Configuration
 
-### Environment Variables
+### Environment variables
 
-```bash
-# Required
-DATAQUERY_CLIENT_ID=your_client_id
-DATAQUERY_CLIENT_SECRET=your_client_secret
+All environment variables use the `DATAQUERY_` prefix.
 
-# Optional - API Endpoints
-DATAQUERY_BASE_URL=https://api-developer.jpmorgan.com
-DATAQUERY_FILES_BASE_URL=https://api-dataquery.jpmchase.com
+**Credentials**
 
-# Optional - Performance
-DATAQUERY_MAX_RETRIES=3
-DATAQUERY_TIMEOUT=60
-DATAQUERY_RATE_LIMIT_RPM=300
-```
+| Variable | Default | Notes |
+|---|---|---|
+| `DATAQUERY_CLIENT_ID` | _(none)_ | Required for OAuth |
+| `DATAQUERY_CLIENT_SECRET` | _(none)_ | Required for OAuth |
+| `DATAQUERY_BEARER_TOKEN` | _(none)_ | Alternative to OAuth |
+| `DATAQUERY_OAUTH_ENABLED` | `true` | Set `false` to use bearer-token mode |
+| `DATAQUERY_OAUTH_TOKEN_URL` | `https://authe.jpmorgan.com/as/token.oauth2` | |
+| `DATAQUERY_OAUTH_AUD` | `JPMC:URI:RS-06785-DataQueryExternalApi-PROD` | |
 
-### Programmatic Configuration
+**API endpoints**
+
+| Variable | Default |
+|---|---|
+| `DATAQUERY_BASE_URL` | `https://api-developer.jpmorgan.com` |
+| `DATAQUERY_FILES_BASE_URL` | `https://api-dataquery.jpmchase.com` |
+| `DATAQUERY_CONTEXT_PATH` | `/research/dataquery-authe/api/v2` |
+
+**HTTP / retry / rate limit**
+
+| Variable | Default |
+|---|---|
+| `DATAQUERY_TIMEOUT` | `600.0` |
+| `DATAQUERY_MAX_RETRIES` | `3` |
+| `DATAQUERY_RETRY_DELAY` | `1.0` |
+| `DATAQUERY_CIRCUIT_BREAKER_THRESHOLD` | `5` |
+| `DATAQUERY_REQUESTS_PER_MINUTE` | `300` |
+| `DATAQUERY_BURST_CAPACITY` | `5` |
+| `DATAQUERY_POOL_CONNECTIONS` | `10` |
+| `DATAQUERY_POOL_MAXSIZE` | `20` |
+
+**Proxy** (optional)
+
+`DATAQUERY_PROXY_ENABLED`, `DATAQUERY_PROXY_URL`, `DATAQUERY_PROXY_USERNAME`,
+`DATAQUERY_PROXY_PASSWORD`, `DATAQUERY_PROXY_VERIFY_SSL`.
+
+### Programmatic configuration
 
 ```python
-from dataquery import DataQuery, ClientConfig
+from dataquery import ClientConfig, DataQuery
 
 config = ClientConfig(
-    client_id="your_client_id",
-    client_secret="your_client_secret",
+    client_id="...",
+    client_secret="...",
     base_url="https://api-developer.jpmorgan.com",
-    max_retries=3,
     timeout=60.0,
-    rate_limit_rpm=300
+    max_retries=3,
+    requests_per_minute=300,
 )
 
-async with DataQuery(config=config) as dq:
-    # Your code here
-    pass
+async with DataQuery(config) as dq:
+    ...
+
+# Or pass overrides as kwargs on top of env/.env resolution:
+async with DataQuery(client_id="...", client_secret="...", timeout=60.0) as dq:
+    ...
 ```
 
-## Error Handling
+## Error handling
+
+All errors inherit from `DataQueryError`:
 
 ```python
 from dataquery import DataQuery
@@ -245,194 +287,151 @@ from dataquery.exceptions import (
     DataQueryError,
     AuthenticationError,
     NotFoundError,
-    RateLimitError
+    RateLimitError,
+    NetworkError,
+    DownloadError,
+    ConfigurationError,
 )
 
-async def safe_query():
+async with DataQuery() as dq:
     try:
-        async with DataQuery() as dq:
-            result = await dq.get_expressions_time_series_async(
-                expressions=["DB(...)"],
-                start_date="20240101",
-                end_date="20240131"
-            )
-            return result
-    except AuthenticationError as e:
-        print(f"Authentication failed: {e}")
-    except NotFoundError as e:
-        print(f"Resource not found: {e}")
-    except RateLimitError as e:
-        print(f"Rate limit exceeded: {e}")
-    except DataQueryError as e:
-        print(f"API error: {e}")
-    except Exception as e:
-        print(f"Unexpected error: {e}")
+        ts = await dq.get_expressions_time_series_async(
+            expressions=["DB(...)"], start_date="20240101", end_date="20240131"
+        )
+    except AuthenticationError:
+        ...  # check credentials
+    except RateLimitError:
+        ...  # back off — SDK already retried
+    except NotFoundError:
+        ...  # group / file / instrument not found
+    except NetworkError:
+        ...  # transient; SDK already retried
+    except DataQueryError:
+        ...  # any other SDK-level failure
 ```
 
-## Date Formats
-
-### Absolute Dates
+## Date formats
 
 ```python
-start_date="20240101"  # YYYYMMDD format
-end_date="20241231"
+start_date="20240101"   # absolute, YYYYMMDD
+start_date="TODAY"
+start_date="TODAY-1D"   # yesterday
+start_date="TODAY-1W"
+start_date="TODAY-1M"
+start_date="TODAY-1Y"
 ```
 
-### Relative Dates
+## Performance tuning
+
+`run_group_download_async` uses a flattened concurrency model — total concurrent
+HTTP requests = `max_concurrent × num_parts`.
+
+With `num_parts=1` (the default) each file downloads as a single streaming GET.
+Set `num_parts > 1` to enable parallel HTTP range requests per file — the SDK
+probes the file size first, then downloads byte ranges concurrently. Files under
+10 MB always use a single stream regardless of `num_parts`.
 
 ```python
-start_date="TODAY"      # Today
-start_date="TODAY-1D"   # Yesterday
-start_date="TODAY-1W"   # 1 week ago
-start_date="TODAY-1M"   # 1 month ago
-start_date="TODAY-1Y"   # 1 year ago
+await dq.run_group_download_async(
+    group_id="JPMAQS_GENERIC_RETURNS",
+    start_date="20250101",
+    end_date="20250131",
+    destination_dir="./data",
+    max_concurrent=5,   # parallel files
+    num_parts=4,        # parallel chunks per file (1 = single stream)
+    max_retries=3,
+)
 ```
 
-## Calendar Conventions
+Typical settings: `max_concurrent` 3–5, `num_parts` 2–8. The SDK automatically
+inserts delays between file starts so the configured `requests_per_minute` is not
+exceeded.
 
-| Calendar | Description | Use Case |
-|----------|-------------|----------|
-| `CAL_WEEKDAYS` | Monday-Friday | International data (recommended) |
-| `CAL_USBANK` | US banking days | US-only data (default) |
-| `CAL_WEEKDAY_NOHOLIDAY` | All weekdays | Generic business days |
-| `CAL_DEFAULT` | Calendar day | Include weekends |
+## API reference (most-used methods)
+
+| Area | Method | Notes |
+|---|---|---|
+| Discovery | `list_groups_async(limit)` | |
+| | `search_groups_async(keywords, limit, offset)` | |
+| | `list_files_async(group_id, file_group_id=None)` | |
+| | `list_available_files_async(group_id, file_group_id, start_date, end_date)` | |
+| | `list_instruments_async(group_id, instrument_id=None, page=None)` | |
+| | `search_instruments_async(group_id, keywords, page=None)` | |
+| | `get_group_attributes_async(group_id, ...)` | |
+| | `get_group_filters_async(group_id, page=None)` | |
+| Downloads | `download_file_async(file_group_id, file_datetime, ...)` | single file |
+| | `run_group_download_async(group_id, start_date, end_date, file_group_id=None, ...)` | date range, single or list of ids |
+| | `download_historical_async(...)` | chunked historical backfill |
+| | `auto_download_async(group_id, ...)` | SSE notifications (the only watch path) |
+| Time series | `get_expressions_time_series_async(expressions, start_date, end_date)` | |
+| | `get_instrument_time_series_async(instruments, attributes, start_date, end_date)` | |
+| | `get_group_time_series_async(group_id, attributes, filter, start_date, end_date)` | |
+| Grid data | `get_grid_data_async(...)` | |
+| Utilities | `check_availability_async(file_group_id, file_datetime)` | |
+| | `health_check_async()` | |
+| | `to_dataframe(response)` | requires `pandas` extra |
+| | `get_stats()` / `get_pool_stats()` / `get_rate_limit_info()` | diagnostics |
+
+Every async method above has a sync counterpart (without the `_async` suffix, or
+with an explicit `_sync` suffix) that runs the coroutine via `asyncio.run`.
 
 ## Examples
 
-The `examples/` directory contains comprehensive examples:
+The `examples/` directory is organised by feature:
 
-- **File Downloads**: Single file, batch downloads, availability checks
-- **Time Series**: Expressions, instruments, groups with filters
-- **Discovery**: Search instruments, list groups, get attributes
-- **Advanced**: Grid data, auto-download, custom progress tracking
+- `examples/files/` — single-file and date-range downloads
+- `examples/expressions/` — expression time series
+- `examples/instruments/` — instrument discovery + time series
+- `examples/groups/` and `examples/groups_advanced/` — group discovery and time series
+- `examples/grid/` — grid data
+- `examples/system/` — SSE notification subscriber, diagnostics
 
-Run an example:
+Run any example directly:
 
 ```bash
 python examples/files/download_file.py
-python examples/expressions/get_expressions_time_series.py
+python examples/system/sse_local_server_example.py
 ```
-
-## CLI Usage
-
-The SDK includes a command-line interface:
-
-```bash
-# Download files
-dataquery download --group-id JPMAQS_GENERIC_RETURNS \
-                   --start-date 20250101 \
-                   --end-date 20250131 \
-                   --destination ./data
-
-# List groups
-dataquery list-groups --limit 100
-
-# Check file availability
-dataquery check-availability --file-group-id JPMAQS_GENERIC_RETURNS \
-                             --date 20250115
-```
-
-## API Reference
-
-### Core Methods
-
-**File Downloads**
-- `download_file_async()` - Download a single file
-- `run_group_download_async()` - Download all files in a date range
-- `list_available_files_async()` - Check file availability
-
-**Time Series Queries**
-- `get_expressions_time_series_async()` - Query by expression
-- `get_instrument_time_series_async()` - Query by instrument ID
-- `get_group_time_series_async()` - Query entire group with filters
-
-**Discovery**
-- `list_groups_async()` - List available data groups
-- `search_instruments_async()` - Search for instruments
-- `list_instruments_async()` - List all instruments in a group
-- `get_group_attributes_async()` - Get available attributes
-- `get_group_filters_async()` - Get available filters
-
-**Utilities**
-- `to_dataframe()` - Convert any response to pandas DataFrame
-- `health_check_async()` - Check API health
-- `get_stats()` - Get connection and rate limit statistics
-
-For detailed API documentation, see the [API Reference](docs/api/README.md).
-
-## Requirements
-
-- Python 3.10 or higher
-- Dependencies:
-  - `aiohttp>=3.8.0` - Async HTTP client
-  - `pydantic>=2.0.0` - Data validation
-  - `structlog>=23.0.0` - Structured logging
-  - `python-dotenv>=1.0.0` - Environment variable management
-
-Optional:
-- `pandas>=2.0.0` - For DataFrame conversion
 
 ## Development
 
-### Setup Development Environment
-
 ```bash
-# Clone the repository
-git clone https://github.com/dataquery/dataquery-sdk.git
+# Clone
+git clone https://github.com/jpmorganchase/dataquery-sdk.git
 cd dataquery-sdk
 
-# Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+# Install with dev + all extras
+uv sync --all-extras --dev         # using uv
+# or
+pip install -e ".[dev,pandas]"
 
-# Install development dependencies
-pip install -e ".[dev]"
-
-# Install pre-commit hooks
-pre-commit install
-```
-
-### Run Tests
-
-```bash
-# Run all tests
+# Run tests
 pytest tests/ -v
+pytest tests/ --cov=dataquery --cov-report=term-missing
 
-# Run with coverage
-pytest tests/ --cov=dataquery --cov-report=html
-
-# Run specific test file
-pytest tests/test_client.py -v
-```
-
-### Code Quality
-
-```bash
-# Lint code
+# Lint / format / type-check
 ruff check dataquery/ tests/ examples/
-
-# Format code
 ruff format dataquery/ tests/ examples/
-
-# Type checking
 mypy dataquery/
 ```
 
-## Contributing
+Pytest markers: `slow`, `integration`, `unit`, `asyncio`.
 
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+## Requirements
 
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+- Python 3.10+
+- `aiohttp>=3.8,<4`, `pydantic>=2,<3`, `structlog>=23`, `python-dotenv>=1`
+- Optional: `pandas>=2` (for `to_dataframe`)
 
 ## Support
 
-For issues and questions:
-- **GitHub Issues**: [Report a bug](https://github.com/dataquery/dataquery-sdk/issues)
-- **Documentation**: [Read the docs](https://github.com/dataquery/dataquery-sdk/wiki)
-- **Email**: support@dataquery.com
+- GitHub Issues: <https://github.com/jpmorganchase/dataquery-sdk/issues>
+- Email: dataquery_support@jpmorgan.com
+
+## License
+
+MIT — see [LICENSE](LICENSE).
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for version history and release notes.
+See [docs/changelog.md](docs/changelog.md).

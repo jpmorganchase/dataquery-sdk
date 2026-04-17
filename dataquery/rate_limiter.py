@@ -17,37 +17,13 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 
-class QueuePriority(Enum):
+class QueuePriority(int, Enum):
     """Priority levels for queued requests."""
 
     LOW = 1
     NORMAL = 2
     HIGH = 3
     CRITICAL = 4
-
-    def __lt__(self, other):
-        """Enable comparison of priorities."""
-        if isinstance(other, QueuePriority):
-            return self.value < other.value
-        return NotImplemented
-
-    def __le__(self, other):
-        """Enable comparison of priorities."""
-        if isinstance(other, QueuePriority):
-            return self.value <= other.value
-        return NotImplemented
-
-    def __gt__(self, other):
-        """Enable comparison of priorities."""
-        if isinstance(other, QueuePriority):
-            return self.value > other.value
-        return NotImplemented
-
-    def __ge__(self, other):
-        """Enable comparison of priorities."""
-        if isinstance(other, QueuePriority):
-            return self.value >= other.value
-        return NotImplemented
 
 
 @dataclass
@@ -66,8 +42,8 @@ class QueuedRequest:
 class RateLimitConfig:
     """Configuration for rate limiting."""
 
-    requests_per_minute: int = 1500  # Full 25 TPS capacity (25 * 60 = 1500)
-    burst_capacity: int = 25  # Allow 25 concurrent requests
+    requests_per_minute: int = 300  # Conservative 5 TPS default (5 * 60 = 300)
+    burst_capacity: int = 5  # Allow 5 concurrent requests
     window_size_seconds: int = 60
     retry_after_header: str = "Retry-After"
     enable_rate_limiting: bool = True

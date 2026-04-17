@@ -123,8 +123,21 @@ class FileNotFoundInGroupError(NotFoundError):
         super().__init__("File", file_group_id, f"File {file_group_id} not found in group {group_id}")
 
 
-# Deprecated alias — avoids shadowing the built-in FileNotFoundError
-FileNotFoundError = FileNotFoundInGroupError
+# Deprecated: use FileNotFoundInGroupError directly.
+# The old alias is available via module __getattr__ with a deprecation warning.
+
+
+def __getattr__(name: str) -> type:
+    if name == "FileNotFoundError":
+        import warnings
+
+        warnings.warn(
+            "dataquery.exceptions.FileNotFoundError is deprecated; use FileNotFoundInGroupError instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return FileNotFoundInGroupError
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 class DateRangeError(ValidationError):

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "dataquery-sdk"
 authors = [
-    {name = "DATAQUERY SDK Team", email = "support@dataquery.com"}
+    {name = "DATAQUERY SDK Team", email = "dataquery_support@jpmorgan.com"}
 ]
 description = "Python SDK for DATAQUERY Data API - Query, download, and check availability of economic data files"
 readme = "README.md"

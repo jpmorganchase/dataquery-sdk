@@ -23,3 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File already exists status added 
 ## [0.1.3] - 2026-02-21
 - Historical file download added 
+## [0.1.4] - 2026-03-23
+- Introduced circuit breaker environment variable (`DATAQUERY_CIRCUIT_BREAKER_THRESHOLD`) 
+## [0.1.5] - 2026-04-16
+- Introduced file-group-id to the group downloads 

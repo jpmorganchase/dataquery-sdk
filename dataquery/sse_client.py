@@ -9,7 +9,7 @@ import asyncio
 import inspect
 import logging
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Awaitable, Callable, Optional, Union
 
 import aiohttp
 
@@ -53,11 +53,12 @@ class SSEClient:
         self,
         config: ClientConfig,
         auth_manager: OAuthManager,
-        on_event: Optional[Callable[[SSEEvent], None]] = None,
-        on_error: Optional[Callable[[Exception], None]] = None,
+        on_event: Optional[Callable[[SSEEvent], Union[None, Awaitable[None]]]] = None,
+        on_error: Optional[Callable[[Exception], Union[None, Awaitable[None]]]] = None,
         reconnect_delay: float = 5.0,
         max_reconnect_delay: float = 60.0,
         sse_timeout: float = 0,  # 0 = no timeout on the streaming read
+        params: Optional[dict] = None,
     ):
         """
         Initialise the SSE client.
@@ -74,6 +75,11 @@ class SSEClient:
             max_reconnect_delay: Maximum delay between reconnection attempts.
             sse_timeout: Total seconds to wait while reading from the stream
                          before treating the connection as stale (0 = unlimited).
+            params: Optional query string parameters appended to the notification
+                    URL. Used to subscribe to a filtered notification stream —
+                    e.g. ``{"group-id": "G", "file-group-id": "FG"}`` tells the
+                    server to only emit events for that group/file-group so no
+                    client-side filtering is needed.
         """
         self.config = config
         self.auth_manager = auth_manager
@@ -82,6 +88,7 @@ class SSEClient:
         self.reconnect_delay = reconnect_delay
         self.max_reconnect_delay = max_reconnect_delay
         self.sse_timeout = sse_timeout
+        self.params = dict(params) if params else None
 
         self._running = False
         self._task: Optional[asyncio.Task] = None
@@ -128,7 +135,7 @@ class SSEClient:
 
     def _build_notification_url(self) -> str:
         base = self.config.api_base_url.rstrip("/")
-        return f"{base}/notification"
+        return f"{base}/sse/event/notification"
 
     async def _get_headers(self) -> dict:
         headers = await self.auth_manager.get_headers()
@@ -176,15 +183,13 @@ class SSEClient:
         # Use a fresh session per connection to avoid header/state bleed.
         timeout = aiohttp.ClientTimeout(total=None, connect=30.0, sock_read=self.sse_timeout or None)
 
-        proxy = self.config.proxy_url if self.config.proxy_enabled else None
+        proxy_kwargs = self.config.get_proxy_kwargs()
 
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url, headers=headers, proxy=proxy) as response:
+            async with session.get(url, headers=headers, params=self.params, **proxy_kwargs) as response:
                 if response.status != 200:
-                    raise ConnectionError(
-                        f"SSE endpoint returned HTTP {response.status} for {url}"
-                    )
-                logger.info("SSE connection established to %s", url)
+                    raise ConnectionError(f"SSE endpoint returned HTTP {response.status} for {url}")
+                logger.info("SSE connection established to %s (params=%s)", url, self.params)
                 await self._parse_sse_stream(response)
 
     async def _parse_sse_stream(self, response: aiohttp.ClientResponse) -> None:

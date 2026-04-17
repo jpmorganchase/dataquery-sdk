@@ -120,11 +120,11 @@ DATAQUERY_POOL_MAXSIZE=20
 # Rate Limiting Configuration
 # =============================================================================
 
-# Requests per minute limit (default: 1500)
-DATAQUERY_REQUESTS_PER_MINUTE=1500
+# Requests per minute limit (default: 300, i.e. 5 TPS)
+DATAQUERY_REQUESTS_PER_MINUTE=300
 
-# Burst capacity for rate limiting (default: 25)
-DATAQUERY_BURST_CAPACITY=25
+# Burst capacity for rate limiting (default: 5)
+DATAQUERY_BURST_CAPACITY=5
 
 # =============================================================================
 # Logging Configuration

@@ -32,7 +32,6 @@ from .models import (
     InstrumentsResponse,
     TimeSeriesResponse,
 )
-from .utils import format_file_size
 
 # Note: load_dotenv() is called inside DataQuery.__init__() to avoid module-level side effects
 
@@ -58,8 +57,8 @@ class ConfigManager:
             config = EnvConfig.create_client_config(env_file=self.env_file)
             EnvConfig.validate_config(config)
             return config
-        except Exception as e:
-            logger.warning("Failed to load configuration from environment", error=str(e))
+        except ConfigurationError as e:
+            logger.warning("Configuration validation failed, using defaults", error=str(e))
             return self._get_default_config()
 
     def _get_default_config(self) -> ClientConfig:
@@ -162,9 +161,8 @@ class DataQuery:
             if hasattr(self.client_config, key) and value is not None:
                 try:
                     setattr(self.client_config, key, value)
-                except Exception:
-                    # Best-effort: ignore invalid overrides silently to preserve backward compatibility
-                    pass
+                except (TypeError, ValueError) as e:
+                    logger.warning("Override ignored", key=key, error=str(e))
 
         # Validate configuration
         try:
@@ -174,8 +172,6 @@ class DataQuery:
             raise ConfigurationError(f"Configuration validation failed: {e}")
 
         self._client: Optional[DataQueryClient] = None
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._own_loop: bool = False
 
     async def __aenter__(self):
         """Async context manager entry."""
@@ -216,11 +212,6 @@ class DataQuery:
     async def cleanup_async(self):
         """Cleanup resources and ensure proper shutdown."""
         await self.close_async()
-
-        # Force garbage collection to clean up any remaining references
-        import gc
-
-        gc.collect()
 
     def _run_sync(self, coro):
         """
@@ -319,7 +310,7 @@ class DataQuery:
         file_datetime: Optional[str] = None,
         destination_path: Optional[Path] = None,
         options: Optional[DownloadOptions] = None,
-        num_parts: int = 5,
+        num_parts: int = 1,
         progress_callback: Optional[Callable] = None,
     ) -> DownloadResult:
         """
@@ -332,7 +323,8 @@ class DataQuery:
                              from the Content-Disposition header in the response. If not provided,
                              uses the default download directory from configuration.
             options: Download options
-            num_parts: Number of parallel parts to split the file into (default 5)
+            num_parts: Number of parallel parts to split the file into (default 1,
+                single-stream). Set >1 to enable parallel HTTP range requests.
             progress_callback: Optional progress callback function
 
         Returns:
@@ -359,7 +351,7 @@ class DataQuery:
 
         client = self._ensure_client()
         # Pass parameters in correct order: file_group_id, file_datetime, options, num_parts, progress_callback
-        # Use default num_parts=5
+        # Use default num_parts=1
         return await client.download_file_async(file_group_id, file_datetime, options, num_parts, progress_callback)
 
     async def list_available_files_async(
@@ -825,11 +817,12 @@ class DataQuery:
         start_date: str,
         end_date: str,
         destination_dir: Path = Path("./downloads"),
-        max_concurrent: int = 25,  # Full 25 TPS capacity
-        num_parts: int = 5,
+        max_concurrent: int = 5,  # Conservative 5 TPS default
+        num_parts: int = 1,
         progress_callback: Optional[Callable] = None,
-        delay_between_downloads: float = 0.04,  # 25 TPS (1/25 = 0.04s)
+        delay_between_downloads: float = 0.2,  # 5 TPS (1/5 = 0.2s)
         max_retries: int = 3,
+        file_group_id: Optional[Union[str, List[str]]] = None,
     ) -> dict:
         """
         Download all files in a group for a date range using parallel HTTP range requests.
@@ -844,10 +837,14 @@ class DataQuery:
             end_date: End date in YYYYMMDD format
             destination_dir: Destination directory for downloads
             max_concurrent: Maximum concurrent files (multiplied by num_parts for total concurrency)
-            num_parts: Number of HTTP range parts per file (default 5)
+            num_parts: Number of HTTP range parts per file (default 1, single-stream).
+                Set >1 to enable parallel HTTP range requests.
             progress_callback: Optional progress callback for individual parts aggregation
-            delay_between_downloads: Delay in seconds between starting each file download (default 0.04s for 25 TPS)
+            delay_between_downloads: Delay in seconds between starting each file download (default 0.2s for 5 TPS)
             max_retries: Maximum number of retry attempts for failed downloads (default 3)
+            file_group_id: Optional restriction to specific file-group-id(s). Accepts a
+                single id or a list of ids. When a list is supplied, availability is
+                queried in parallel per id and the union of dates is downloaded.
 
         Returns:
             Dictionary with download results and statistics
@@ -858,6 +855,7 @@ class DataQuery:
         logger.info(
             "Starting group parallel download for date range",
             group_id=group_id,
+            file_group_id=file_group_id,
             start_date=start_date,
             end_date=end_date,
             max_concurrent=max_concurrent,
@@ -869,11 +867,51 @@ class DataQuery:
         self._ensure_client()
 
         try:
-            # Step 1: Get available files for the date range
+            # Step 1: Get available files for the date range.
+            # If the caller supplied a list of file-group-ids, query each one in
+            # parallel and merge the results; otherwise issue a single request
+            # (either unfiltered or filtered to the one id).
             logger.info("Step 1: Getting Available Files for Date Range")
-            available_files = await self.list_available_files_async(
-                group_id=group_id, start_date=start_date, end_date=end_date
-            )
+            if isinstance(file_group_id, (list, tuple, set)):
+                id_list = [fg for fg in file_group_id if fg]
+                if not id_list:
+                    available_files = await self.list_available_files_async(
+                        group_id=group_id,
+                        start_date=start_date,
+                        end_date=end_date,
+                    )
+                else:
+                    per_id_results = await asyncio.gather(
+                        *(
+                            self.list_available_files_async(
+                                group_id=group_id,
+                                file_group_id=fg,
+                                start_date=start_date,
+                                end_date=end_date,
+                            )
+                            for fg in id_list
+                        )
+                    )
+                    # Merge while de-duplicating on (file-group-id, file-datetime).
+                    seen: set = set()
+                    available_files = []
+                    for batch in per_id_results:
+                        for entry in batch or []:
+                            key = (
+                                entry.get("file-group-id", entry.get("file_group_id")),
+                                entry.get("file-datetime", entry.get("file_datetime")),
+                            )
+                            if key in seen:
+                                continue
+                            seen.add(key)
+                            available_files.append(entry)
+            else:
+                available_files = await self.list_available_files_async(
+                    group_id=group_id,
+                    file_group_id=file_group_id,
+                    start_date=start_date,
+                    end_date=end_date,
+                )
 
             # Filter to only files explicitly marked available
             try:
@@ -966,9 +1004,13 @@ class DataQuery:
                 destination_path = dest_dir
 
                 try:
-                    # Use the client's parallel download method but with our global semaphore
-                    # We need to modify the client call to use our flattened concurrency
-                    result = await self._download_file_parallel(
+                    # Delegate to the shared flattened-concurrency helper so the
+                    # global semaphore covers every in-flight HTTP range across
+                    # every file in this batch.
+                    from ._parallel_download import download_file_parallel_flattened
+
+                    result = await download_file_parallel_flattened(
+                        client=self._ensure_client(),
                         file_group_id=file_group_id,
                         file_datetime=file_datetime,
                         destination_path=destination_path,
@@ -1202,7 +1244,7 @@ class DataQuery:
         destination_dir: Path = Path("./downloads"),
         max_concurrent: int = 5,
         num_parts: int = 1,
-        delay_between_downloads: float = 0.04,
+        delay_between_downloads: float = 0.2,
         max_retries: int = 3,
         progress_callback: Optional[Callable] = None,
         chunk_delay: float = 2.0,
@@ -1222,7 +1264,7 @@ class DataQuery:
             destination_dir: Destination directory for downloads
             max_concurrent: Maximum concurrent file downloads per chunk (default: 5)
             num_parts: Number of parallel parts per file download (default: 1)
-            delay_between_downloads: Delay in seconds between file downloads (default: 0.04 for 25 TPS)
+            delay_between_downloads: Delay in seconds between file downloads (default: 0.2 for 5 TPS)
             max_retries: Maximum retry attempts for failed downloads (default: 3)
             progress_callback: Optional progress callback for individual files
             chunk_delay: Delay in seconds between monthly chunks (default: 2.0)
@@ -1346,340 +1388,6 @@ class DataQuery:
         logger.info("Historical download completed", **{k: v for k, v in summary.items() if k != "chunk_results"})
         return summary
 
-    async def _download_file_parallel(
-        self,
-        file_group_id: str,
-        file_datetime: Optional[str],
-        destination_path: Path,
-        num_parts: int,
-        global_semaphore: asyncio.Semaphore,
-        progress_callback: Optional[Callable] = None,
-    ) -> Optional[DownloadResult]:
-        """
-        Download a file using parallel parts with flattened concurrency control.
-
-        This method implements the core flattened concurrency logic where each
-        HTTP range request competes for the global semaphore rather than being
-        grouped by file.
-
-        Args:
-            file_group_id: File group ID to download
-            file_datetime: Optional file datetime
-            destination_path: Destination path (directory)
-            num_parts: Number of parts to download in parallel
-            global_semaphore: Global semaphore controlling total HTTP concurrency
-            progress_callback: Optional progress callback
-
-        Returns:
-            DownloadResult if successful, None if failed
-        """
-        import time
-        from datetime import datetime
-
-        from .client import get_filename_from_response, validate_file_datetime
-        from .models import (
-            DownloadOptions,
-            DownloadProgress,
-            DownloadResult,
-            DownloadStatus,
-        )
-
-        try:
-            client = self._ensure_client()
-
-            if file_datetime:
-                validate_file_datetime(file_datetime)
-
-            if num_parts is None or num_parts <= 0:
-                num_parts = 5
-
-            # Check if range downloads are disabled - use single stream instead
-            if not client.config.enable_range_downloads:
-                return await client.download_file_async(
-                    file_group_id=file_group_id,
-                    file_datetime=file_datetime,
-                    options=DownloadOptions(
-                        destination_path=destination_path,
-                        overwrite_existing=client.config.overwrite_existing,
-                    ),
-                    progress_callback=progress_callback,
-                )
-
-            # Build params for API call
-            params = {"file-group-id": file_group_id}
-            if file_datetime:
-                params["file-datetime"] = file_datetime
-
-            # Determine destination directory
-            download_options = DownloadOptions(
-                destination_path=destination_path,
-                overwrite_existing=client.config.overwrite_existing,
-            )
-            if download_options.destination_path:
-                resolved_path = Path(download_options.destination_path)
-                if resolved_path.suffix:
-                    destination_dir = resolved_path.parent
-                else:
-                    destination_dir = resolved_path
-            else:
-                destination_dir = Path(client.config.download_dir)
-
-            if download_options.create_directories:
-                destination_dir.mkdir(parents=True, exist_ok=True)
-
-            start_time = time.time()
-            bytes_downloaded = 0
-            destination: Optional[Path] = None
-            temp_destination: Optional[Path] = None
-            total_bytes: int = 0
-
-            # Step 1: Probe file size with a 1-byte range request
-            url = client._build_files_api_url("group/file/download")
-            probe_headers = {"Range": "bytes=0-0"}
-
-            async with global_semaphore:  # Use global semaphore for probe request
-                async with await client._enter_request_cm(
-                    "GET", url, params=params, headers=probe_headers
-                ) as probe_resp:
-                    await client._handle_response(probe_resp)
-                    content_range = probe_resp.headers.get("content-range") or probe_resp.headers.get("Content-Range")
-                    if content_range and "/" in content_range:
-                        try:
-                            total_bytes = int(content_range.split("/")[-1])
-                        except Exception:
-                            total_bytes = int(probe_resp.headers.get("content-length", "0"))
-                    else:
-                        # Fallback to single-stream download if range not supported
-                        return await client.download_file_async(
-                            file_group_id=file_group_id,
-                            file_datetime=file_datetime,
-                            options=download_options,
-                            progress_callback=progress_callback,
-                        )
-
-                    # If file is small (<10MB), prefer a single-stream download
-                    ten_mb = 10 * 1024 * 1024
-                    if total_bytes and total_bytes < ten_mb:
-                        return await client.download_file_async(
-                            file_group_id=file_group_id,
-                            file_datetime=file_datetime,
-                            options=download_options,
-                            progress_callback=progress_callback,
-                        )
-
-                    # Scale num_parts with file size for large files
-                    if total_bytes > 500 * 1024 * 1024:  # >500MB
-                        num_parts = max(num_parts, min(total_bytes // (100 * 1024 * 1024), 20))
-
-                    # Determine filename from headers
-                    filename = get_filename_from_response(probe_resp, file_group_id, file_datetime)
-                    destination = destination_dir / filename
-
-                    if destination.exists() and not download_options.overwrite_existing:
-                        raise FileExistsError(f"File already exists: {destination}")
-
-            # Step 2: Prepare temp file with full size for random access writes
-            temp_destination = destination.with_suffix(destination.suffix + ".part")
-            with open(temp_destination, "wb", buffering=1024 * 1024) as f:  # 1MB buffer for network drives
-                f.truncate(total_bytes)
-
-            # Step 3: Compute ranges for parallel download
-            part_size = total_bytes // num_parts
-            ranges = []
-            start = 0
-            for i in range(num_parts):
-                end = (start + part_size - 1) if i < num_parts - 1 else (total_bytes - 1)
-                if start > end:
-                    break
-                ranges.append((start, end))
-                start = end + 1
-
-            # Scale chunk size with file size for parallel parts
-            chunk_size = download_options.chunk_size or 1048576  # 1MB default
-            if part_size > 100 * 1024 * 1024:  # Part >100MB: use 4MB chunks
-                chunk_size = max(chunk_size, 4 * 1024 * 1024)
-            elif part_size > 50 * 1024 * 1024:  # Part >50MB: use 2MB chunks
-                chunk_size = max(chunk_size, 2 * 1024 * 1024)
-
-            progress = DownloadProgress(
-                file_group_id=file_group_id,
-                total_bytes=total_bytes,
-                start_time=datetime.now(),
-            )
-
-            bytes_lock = asyncio.Lock()
-
-            # Progress callback optimization: track last callback state
-            last_callback_bytes = 0
-            last_callback_time = time.time()
-            callback_threshold_bytes = 1024 * 1024  # 1MB
-            callback_threshold_time = 0.5  # 0.5 seconds
-
-            # Per-part retry configuration
-            max_part_retries = download_options.max_retries
-            part_retry_delay = download_options.retry_delay
-
-            # For large file parts, disable the total timeout but keep sock_read
-            import aiohttp
-
-            range_timeout = aiohttp.ClientTimeout(
-                total=None,
-                sock_read=client.config.timeout,
-            )
-
-            # Get the current event loop for async file I/O
-            loop = asyncio.get_running_loop()
-
-            # Initialize bandwidth throttler if configured
-            throttler = None
-            if download_options.max_bandwidth_mbps:
-                from .models import BandwidthThrottler
-
-                throttler = BandwidthThrottler(max_bytes_per_second=int(download_options.max_bandwidth_mbps * 125000))
-
-            # Step 4: Download each range with global semaphore control
-            async def download_range(start_byte: int, end_byte: int):
-                nonlocal bytes_downloaded, last_callback_bytes, last_callback_time
-                range_headers = {"Range": f"bytes={start_byte}-{end_byte}"}
-                part_bytes_written = 0  # Track bytes for retry rollback
-
-                for attempt in range(max_part_retries + 1):
-                    try:
-                        # On retry, subtract previously counted bytes for this part
-                        if attempt > 0 and part_bytes_written > 0:
-                            async with bytes_lock:
-                                bytes_downloaded -= part_bytes_written
-                                progress.update_progress(bytes_downloaded)
-                            part_bytes_written = 0
-                            await asyncio.sleep(part_retry_delay * (2 ** (attempt - 1)))
-
-                        with open(temp_destination, "r+b") as part_fh:
-                            async with global_semaphore:
-                                async with await client._enter_request_cm(
-                                    "GET",
-                                    url,
-                                    params=params,
-                                    headers=range_headers,
-                                    timeout=range_timeout,
-                                ) as resp:
-                                    await client._handle_response(resp)
-                                    current_pos = start_byte
-
-                                    def _seek_write(fh, pos, data):
-                                        fh.seek(pos)
-                                        fh.write(data)
-
-                                    async for chunk in resp.content.iter_chunked(chunk_size):
-                                        if throttler:
-                                            await throttler.throttle(len(chunk))
-
-                                        await loop.run_in_executor(
-                                            None,
-                                            _seek_write,
-                                            part_fh,
-                                            current_pos,
-                                            chunk,
-                                        )
-
-                                        chunk_len = len(chunk)
-                                        current_pos += chunk_len
-                                        part_bytes_written += chunk_len
-
-                                        # Update counters under lock, invoke callback outside
-                                        should_callback = False
-                                        async with bytes_lock:
-                                            bytes_downloaded += chunk_len
-                                            progress.update_progress(bytes_downloaded)
-
-                                            current_time = time.time()
-                                            bytes_diff = bytes_downloaded - last_callback_bytes
-                                            time_diff = current_time - last_callback_time
-
-                                            should_callback = (
-                                                bytes_diff >= callback_threshold_bytes
-                                                or time_diff >= callback_threshold_time
-                                                or bytes_downloaded == total_bytes
-                                            )
-
-                                            if should_callback:
-                                                last_callback_bytes = bytes_downloaded
-                                                last_callback_time = current_time
-
-                                        if should_callback:
-                                            if progress_callback:
-                                                progress_callback(progress)
-                                            elif download_options.show_progress:
-                                                logger.info(
-                                                    "Download progress (flattened)",
-                                                    file=file_group_id,
-                                                    percentage=f"{progress.percentage:.1f}%",
-                                                    downloaded=format_file_size(bytes_downloaded),
-                                                )
-                        # Part completed successfully
-                        return
-                    except Exception:
-                        if attempt == max_part_retries:
-                            raise  # Exhausted retries, propagate to gather
-
-            # Step 5: Execute all range downloads concurrently (each will acquire global semaphore)
-            await asyncio.gather(*(download_range(s, e) for s, e in ranges))
-
-            temp_destination.replace(destination)
-
-            download_time = time.time() - start_time
-            return DownloadResult(
-                file_group_id=file_group_id,
-                group_id="",
-                local_path=destination,
-                file_size=total_bytes,
-                download_time=download_time,
-                bytes_downloaded=bytes_downloaded,
-                status=DownloadStatus.COMPLETED,
-                error_message=None,
-            )
-
-        except FileExistsError as e:
-            return DownloadResult(
-                file_group_id=file_group_id,
-                group_id="",
-                local_path=destination,
-                file_size=0,
-                download_time=time.time() - start_time,
-                bytes_downloaded=0,
-                status=DownloadStatus.ALREADY_EXISTS,
-                error_message=f"FileExistsError: {e}",
-            )
-        except Exception as e:
-            # Cleanup on error
-            try:
-                if temp_destination and temp_destination.exists():
-                    # Attempt salvage only if all bytes were actually downloaded
-                    if total_bytes and bytes_downloaded >= total_bytes:
-                        if destination is None:
-                            destination = temp_destination.with_suffix("")
-                        temp_destination.replace(destination)
-                        return DownloadResult(
-                            file_group_id=file_group_id,
-                            group_id="",
-                            local_path=destination,
-                            file_size=total_bytes,
-                            download_time=time.time() - start_time,
-                            bytes_downloaded=bytes_downloaded,
-                            status=DownloadStatus.COMPLETED,
-                            error_message=None,
-                        )
-                    else:
-                        temp_destination.unlink(missing_ok=True)
-            except Exception:
-                pass
-
-            logger.error(
-                "Flattened parallel download failed for file",
-                file_group_id=file_group_id,
-                error=str(e),
-            )
-            return None
-
     def _calculate_rate_limit_capacity(self) -> Dict[str, Any]:
         """
         Calculate the rate limit capacity without reducing concurrency.
@@ -1795,7 +1503,7 @@ class DataQuery:
                 final_intelligent_delay=intelligent_delay,
             )
 
-            # No safety margin - use full 25 TPS capacity
+            # No safety margin - use full configured TPS capacity
 
             logger.info(
                 "Calculated intelligent delay for rate limit protection",
@@ -2102,7 +1810,7 @@ class DataQuery:
         file_datetime: Optional[str] = None,
         destination_path: Optional[Path] = None,
         options: Optional[DownloadOptions] = None,
-        num_parts: int = 5,
+        num_parts: int = 1,
         progress_callback: Optional[Callable] = None,
     ) -> DownloadResult:
         """
@@ -2413,9 +2121,10 @@ class DataQuery:
         end_date: str,
         destination_dir: Path = Path("./downloads"),
         max_concurrent: int = 5,
-        num_parts: int = 5,
+        num_parts: int = 1,
         progress_callback: Optional[Callable] = None,
         delay_between_downloads: float = 1.0,
+        file_group_id: Optional[Union[str, List[str]]] = None,
     ) -> dict:
         """Synchronous wrapper for run_group_download_async."""
         return self._run_sync(
@@ -2428,6 +2137,7 @@ class DataQuery:
                 num_parts,
                 progress_callback,
                 delay_between_downloads,
+                file_group_id=file_group_id,
             )
         )
 
@@ -2439,7 +2149,7 @@ class DataQuery:
         destination_dir: Path = Path("./downloads"),
         max_concurrent: int = 5,
         num_parts: int = 1,
-        delay_between_downloads: float = 0.04,
+        delay_between_downloads: float = 0.2,
         max_retries: int = 3,
         progress_callback: Optional[Callable] = None,
         chunk_delay: float = 2.0,
@@ -2466,140 +2176,74 @@ class DataQuery:
             self._run_sync(self.close_async())
             self._client = None
 
-        # Force garbage collection to clean up any remaining references
-        import gc
-
-        gc.collect()
-
     # Sync wrapper methods with _sync suffix for testing compatibility
 
-    def connect_sync(self):
-        """Synchronous wrapper for connect with _sync suffix."""
-        return asyncio.run(self.connect_async())
+    # SSE notification-driven download (the only watch path) — see
+    # auto_download_async below.
 
-    def close_sync(self):
-        """Synchronous wrapper for close with _sync suffix."""
-        if self._client:
-            return asyncio.run(self.close_async())
-
-    def list_groups_sync(self, limit: Optional[int] = 100) -> List[Group]:
-        """Synchronous wrapper for list_groups with _sync suffix."""
-        return asyncio.run(self.list_groups_async(limit))
-
-    def search_groups_sync(
-        self, keywords: str, limit: Optional[int] = 100, offset: Optional[int] = None
-    ) -> List[Group]:
-        """Synchronous wrapper for search_groups with _sync suffix."""
-        return asyncio.run(self.search_groups_async(keywords, limit, offset))
-
-    def list_files_sync(self, group_id: str, file_group_id: Optional[str] = None) -> List[FileInfo]:
-        """Synchronous wrapper for list_files with _sync suffix."""
-        return asyncio.run(self.list_files_async(group_id, file_group_id))
-
-    def check_availability_sync(self, file_group_id: str, file_datetime: str) -> AvailabilityInfo:
-        """Synchronous wrapper for check_availability with _sync suffix."""
-        return asyncio.run(self.check_availability_async(file_group_id, file_datetime))
-
-    def download_file_sync(
-        self,
-        file_group_id: str,
-        file_datetime: Optional[str] = None,
-        destination_path: Optional[Path] = None,
-        options: Optional[DownloadOptions] = None,
-        num_parts: int = 5,
-        progress_callback: Optional[Callable] = None,
-    ) -> DownloadResult:
-        """Synchronous wrapper for download_file with _sync suffix."""
-        return asyncio.run(
-            self.download_file_async(
-                file_group_id,
-                file_datetime,
-                destination_path,
-                options,
-                num_parts,
-                progress_callback,
-            )
-        )
-
-    def list_available_files_sync(
-        self,
-        group_id: str,
-        file_group_id: Optional[str] = None,
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """Synchronous wrapper for list_available_files with _sync suffix."""
-        return asyncio.run(self.list_available_files_async(group_id, file_group_id, start_date, end_date))
-
-    def health_check_sync(self) -> bool:
-        """Synchronous wrapper for health_check with _sync suffix."""
-        return asyncio.run(self.health_check_async())
-
-    def run_group_download_sync(
-        self,
-        group_id: str,
-        start_date: str,
-        end_date: str,
-        destination_dir: Path = Path("./downloads"),
-        max_concurrent: int = 5,
-    ) -> dict:
-        """Synchronous wrapper for run_group_download with _sync suffix."""
-        return asyncio.run(
-            self.run_group_download_async(group_id, start_date, end_date, destination_dir, max_concurrent)
-        )
-
-    # Auto-Download wrappers
-    async def start_auto_download_async(
+    async def auto_download_async(
         self,
         group_id: str,
         destination_dir: str = "./downloads",
-        interval_minutes: int = 30,
         file_filter: Optional[Callable] = None,
         progress_callback: Optional[Callable] = None,
         error_callback: Optional[Callable] = None,
         max_retries: int = 3,
-        check_current_date_only: bool = True,
-        max_concurrent_downloads: Optional[int] = None,
+        max_concurrent_downloads: int = 5,
+        initial_check: bool = True,
+        reconnect_delay: float = 5.0,
+        max_reconnect_delay: float = 60.0,
+        file_group_id: Optional[Union[str, List[str]]] = None,
+        show_progress: bool = True,
     ):
-        """Proxy to client's start_auto_download_async."""
+        """Proxy to client's auto_download_async."""
         await self.connect_async()
         client = self._ensure_client()
-        return await client.start_auto_download_async(
+        return await client.auto_download_async(
             group_id=group_id,
             destination_dir=destination_dir,
-            interval_minutes=interval_minutes,
             file_filter=file_filter,
             progress_callback=progress_callback,
             error_callback=error_callback,
             max_retries=max_retries,
-            check_current_date_only=check_current_date_only,
             max_concurrent_downloads=max_concurrent_downloads,
+            initial_check=initial_check,
+            reconnect_delay=reconnect_delay,
+            max_reconnect_delay=max_reconnect_delay,
+            file_group_id=file_group_id,
+            show_progress=show_progress,
         )
 
-    def start_auto_download(
+    def auto_download(
         self,
         group_id: str,
         destination_dir: str = "./downloads",
-        interval_minutes: int = 30,
         file_filter: Optional[Callable] = None,
         progress_callback: Optional[Callable] = None,
         error_callback: Optional[Callable] = None,
         max_retries: int = 3,
-        check_current_date_only: bool = True,
-        max_concurrent_downloads: Optional[int] = None,
+        max_concurrent_downloads: int = 5,
+        initial_check: bool = True,
+        reconnect_delay: float = 5.0,
+        max_reconnect_delay: float = 60.0,
+        file_group_id: Optional[Union[str, List[str]]] = None,
+        show_progress: bool = True,
     ):
-        """Synchronous proxy to client's start_auto_download_async."""
+        """Synchronous proxy to client's auto_download_async."""
         return self._run_sync(
-            self.start_auto_download_async(
+            self.auto_download_async(
                 group_id,
                 destination_dir,
-                interval_minutes,
                 file_filter,
                 progress_callback,
                 error_callback,
                 max_retries,
-                check_current_date_only,
                 max_concurrent_downloads,
+                initial_check,
+                reconnect_delay,
+                max_reconnect_delay,
+                file_group_id=file_group_id,
+                show_progress=show_progress,
             )
         )
 

@@ -40,7 +40,7 @@ async def main():
             print(f"[Info] Subscribing to notifications for group '{group_id}'")
             print(f"[Info] Files will be saved to: {destination}\n")
 
-            manager = await dq.watch_and_download_async(
+            manager = await dq.auto_download_async(
                 group_id=group_id,
                 destination_dir=destination,
                 initial_check=True,

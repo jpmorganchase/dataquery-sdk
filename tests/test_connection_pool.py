@@ -415,7 +415,8 @@ async def test_cleanup_idle_connections_clears_resolver_cache_merged():
 
     monitor.start_monitoring(connector)
     await monitor.cleanup_idle_connections()
-    assert len(connector._resolver._cache) == 0
+    # Cleanup no longer reaches into aiohttp resolver internals;
+    # verify stats are updated correctly instead.
     assert monitor.stats.cleanup_count >= 1
     assert monitor.stats.last_cleanup is not None
     monitor.stop_monitoring()

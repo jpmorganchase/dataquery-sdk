@@ -74,14 +74,15 @@ class ClientConfig(BaseModel):
     timeout: float = Field(default=600.0, description="Default request timeout in seconds")
     max_retries: int = Field(default=3, description="Maximum retry attempts")
     retry_delay: float = Field(default=1.0, description="Delay between retries in seconds")
+    circuit_breaker_threshold: int = Field(default=5, description="Number of failures before circuit breaker opens")
 
     # Connection pooling
     pool_connections: int = Field(default=10, description="Number of connection pools")
     pool_maxsize: int = Field(default=20, description="Maximum connections per pool")
 
-    # Rate limiting - Full 25 TPS capacity (1500 requests per minute)
-    requests_per_minute: int = Field(default=1500, description="Requests per minute limit (25 TPS)")
-    burst_capacity: int = Field(default=25, description="Burst capacity for rate limiting")
+    # Rate limiting - conservative 5 TPS default (300 requests per minute)
+    requests_per_minute: int = Field(default=300, description="Requests per minute limit (5 TPS)")
+    burst_capacity: int = Field(default=5, description="Burst capacity for rate limiting")
 
     # Proxy configuration
     proxy_enabled: bool = Field(default=False, description="Enable proxy support")
@@ -227,6 +228,29 @@ class ClientConfig(BaseModel):
     def has_proxy_credentials(self) -> bool:
         """Check if proxy credentials are configured."""
         return bool(self.proxy_username) and bool(self.proxy_password)
+
+    def get_proxy_kwargs(self) -> Dict[str, Any]:
+        """Return aiohttp request/session kwargs for proxy routing.
+
+        Splat into any ``session.get/post/request(...)`` call — empty dict when
+        proxy support is disabled or no URL is configured, so the call becomes
+        a no-op.
+
+        Keeping this on the config (rather than inlined at each call site)
+        ensures auth, SSE, and API requests all route through the same proxy.
+        """
+        if not (self.proxy_enabled and self.proxy_url):
+            return {}
+        kwargs: Dict[str, Any] = {"proxy": self.proxy_url}
+        if self.has_proxy_credentials:
+            # Local import avoids making aiohttp a hard dependency of models.
+            from aiohttp import BasicAuth
+
+            kwargs["proxy_auth"] = BasicAuth(
+                login=self.proxy_username or "",
+                password=self.proxy_password or "",
+            )
+        return kwargs
 
     @property
     def api_base_url(self) -> str:

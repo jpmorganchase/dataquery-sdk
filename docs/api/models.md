@@ -48,6 +48,7 @@ DataQuery SDK provides several model classes for configuration and data handling
 | `download_dir` | `Optional[str]` | `"./downloads"` | `DATAQUERY_DOWNLOAD_DIR` | Default download directory |
 | `timeout` | `float` | `6000.0` | `DATAQUERY_TIMEOUT` | Request timeout in seconds |
 | `max_retries` | `int` | `3` | `DATAQUERY_MAX_RETRIES` | Maximum number of retries |
+| `circuit_breaker_threshold` | `int` | `5` | `DATAQUERY_CIRCUIT_BREAKER_THRESHOLD` | Number of failures before circuit breaker opens |
 | `log_level` | `str` | `"INFO"` | `DATAQUERY_LOG_LEVEL` | Logging level |
 
 !!! success "Simplified Configuration"

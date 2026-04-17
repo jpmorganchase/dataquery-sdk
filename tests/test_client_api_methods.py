@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import pytest
 
 from dataquery.client import DataQueryClient
-from dataquery.exceptions import AuthenticationError, FileNotFoundError, ValidationError
+from dataquery.exceptions import AuthenticationError, FileNotFoundInGroupError, ValidationError
 from dataquery.models import ClientConfig
 
 
@@ -268,7 +268,7 @@ async def test_files_and_availability(monkeypatch):
         return resp
 
     monkeypatch.setattr(client, "_make_authenticated_request", req_files_empty)
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(FileNotFoundInGroupError):
         await client.get_file_info_async("G", "F1")
 
     # check_availability_async
