@@ -8,6 +8,7 @@ handlers. Automatically reconnects on connection loss using exponential backoff.
 import asyncio
 import inspect
 import logging
+import time
 from dataclasses import dataclass
 from typing import Awaitable, Callable, Optional, Union
 
@@ -18,6 +19,12 @@ from .models import ClientConfig
 from .sse_event_store import SSEEventIdStore
 
 logger = logging.getLogger(__name__)
+
+# A connection that stays open for at least this many seconds is considered
+# "healthy" — the next disconnect resets the exponential backoff so that the
+# expected periodic server-side recycle (e.g. a 5-minute idle timeout) doesn't
+# inflate the reconnect delay over time.
+_HEALTHY_CONNECTION_SECONDS = 30.0
 
 
 @dataclass
@@ -61,6 +68,7 @@ class SSEClient:
         sse_timeout: float = 0,  # 0 = no timeout on the streaming read
         params: Optional[dict] = None,
         event_id_store: Optional[SSEEventIdStore] = None,
+        heartbeat_timeout: float = 0.0,
     ):
         """
         Initialise the SSE client.
@@ -88,6 +96,13 @@ class SSEClient:
                     as ``last-event-id`` query param + ``Last-Event-ID`` header
                     for cross-process replay) and every received event id is
                     written back to the store.
+            heartbeat_timeout: When > 0, force-reconnect if no bytes (events
+                    OR comment heartbeats) are received from the server within
+                    this many seconds. Protects against silent half-open TCP
+                    connections that wouldn't otherwise be detected. Must be
+                    larger than the server's keep-alive interval. ``0`` (the
+                    default) disables the watchdog and relies on the server
+                    closing the stream cleanly.
         """
         self.config = config
         self.auth_manager = auth_manager
@@ -98,6 +113,7 @@ class SSEClient:
         self.sse_timeout = sse_timeout
         self.params = dict(params) if params else None
         self.event_id_store = event_id_store
+        self.heartbeat_timeout = heartbeat_timeout
 
         self._running = False
         self._task: Optional[asyncio.Task] = None
@@ -109,6 +125,7 @@ class SSEClient:
                 self._last_event_id = stored
                 logger.info("Seeded SSE last-event-id from store: %s", stored)
         self._save_tasks: set[asyncio.Task] = set()
+        self._last_connection_duration: float = 0.0
 
     # ------------------------------------------------------------------
     # Public interface
@@ -163,9 +180,16 @@ class SSEClient:
         return headers
 
     async def _run_loop(self) -> None:
-        """Outer loop: reconnect with exponential backoff on failure."""
+        """Outer loop: reconnect with exponential backoff on failure.
+
+        The backoff is reset whenever the preceding connection lasted long
+        enough to count as "healthy" (see ``_HEALTHY_CONNECTION_SECONDS``) so
+        an expected periodic server recycle — e.g. a 5-minute idle timeout —
+        doesn't grow the reconnect delay across cycles.
+        """
         delay = self.reconnect_delay
         while self._running:
+            self._last_connection_duration = 0.0
             try:
                 await self._connect_and_listen()
                 # If _connect_and_listen returned cleanly (stop requested),
@@ -173,11 +197,20 @@ class SSEClient:
                 if not self._running:
                     break
                 # Server closed the connection — reconnect after a short pause.
-                logger.info("SSE connection closed by server; reconnecting in %.1fs", delay)
+                logger.info(
+                    "SSE connection closed by server after %.1fs; reconnecting in %.1fs",
+                    self._last_connection_duration,
+                    delay,
+                )
             except asyncio.CancelledError:
                 break
             except Exception as exc:
-                logger.warning("SSE connection error: %s; reconnecting in %.1fs", exc, delay)
+                logger.warning(
+                    "SSE connection error after %.1fs: %s; reconnecting in %.1fs",
+                    self._last_connection_duration,
+                    exc,
+                    delay,
+                )
                 await self._dispatch_error(exc)
 
             # Wait for `delay` seconds or until stop() is called.
@@ -187,8 +220,14 @@ class SSEClient:
             except asyncio.TimeoutError:
                 pass
 
-            # Exponential backoff, capped at max_reconnect_delay.
-            delay = min(delay * 2, self.max_reconnect_delay)
+            if self._last_connection_duration >= _HEALTHY_CONNECTION_SECONDS:
+                # The previous connection lasted long enough to be considered
+                # successful, so the next hiccup should start from a fresh
+                # short delay rather than inheriting the last backoff value.
+                delay = self.reconnect_delay
+            else:
+                # Exponential backoff, capped at max_reconnect_delay.
+                delay = min(delay * 2, self.max_reconnect_delay)
 
         self._running = False
 
@@ -202,8 +241,12 @@ class SSEClient:
             effective["last-event-id"] = self._last_event_id
         return effective or None
 
-    async def _connect_and_listen(self) -> None:
-        """Open a single SSE connection and read events until disconnected."""
+    async def _connect_and_listen(self) -> float:
+        """Open a single SSE connection and read events until disconnected.
+
+        Returns the number of seconds the connection stayed open (used by
+        ``_run_loop`` to decide whether to reset the backoff).
+        """
         url = self._build_notification_url()
         headers = await self._get_headers()
         request_params = self._build_request_params()
@@ -218,7 +261,16 @@ class SSEClient:
                 if response.status != 200:
                     raise ConnectionError(f"SSE endpoint returned HTTP {response.status} for {url}")
                 logger.info("SSE connection established to %s (params=%s)", url, request_params)
-                await self._parse_sse_stream(response)
+                started_at = time.monotonic()
+                # Any exception from _parse_sse_stream propagates with the
+                # connection duration recorded on `self` so callers can read
+                # it after the exception bubbles up.
+                self._last_connection_duration = 0.0
+                try:
+                    await self._parse_sse_stream(response)
+                finally:
+                    self._last_connection_duration = time.monotonic() - started_at
+                return self._last_connection_duration
 
     async def _parse_sse_stream(self, response: aiohttp.ClientResponse) -> None:
         """
@@ -231,15 +283,38 @@ class SSEClient:
             id: <id>\\n
             retry: <ms>\\n
             \\n          ← blank line dispatches the buffered event
+
+        When ``self.heartbeat_timeout > 0`` the loop enforces that at least one
+        byte arrives within the timeout window between lines; if the server
+        goes silent (half-open TCP / stalled proxy) a ``ConnectionError`` is
+        raised so the outer loop reconnects. Any line — including SSE
+        comments (``:keepalive``) — counts as activity.
         """
         event_type = "message"
         data_parts: list[str] = []
         event_id: Optional[str] = None
         retry_ms: Optional[int] = None
 
-        async for raw_line in response.content:
+        content_iter = response.content.__aiter__()
+        while True:
             if not self._running:
                 break
+
+            try:
+                if self.heartbeat_timeout > 0:
+                    raw_line = await asyncio.wait_for(
+                        content_iter.__anext__(),
+                        timeout=self.heartbeat_timeout,
+                    )
+                else:
+                    raw_line = await content_iter.__anext__()
+            except StopAsyncIteration:
+                break
+            except asyncio.TimeoutError as exc:
+                raise ConnectionError(
+                    f"No SSE data received within {self.heartbeat_timeout:.1f}s "
+                    "(heartbeat watchdog triggered) — forcing reconnect"
+                ) from exc
 
             line = raw_line.decode("utf-8").rstrip("\r\n")
 

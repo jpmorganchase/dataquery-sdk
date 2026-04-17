@@ -77,6 +77,7 @@ class NotificationDownloadManager:
         file_group_id: Optional[Union[str, List[str]]] = None,
         show_progress: bool = True,
         enable_event_replay: bool = True,
+        heartbeat_timeout: float = 0.0,
     ):
         """
         Initialise the manager.
@@ -115,6 +116,13 @@ class NotificationDownloadManager:
                            replay covers that gap precisely. Set ``False`` to
                            restore the legacy bulk-check-every-startup
                            behaviour.
+            heartbeat_timeout: When > 0, force-reconnect the SSE stream if no
+                           bytes (events or comment heartbeats) arrive within
+                           this many seconds. Detects half-open TCP /
+                           stalled-proxy hangs that the server's clean-close
+                           recycle wouldn't otherwise surface. Must be larger
+                           than the server's keep-alive interval. ``0`` (the
+                           default) disables the watchdog.
         """
         self.client = client
         self.group_id = group_id
@@ -134,6 +142,7 @@ class NotificationDownloadManager:
         self._sse_client: Optional[SSEClient] = None
         self._reconnect_delay = reconnect_delay
         self._max_reconnect_delay = max_reconnect_delay
+        self._heartbeat_timeout = heartbeat_timeout
         self._event_id_store: Optional[SSEEventIdStore] = None
 
         # State
@@ -220,6 +229,7 @@ class NotificationDownloadManager:
             max_reconnect_delay=self._max_reconnect_delay,
             params=sse_params,
             event_id_store=self._event_id_store,
+            heartbeat_timeout=self._heartbeat_timeout,
         )
         await self._sse_client.start()
 

@@ -2196,6 +2196,7 @@ class DataQuery:
         file_group_id: Optional[Union[str, List[str]]] = None,
         show_progress: bool = True,
         enable_event_replay: bool = True,
+        heartbeat_timeout: float = 0.0,
     ):
         """Proxy to client's auto_download_async."""
         await self.connect_async()
@@ -2214,6 +2215,7 @@ class DataQuery:
             file_group_id=file_group_id,
             show_progress=show_progress,
             enable_event_replay=enable_event_replay,
+            heartbeat_timeout=heartbeat_timeout,
         )
 
     # DataFrame conversion proxies

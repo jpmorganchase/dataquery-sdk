@@ -503,3 +503,136 @@ async def test_stop_drains_pending_save_tasks(tmp_path):
     await client.stop()
     assert not client._save_tasks
     assert store.load() == "evt-final"
+
+
+# ---------------------------------------------------------------------------
+# Backoff reset after a healthy connection
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_backoff_resets_after_healthy_connection_then_disconnect():
+    """A long-lived connection (>= _HEALTHY_CONNECTION_SECONDS) must reset
+    the backoff so the next reconnect uses ``reconnect_delay`` again, not the
+    inflated value from the previous failure loop."""
+    import dataquery.sse_client as sse_mod
+
+    client = SSEClient(
+        config=_make_config(),
+        auth_manager=_make_auth_manager(),
+        reconnect_delay=1.0,
+        max_reconnect_delay=8.0,
+    )
+
+    calls = {"n": 0}
+    durations = [0.5, 60.0, 0.5]  # short, healthy, short
+
+    async def fake_connect() -> float:
+        i = calls["n"]
+        calls["n"] += 1
+        client._last_connection_duration = durations[i]
+        return durations[i]
+
+    client._connect_and_listen = fake_connect  # type: ignore[assignment]
+
+    delays: list[float] = []
+    orig_wait_for = asyncio.wait_for
+
+    async def capturing_wait_for(coro: Any, timeout: float) -> Any:
+        delays.append(timeout)
+        # After 3 waits, signal stop so the loop exits cleanly.
+        if len(delays) >= 3:
+            client._stop_event.set()
+        return await orig_wait_for(coro, timeout=0.001)
+
+    sse_mod.asyncio.wait_for = capturing_wait_for  # type: ignore[assignment]
+    try:
+        client._running = True
+        await client._run_loop()
+    finally:
+        sse_mod.asyncio.wait_for = orig_wait_for  # type: ignore[assignment]
+
+    # Sequence:
+    #   1) connect → 0.5s   → wait reconnect_delay (1.0s), then double next time
+    #   2) connect → 60s    → wait current delay (2.0s), then RESET to 1.0s
+    #   3) connect → 0.5s   → wait 1.0s (proves the reset happened) then exit
+    assert delays[0] == pytest.approx(1.0)
+    assert delays[1] == pytest.approx(2.0)
+    assert delays[2] == pytest.approx(1.0)
+
+
+# ---------------------------------------------------------------------------
+# Heartbeat watchdog
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_watchdog_raises_when_stream_is_silent():
+    """Watchdog forces a reconnect (ConnectionError) when no bytes arrive."""
+    client = SSEClient(
+        config=_make_config(),
+        auth_manager=_make_auth_manager(),
+        heartbeat_timeout=0.05,
+    )
+    client._running = True
+
+    class _SilentContent:
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self) -> bytes:
+            await asyncio.sleep(10.0)  # never returns within the watchdog
+            raise StopAsyncIteration
+
+    with pytest.raises(ConnectionError, match="heartbeat watchdog"):
+        await client._parse_sse_stream(_FakeResponse(_SilentContent()))
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_disabled_by_default_does_not_time_out():
+    """heartbeat_timeout=0 must not wrap reads in wait_for."""
+    received: list[SSEEvent] = []
+    client = SSEClient(
+        config=_make_config(),
+        auth_manager=_make_auth_manager(),
+        on_event=lambda e: received.append(e),
+    )
+    client._running = True
+
+    content = _FakeContent([b"data: alive\n", b"\n"])
+    await client._parse_sse_stream(_FakeResponse(content))
+    assert received and received[0].data == "alive"
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_treats_comment_lines_as_activity():
+    """A comment line (``:keepalive``) resets the watchdog window."""
+    received: list[SSEEvent] = []
+    client = SSEClient(
+        config=_make_config(),
+        auth_manager=_make_auth_manager(),
+        on_event=lambda e: received.append(e),
+        heartbeat_timeout=0.1,
+    )
+    client._running = True
+
+    async def gen():
+        yield b": keepalive\n"
+        await asyncio.sleep(0.03)
+        yield b": keepalive\n"
+        await asyncio.sleep(0.03)
+        yield b"data: ok\n"
+        yield b"\n"
+
+    class _AsyncIter:
+        def __init__(self, agen):
+            self._agen = agen
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            return await self._agen.__anext__()
+
+    await client._parse_sse_stream(_FakeResponse(_AsyncIter(gen())))
+    assert received and received[0].data == "ok"
