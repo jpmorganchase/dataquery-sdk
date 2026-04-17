@@ -188,7 +188,7 @@ async def cmd_download(args: argparse.Namespace) -> int:
             # (and optionally file-group-id) as query parameters so the server
             # filters events. An initial availability check covers anything
             # published before the subscription started.
-            mgr = await dq.watch_and_download_async(
+            mgr = await dq.auto_download_async(
                 group_id=args.group_id,
                 destination_dir=(args.destination or "./downloads"),
                 file_group_id=file_group_id,

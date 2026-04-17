@@ -817,10 +817,10 @@ class DataQuery:
         start_date: str,
         end_date: str,
         destination_dir: Path = Path("./downloads"),
-        max_concurrent: int = 25,  # Full 25 TPS capacity
+        max_concurrent: int = 5,  # Conservative 5 TPS default
         num_parts: int = 1,
         progress_callback: Optional[Callable] = None,
-        delay_between_downloads: float = 0.04,  # 25 TPS (1/25 = 0.04s)
+        delay_between_downloads: float = 0.2,  # 5 TPS (1/5 = 0.2s)
         max_retries: int = 3,
         file_group_id: Optional[Union[str, List[str]]] = None,
     ) -> dict:
@@ -837,9 +837,10 @@ class DataQuery:
             end_date: End date in YYYYMMDD format
             destination_dir: Destination directory for downloads
             max_concurrent: Maximum concurrent files (multiplied by num_parts for total concurrency)
-            num_parts: Number of HTTP range parts per file (default 5)
+            num_parts: Number of HTTP range parts per file (default 1, single-stream).
+                Set >1 to enable parallel HTTP range requests.
             progress_callback: Optional progress callback for individual parts aggregation
-            delay_between_downloads: Delay in seconds between starting each file download (default 0.04s for 25 TPS)
+            delay_between_downloads: Delay in seconds between starting each file download (default 0.2s for 5 TPS)
             max_retries: Maximum number of retry attempts for failed downloads (default 3)
             file_group_id: Optional restriction to specific file-group-id(s). Accepts a
                 single id or a list of ids. When a list is supplied, availability is
@@ -1243,7 +1244,7 @@ class DataQuery:
         destination_dir: Path = Path("./downloads"),
         max_concurrent: int = 5,
         num_parts: int = 1,
-        delay_between_downloads: float = 0.04,
+        delay_between_downloads: float = 0.2,
         max_retries: int = 3,
         progress_callback: Optional[Callable] = None,
         chunk_delay: float = 2.0,
@@ -1263,7 +1264,7 @@ class DataQuery:
             destination_dir: Destination directory for downloads
             max_concurrent: Maximum concurrent file downloads per chunk (default: 5)
             num_parts: Number of parallel parts per file download (default: 1)
-            delay_between_downloads: Delay in seconds between file downloads (default: 0.04 for 25 TPS)
+            delay_between_downloads: Delay in seconds between file downloads (default: 0.2 for 5 TPS)
             max_retries: Maximum retry attempts for failed downloads (default: 3)
             progress_callback: Optional progress callback for individual files
             chunk_delay: Delay in seconds between monthly chunks (default: 2.0)
@@ -1502,7 +1503,7 @@ class DataQuery:
                 final_intelligent_delay=intelligent_delay,
             )
 
-            # No safety margin - use full 25 TPS capacity
+            # No safety margin - use full configured TPS capacity
 
             logger.info(
                 "Calculated intelligent delay for rate limit protection",
@@ -2148,7 +2149,7 @@ class DataQuery:
         destination_dir: Path = Path("./downloads"),
         max_concurrent: int = 5,
         num_parts: int = 1,
-        delay_between_downloads: float = 0.04,
+        delay_between_downloads: float = 0.2,
         max_retries: int = 3,
         progress_callback: Optional[Callable] = None,
         chunk_delay: float = 2.0,
@@ -2178,9 +2179,9 @@ class DataQuery:
     # Sync wrapper methods with _sync suffix for testing compatibility
 
     # SSE notification-driven download (the only watch path) — see
-    # watch_and_download_async below.
+    # auto_download_async below.
 
-    async def watch_and_download_async(
+    async def auto_download_async(
         self,
         group_id: str,
         destination_dir: str = "./downloads",
@@ -2195,10 +2196,10 @@ class DataQuery:
         file_group_id: Optional[Union[str, List[str]]] = None,
         show_progress: bool = True,
     ):
-        """Proxy to client's watch_and_download_async."""
+        """Proxy to client's auto_download_async."""
         await self.connect_async()
         client = self._ensure_client()
-        return await client.watch_and_download_async(
+        return await client.auto_download_async(
             group_id=group_id,
             destination_dir=destination_dir,
             file_filter=file_filter,
@@ -2213,7 +2214,7 @@ class DataQuery:
             show_progress=show_progress,
         )
 
-    def watch_and_download(
+    def auto_download(
         self,
         group_id: str,
         destination_dir: str = "./downloads",
@@ -2228,9 +2229,9 @@ class DataQuery:
         file_group_id: Optional[Union[str, List[str]]] = None,
         show_progress: bool = True,
     ):
-        """Synchronous proxy to client's watch_and_download_async."""
+        """Synchronous proxy to client's auto_download_async."""
         return self._run_sync(
-            self.watch_and_download_async(
+            self.auto_download_async(
                 group_id,
                 destination_dir,
                 file_filter,

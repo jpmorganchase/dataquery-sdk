@@ -48,9 +48,9 @@ class EnvConfig:
         # Connection Pooling
         "POOL_CONNECTIONS": "10",
         "POOL_MAXSIZE": "20",
-        # Rate Limiting - Full 25 TPS capacity
-        "REQUESTS_PER_MINUTE": "1500",
-        "BURST_CAPACITY": "25",
+        # Rate Limiting - conservative 5 TPS default
+        "REQUESTS_PER_MINUTE": "300",
+        "BURST_CAPACITY": "5",
         # Proxy Configuration
         "PROXY_ENABLED": "false",
         "PROXY_URL": "",

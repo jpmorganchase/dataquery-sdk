@@ -1469,9 +1469,9 @@ class DataQueryClient(
             # For any exceptions, return without dot for security
             return "bin"
 
-    # Auto-download is SSE-only — see watch_and_download_async below.
+    # Auto-download is SSE-only — see auto_download_async below.
 
-    async def watch_and_download_async(
+    async def auto_download_async(
         self,
         group_id: str,
         destination_dir: str = "./downloads",
@@ -1521,10 +1521,10 @@ class DataQueryClient(
         Example::
 
             # Subscribe to every file in the group.
-            manager = await client.watch_and_download_async(group_id="economic-data")
+            manager = await client.auto_download_async(group_id="economic-data")
 
             # Subscribe to specific files only — the server filters.
-            manager = await client.watch_and_download_async(
+            manager = await client.auto_download_async(
                 group_id="economic-data",
                 file_group_id=["JPM_CPI", "JPM_GDP"],
             )
@@ -1549,7 +1549,7 @@ class DataQueryClient(
         await manager.start()
         return manager
 
-    def watch_and_download(
+    def auto_download(
         self,
         group_id: str,
         destination_dir: str = "./downloads",
@@ -1564,9 +1564,9 @@ class DataQueryClient(
         file_group_id: Optional[Union[str, List[str]]] = None,
         show_progress: bool = True,
     ) -> "NotificationDownloadManager":
-        """Synchronous wrapper for :meth:`watch_and_download_async`."""
+        """Synchronous wrapper for :meth:`auto_download_async`."""
         return asyncio.run(
-            self.watch_and_download_async(
+            self.auto_download_async(
                 group_id,
                 destination_dir,
                 file_filter,
