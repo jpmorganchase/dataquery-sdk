@@ -496,6 +496,86 @@ async def test_grid_api(monkeypatch):
     assert isinstance(gr.series, list)
 
 
+# ---------------------------------------------------------------------------
+# Validation symmetry — non-file query endpoints
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_expressions_time_series_rejects_empty_list(monkeypatch):
+    client = make_client(monkeypatch)
+    with pytest.raises(ValueError):
+        await client.get_expressions_time_series_async([])
+
+
+@pytest.mark.asyncio
+async def test_expressions_time_series_rejects_blank_entry(monkeypatch):
+    client = make_client(monkeypatch)
+    with pytest.raises(ValueError):
+        await client.get_expressions_time_series_async(["DB(X)", "  "])
+
+
+@pytest.mark.asyncio
+async def test_expressions_time_series_rejects_bad_date(monkeypatch):
+    client = make_client(monkeypatch)
+    with pytest.raises(ValidationError):
+        await client.get_expressions_time_series_async(["DB(X)"], start_date="not-a-date")
+
+
+@pytest.mark.asyncio
+async def test_group_time_series_rejects_empty_attributes(monkeypatch):
+    client = make_client(monkeypatch)
+    with pytest.raises(ValidationError):
+        await client.get_group_time_series_async("G", [])
+
+
+@pytest.mark.asyncio
+async def test_group_time_series_rejects_bad_date(monkeypatch):
+    client = make_client(monkeypatch)
+    with pytest.raises(ValidationError):
+        await client.get_group_time_series_async("G", ["A"], end_date="bogus")
+
+
+@pytest.mark.asyncio
+async def test_grid_data_rejects_bad_date(monkeypatch):
+    client = make_client(monkeypatch)
+    with pytest.raises(ValidationError):
+        await client.get_grid_data_async(expr="X", date="2026/01/01")
+
+
+# ---------------------------------------------------------------------------
+# list_all_groups_async — pagination loop guard
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_all_groups_breaks_on_repeated_next_link(monkeypatch):
+    """Pathological server returning the same next link forever must not hang."""
+    client = make_client(monkeypatch)
+    calls = {"n": 0}
+
+    async def looping_pager(method, url, **kwargs):
+        calls["n"] += 1
+        # Always advertise the same next link → would loop without the guard.
+        data = {
+            "groups": [],
+            "links": [{"self": "/groups", "next": "groups?page=looping"}],
+        }
+        resp = DummyResponse()
+
+        async def json():
+            return data
+
+        resp.json = json
+        return resp
+
+    monkeypatch.setattr(client, "_make_authenticated_request", looping_pager)
+    result = await client.list_all_groups_async()
+    assert result == []
+    # First call fetches the seed URL, second sees the loop and breaks.
+    assert calls["n"] == 2
+
+
 @pytest.mark.asyncio
 async def test_auth_and_connect_close_paths(monkeypatch):
     # _ensure_authenticated raises when not authenticated

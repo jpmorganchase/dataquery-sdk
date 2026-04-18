@@ -596,11 +596,30 @@ class DataQueryClient(
         all_groups: List[Group] = []
         next_url: Optional[str] = self._build_api_url("groups")
         page_count = 0
+        # Guard against pathological servers that loop the next-link or that
+        # paginate without bound. 1000 pages is far above any realistic
+        # catalog size; visited set catches the simpler echo case earlier.
+        max_pages = 1000
+        visited: set = set()
 
         try:
             while next_url:
+                if next_url in visited:
+                    self.logger.warning(
+                        "Pagination loop detected — server returned a previously seen next link",
+                        url=next_url,
+                        page=page_count,
+                    )
+                    break
+                visited.add(next_url)
                 page_count += 1
-                self.logger.info("Fetching groups page", page=page_count, url=next_url)
+                if page_count > max_pages:
+                    self.logger.warning(
+                        "Pagination cap hit — stopping after max_pages",
+                        max_pages=max_pages,
+                        total_groups=len(all_groups),
+                    )
+                    break
 
                 async with await self._make_authenticated_request("GET", next_url) as response:
                     await self._handle_response(response)
@@ -609,6 +628,8 @@ class DataQueryClient(
                     group_list = GroupList(**data)
                     all_groups.extend(group_list.groups)
 
+                    # One page-level log instead of two; the redundant
+                    # "fetching/fetched" pair doubled log volume on big catalogs.
                     self.logger.info(
                         "Groups page fetched",
                         page=page_count,

@@ -22,7 +22,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Union
 from ._download_utils import download_and_track, file_exists_locally
 from .models import DownloadOptions, DownloadProgress
 from .sse_client import SSEClient, SSEEvent
-from .sse_event_store import SSEEventIdStore, build_event_id_store
+from .sse_event_store import SSEEventIdStore, Subscription, build_event_id_store
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +125,11 @@ class NotificationDownloadManager:
                            default) disables the watchdog.
         """
         self.client = client
+        self.subscription = Subscription.from_user(group_id, file_group_id)
+        # Preserve the original kwargs as attributes for backward-compat with
+        # callers that read them off the manager (CLI, tests, get_stats).
         self.group_id = group_id
+        self.file_group_id = file_group_id
         self.destination_dir = Path(destination_dir)
         self.file_filter = file_filter
         self.progress_callback = progress_callback
@@ -133,7 +137,6 @@ class NotificationDownloadManager:
         self.max_retries = max_retries
         self.max_concurrent_downloads = max_concurrent_downloads
         self.initial_check = initial_check
-        self.file_group_id = file_group_id
         self.enable_event_replay = enable_event_replay
 
         self.destination_dir.mkdir(parents=True, exist_ok=True)
@@ -195,7 +198,7 @@ class NotificationDownloadManager:
         # that the replay is about to deliver).
         stored_event_id: Optional[str] = None
         if self.enable_event_replay:
-            self._event_id_store = build_event_id_store(self.client.config, self.group_id, self.file_group_id)
+            self._event_id_store = build_event_id_store(self.client.config, self.subscription)
             if self._event_id_store is not None:
                 stored_event_id = self._event_id_store.load()
 
@@ -210,15 +213,6 @@ class NotificationDownloadManager:
             except Exception as exc:
                 logger.warning("Initial availability check failed: %s", exc)
 
-        # Build server-side subscription filter params.
-        sse_params: Dict[str, str] = {"group-id": self.group_id}
-        if self.file_group_id is not None:
-            sse_params["file-group-id"] = (
-                ",".join(self.file_group_id)
-                if isinstance(self.file_group_id, (list, tuple, set))
-                else str(self.file_group_id)
-            )
-
         # Start the SSE client.
         self._sse_client = SSEClient(
             config=self.client.config,
@@ -227,7 +221,7 @@ class NotificationDownloadManager:
             on_error=self._on_sse_error,
             reconnect_delay=self._reconnect_delay,
             max_reconnect_delay=self._max_reconnect_delay,
-            params=sse_params,
+            params=self.subscription.query_params(),
             event_id_store=self._event_id_store,
             heartbeat_timeout=self._heartbeat_timeout,
         )
@@ -326,8 +320,12 @@ class NotificationDownloadManager:
             logger.warning("Could not parse SSE event data as JSON: %s", exc)
             return
 
-        # The file info lives under the "data" key of the payload
-        data = payload.get("data") or payload  # fall back to top-level if "data" is absent
+        # The file info lives under the "data" key of the payload, but some
+        # event variants nest it directly. Fall back only when "data" is
+        # missing or not a dict — `or` would also fall back on `{}`/`None`,
+        # which is wrong (an empty dict is a real, well-formed value).
+        nested = payload.get("data") if isinstance(payload, dict) else None
+        data = nested if isinstance(nested, dict) else (payload if isinstance(payload, dict) else {})
         file_group_id: Optional[str] = data.get("fileGroupId")
         file_date_time: Optional[str] = data.get("fileDateTime")
 

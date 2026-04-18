@@ -208,10 +208,13 @@ async def cmd_download(args: argparse.Namespace) -> int:
             if getattr(args, "reset_event_id", False):
                 # Resolve the store directly so we can clear it before any
                 # connection is made.
-                from .sse_event_store import build_event_id_store
+                from .sse_event_store import Subscription, build_event_id_store
 
                 client = dq._ensure_client()
-                store = build_event_id_store(client.config, args.group_id, file_group_id)
+                store = build_event_id_store(
+                    client.config,
+                    Subscription.from_user(args.group_id, file_group_id),
+                )
                 if store is not None:
                     store.clear()
             mgr = await dq.auto_download_async(

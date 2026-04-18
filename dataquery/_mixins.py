@@ -228,6 +228,16 @@ class TimeSeriesMixin(_RequestProto):
         page: Optional[str] = None,
     ) -> "TimeSeriesResponse":
         """Time series for a list of traditional DataQuery expressions."""
+        if not expressions or not isinstance(expressions, list):
+            raise ValueError("'expressions' must be a non-empty list")
+        for expr in expressions:
+            if not isinstance(expr, str) or not expr.strip():
+                raise ValueError("All expressions must be non-empty strings")
+        if start_date is not None:
+            validate_date_format(start_date, "start-date")
+        if end_date is not None:
+            validate_date_format(end_date, "end-date")
+
         params: dict = {
             "expressions": ",".join(expressions),
             "format": format,
@@ -266,6 +276,12 @@ class TimeSeriesMixin(_RequestProto):
         page: Optional[str] = None,
     ) -> "TimeSeriesResponse":
         """Time series across instruments + analytics of a dataset, with optional filter."""
+        validate_attributes_list(attributes)
+        if start_date is not None:
+            validate_date_format(start_date, "start-date")
+        if end_date is not None:
+            validate_date_format(end_date, "end-date")
+
         params: dict = {
             "group-id": group_id,
             "attributes": attributes,
@@ -306,6 +322,8 @@ class GridMixin(_RequestProto):
             raise ValueError("Cannot specify both expr and grid_id")
         if not expr and not grid_id:
             raise ValueError("Must specify either expr or grid_id")
+        if date is not None:
+            validate_date_format(date, "date")
 
         params: dict = {}
         if expr is not None:

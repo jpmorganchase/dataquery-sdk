@@ -7,6 +7,7 @@ filename fingerprint.
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,7 @@ import pytest
 from dataquery.models import ClientConfig
 from dataquery.sse_event_store import (
     SSEEventIdStore,
+    Subscription,
     _fingerprint_subscription,
     build_event_id_store,
     resolve_sse_state_dir,
@@ -98,9 +100,9 @@ def test_resolve_state_dir_returns_none_when_unconfigured():
 
 def test_build_event_id_store_returns_store_with_per_subscription_path(tmp_path: Path):
     cfg = _config(tmp_path)
-    s1 = build_event_id_store(cfg, "G", None)
-    s2 = build_event_id_store(cfg, "G", "FG1")
-    s3 = build_event_id_store(cfg, "G2", None)
+    s1 = build_event_id_store(cfg, Subscription.from_user("G"))
+    s2 = build_event_id_store(cfg, Subscription.from_user("G", "FG1"))
+    s3 = build_event_id_store(cfg, Subscription.from_user("G2"))
     assert s1 is not None and s2 is not None and s3 is not None
     paths = {s.file_path for s in (s1, s2, s3)}
     assert len(paths) == 3, "Each subscription must persist to its own file"
@@ -116,7 +118,61 @@ def test_build_event_id_store_returns_none_when_path_unavailable():
         bearer_token="T",
         download_dir="",
     )
-    assert build_event_id_store(cfg, "G", None) is None
+    assert build_event_id_store(cfg, Subscription.from_user("G")) is None
+
+
+# ---------------------------------------------------------------------------
+# Subscription dataclass
+# ---------------------------------------------------------------------------
+
+
+def test_subscription_from_user_normalises_none_to_empty_tuple():
+    sub = Subscription.from_user("G", None)
+    assert sub.file_group_ids == ()
+    assert sub.file_group_csv is None
+
+
+def test_subscription_from_user_wraps_single_string():
+    sub = Subscription.from_user("G", "FG")
+    assert sub.file_group_ids == ("FG",)
+    assert sub.file_group_csv == "FG"
+
+
+def test_subscription_from_user_sorts_iterable_for_determinism():
+    a = Subscription.from_user("G", ["B", "A", "C"])
+    b = Subscription.from_user("G", ["C", "B", "A"])
+    assert a == b
+    assert a.file_group_ids == ("A", "B", "C")
+
+
+def test_subscription_query_params_omit_file_group_when_unrestricted():
+    assert Subscription.from_user("G").query_params() == {"group-id": "G"}
+
+
+def test_subscription_query_params_include_csv_when_restricted():
+    params = Subscription.from_user("G", ["A", "B"]).query_params()
+    assert params == {"group-id": "G", "file-group-id": "A,B"}
+
+
+def test_subscription_label_round_trips_to_canonical_form():
+    assert Subscription.from_user("G").label() == "group-id=G"
+    assert Subscription.from_user("G", "FG").label() == "group-id=G&file-group-id=FG"
+    assert Subscription.from_user("G", ["B", "A"]).label() == "group-id=G&file-group-id=A,B"
+
+
+def test_subscription_fingerprint_matches_legacy_helper():
+    """The wrapper exists precisely so persisted state files survive the refactor."""
+    assert Subscription.from_user("G").fingerprint() == _fingerprint_subscription("G", None)
+    assert Subscription.from_user("G", "FG").fingerprint() == _fingerprint_subscription("G", "FG")
+    assert Subscription.from_user("G", ["A", "B"]).fingerprint() == _fingerprint_subscription("G", ["A", "B"])
+
+
+def test_subscription_is_hashable_and_frozen():
+    sub = Subscription.from_user("G", "FG")
+    # Frozen → hashable, usable as dict key / set member.
+    {sub: 1}
+    with pytest.raises(Exception):
+        sub.group_id = "X"  # type: ignore[misc]
 
 
 # ---------------------------------------------------------------------------
@@ -196,3 +252,80 @@ async def test_save_does_not_leave_temp_file_behind(tmp_path: Path):
     await store.save("evt-1")
     leftovers = list(tmp_path.glob("*.tmp"))
     assert leftovers == []
+
+
+# ---------------------------------------------------------------------------
+# Save dedup + write-format optimisations
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_save_skips_disk_write_when_id_unchanged(tmp_path: Path):
+    """Repeated saves of the same id must not trigger redundant disk writes.
+
+    SSE servers commonly resend the boundary id on reconnect, so without
+    dedup we'd hit the disk on every reconnect echo.
+    """
+    p = tmp_path / "state.json"
+    store = SSEEventIdStore(p)
+    await store.save("evt-1")
+    mtime_first = p.stat().st_mtime_ns
+    # Replay the same id many times — none should rewrite the file.
+    for _ in range(5):
+        await store.save("evt-1")
+    assert p.stat().st_mtime_ns == mtime_first
+    # A new id must still write.
+    await store.save("evt-2")
+    assert store.load() == "evt-2"
+
+
+@pytest.mark.asyncio
+async def test_save_after_load_dedups_against_persisted_value(tmp_path: Path):
+    """Dedup must seed itself from the on-disk value at load() time so the
+    very first save() in a fresh process doesn't rewrite the same id."""
+    p = tmp_path / "state.json"
+    SSEEventIdStore(p)  # write once via a sibling instance
+    seed = SSEEventIdStore(p)
+    await seed.save("evt-1")
+    fresh = SSEEventIdStore(p)
+    assert fresh.load() == "evt-1"
+    mtime = p.stat().st_mtime_ns
+    await fresh.save("evt-1")
+    assert p.stat().st_mtime_ns == mtime
+
+
+@pytest.mark.asyncio
+async def test_save_writes_compact_json(tmp_path: Path):
+    """Compact form (no indented whitespace) keeps per-event writes cheap."""
+    p = tmp_path / "state.json"
+    store = SSEEventIdStore(p, subscription="group-id=G")
+    await store.save("evt-1")
+    raw = p.read_text(encoding="utf-8")
+    # No newlines or two-space indentation.
+    assert "\n" not in raw
+    assert ": " not in raw  # compact separator omits the space after colon
+
+
+@pytest.mark.asyncio
+async def test_concurrent_saves_are_serialised(tmp_path: Path):
+    """Concurrent fire-and-forget saves must converge to a valid file."""
+    p = tmp_path / "state.json"
+    store = SSEEventIdStore(p)
+    # Fire 20 distinct saves concurrently — the file must end up with one of
+    # them, never half-written.
+    await asyncio.gather(*(store.save(f"evt-{i}") for i in range(20)))
+    final = store.load()
+    assert final is not None
+    assert final.startswith("evt-")
+
+
+@pytest.mark.asyncio
+async def test_clear_resets_dedup_cache(tmp_path: Path):
+    """After clear(), the next save() of the same id must hit disk again."""
+    p = tmp_path / "state.json"
+    store = SSEEventIdStore(p)
+    await store.save("evt-1")
+    store.clear()
+    assert not p.exists()
+    await store.save("evt-1")
+    assert p.exists() and store.load() == "evt-1"
