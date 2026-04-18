@@ -11,6 +11,8 @@ from typing import Any, Dict, List, Optional, Union, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from . import _constants as C
+
 
 class DownloadStatus(str, Enum):
     """Status of a download operation."""
@@ -711,15 +713,15 @@ class DownloadOptions(BaseModel):
         """Public chunk size value always returning a positive integer."""
         extra_chunk_size = getattr(self, "__pydantic_extra__", {}).get("chunk_size")
         value = extra_chunk_size if extra_chunk_size is not None else self.chunk_size_setting
-        # Safety clamp
+        # Safety clamp to [DEFAULT_CHUNK_SIZE, LARGE_FILE_CHUNK_SIZE].
         try:
             value_int = int(value)
         except Exception:
-            value_int = 1048576
+            value_int = C.DEFAULT_CHUNK_SIZE
         if value_int <= 0:
-            value_int = 1048576
-        if value_int > 8 * 1024 * 1024:
-            value_int = 8 * 1024 * 1024
+            value_int = C.DEFAULT_CHUNK_SIZE
+        if value_int > C.LARGE_FILE_CHUNK_SIZE:
+            value_int = C.LARGE_FILE_CHUNK_SIZE
         return value_int
 
     @field_validator("chunk_size_setting")

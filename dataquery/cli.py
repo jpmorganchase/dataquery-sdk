@@ -208,7 +208,7 @@ async def cmd_download(args: argparse.Namespace) -> int:
             if getattr(args, "reset_event_id", False):
                 # Resolve the store directly so we can clear it before any
                 # connection is made.
-                from .sse_event_store import Subscription, build_event_id_store
+                from .sse.event_store import Subscription, build_event_id_store
 
                 client = dq._ensure_client()
                 store = build_event_id_store(

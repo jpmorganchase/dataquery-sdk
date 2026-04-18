@@ -14,6 +14,8 @@ from typing import Any, Dict, Optional
 
 import structlog
 
+from .. import _constants as C
+
 logger = structlog.get_logger(__name__)
 
 
@@ -333,9 +335,8 @@ class EnhancedTokenBucketRateLimiter:
 
         base_wait = 1.0 / tokens_per_second
 
-        # Enforce minimum 200ms delay per DataQuery API specification
-        min_wait = 0.2  # 200 milliseconds
-        base_wait = max(base_wait, min_wait)
+        # Enforce minimum delay per DataQuery API specification
+        base_wait = max(base_wait, C.RATE_LIMIT_MIN_WAIT_SECONDS)
 
         # Apply adaptive backoff if needed
         if self.config.adaptive_rate_limiting and self.state.current_backoff > 0:

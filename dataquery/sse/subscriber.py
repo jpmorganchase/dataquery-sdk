@@ -20,10 +20,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 
-from ._download_utils import download_and_track, file_exists_locally
-from .models import DownloadOptions, DownloadProgress
-from .sse_client import SSEClient, SSEEvent
-from .sse_event_store import SSEEventIdStore, Subscription, build_event_id_store
+from ..download.utils import download_and_track, file_exists_locally
+from ..models import DownloadOptions, DownloadProgress
+from .client import SSEClient, SSEEvent
+from .event_store import SSEEventIdStore, Subscription, build_event_id_store
 
 logger = logging.getLogger(__name__)
 

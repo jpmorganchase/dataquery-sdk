@@ -16,8 +16,8 @@ from unittest.mock import AsyncMock
 import pytest
 
 from dataquery.models import DownloadResult, DownloadStatus
-from dataquery.sse_client import SSEEvent
-from dataquery.sse_subscriber import NotificationDownloadManager
+from dataquery.sse.client import SSEEvent
+from dataquery.sse.subscriber import NotificationDownloadManager
 
 # ---------------------------------------------------------------------------
 # Fakes
@@ -357,7 +357,7 @@ async def _sse_params_from_start(mgr: NotificationDownloadManager) -> dict:
         async def stop(self) -> None:
             self._started = False
 
-    import dataquery.sse_subscriber as sse_sub
+    import dataquery.sse.subscriber as sse_sub
 
     original = sse_sub.SSEClient
     sse_sub.SSEClient = _FakeSSE  # type: ignore[assignment]
@@ -456,7 +456,7 @@ async def _run_start_with_fake_sse(mgr: NotificationDownloadManager):
         async def stop(self) -> None:
             self._started = False
 
-    import dataquery.sse_subscriber as sse_sub
+    import dataquery.sse.subscriber as sse_sub
 
     original = sse_sub.SSEClient
     sse_sub.SSEClient = _FakeSSE  # type: ignore[assignment]
@@ -475,7 +475,7 @@ async def test_replay_skips_initial_check_when_event_id_persisted(tmp_path):
     # Pre-seed the on-disk store as if a previous run had saved an event id.
     state_dir = tmp_path / ".sse_state"
     state_dir.mkdir()
-    from dataquery.sse_event_store import _fingerprint_subscription
+    from dataquery.sse.event_store import _fingerprint_subscription
 
     fingerprint = _fingerprint_subscription("G", None)
     (state_dir / f"sse_{fingerprint}.json").write_text('{"last_event_id": "evt-prev"}')
@@ -502,7 +502,7 @@ async def test_replay_disabled_runs_legacy_initial_check(tmp_path):
     # Seed a stored id — it must be ignored when replay is disabled.
     state_dir = tmp_path / ".sse_state"
     state_dir.mkdir()
-    from dataquery.sse_event_store import _fingerprint_subscription
+    from dataquery.sse.event_store import _fingerprint_subscription
 
     fingerprint = _fingerprint_subscription("G", None)
     (state_dir / f"sse_{fingerprint}.json").write_text('{"last_event_id": "evt-prev"}')
@@ -544,7 +544,7 @@ async def test_replay_runs_initial_check_on_first_run(tmp_path):
 async def test_clear_event_id_removes_store_file(tmp_path):
     state_dir = tmp_path / ".sse_state"
     state_dir.mkdir()
-    from dataquery.sse_event_store import _fingerprint_subscription
+    from dataquery.sse.event_store import _fingerprint_subscription
 
     fingerprint = _fingerprint_subscription("G", None)
     state_file = state_dir / f"sse_{fingerprint}.json"

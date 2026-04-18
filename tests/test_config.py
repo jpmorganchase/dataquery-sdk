@@ -485,15 +485,15 @@ class TestEnvConfigSingleSourceOfTruth:
         for field_name in ClientConfig.model_fields:
             env_key = _env_name_for(field_name)
             assert env_key in EnvConfig.DEFAULTS, (
-                f"Field '{field_name}' missing from EnvConfig.DEFAULTS — "
-                f"the model and the env table have drifted."
+                f"Field '{field_name}' missing from EnvConfig.DEFAULTS — the model and the env table have drifted."
             )
 
     def test_defaults_match_model_values(self):
         """Stringified model defaults must equal the DEFAULTS entries
         (modulo lowercase booleans and the explicit override list)."""
-        from dataquery.config import _DEFAULT_OVERRIDES, _env_name_for
         from pydantic_core import PydanticUndefined
+
+        from dataquery.config import _DEFAULT_OVERRIDES, _env_name_for
 
         for field_name, field in ClientConfig.model_fields.items():
             env_key = _env_name_for(field_name)

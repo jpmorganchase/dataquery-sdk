@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from dataquery.models import ClientConfig
-from dataquery.sse_event_store import (
+from dataquery.sse.event_store import (
     SSEEventIdStore,
     Subscription,
     _fingerprint_subscription,

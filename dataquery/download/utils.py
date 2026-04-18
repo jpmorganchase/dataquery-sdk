@@ -12,14 +12,14 @@ import logging
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Protocol
 
-from .models import DownloadOptions, DownloadProgress, DownloadStatus
+from ..models import DownloadOptions, DownloadProgress, DownloadStatus
 
 
 class _SupportsAddContains(Protocol):
     """Set-like protocol used by :func:`download_and_track`.
 
     The concrete implementation is either a plain ``set`` or the bounded
-    LRU container in :mod:`dataquery.sse_subscriber`. Only ``add`` and
+    LRU container in :mod:`dataquery.sse.subscriber`. Only ``add`` and
     ``__contains__`` are exercised here.
     """
 
@@ -31,13 +31,14 @@ class _SupportsRetryCounter(Protocol):
     """Dict-like protocol for the per-file retry counter.
 
     Concrete impl is either a plain ``dict`` or the bounded LRU container
-    in :mod:`dataquery.sse_subscriber`. Only ``get``, ``pop`` and item
+    in :mod:`dataquery.sse.subscriber`. Only ``get``, ``pop`` and item
     assignment are exercised here.
     """
 
     def get(self, key: str, default: int = ...) -> int: ...
     def pop(self, key: str, default: Any = ...) -> Any: ...
     def __setitem__(self, key: str, value: int) -> None: ...
+
 
 logger = logging.getLogger(__name__)
 

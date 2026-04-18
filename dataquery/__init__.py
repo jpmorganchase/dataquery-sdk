@@ -54,8 +54,8 @@ from .models import (
     Group,
     GroupList,
 )
-from .sse_client import SSEClient, SSEEvent
-from .sse_subscriber import NotificationDownloadManager
+from .sse.client import SSEClient, SSEEvent
+from .sse.subscriber import NotificationDownloadManager
 
 # Type aliases for convenience
 __all__ = [

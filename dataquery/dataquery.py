@@ -1007,7 +1007,7 @@ class DataQuery:
                     # Delegate to the shared flattened-concurrency helper so the
                     # global semaphore covers every in-flight HTTP range across
                     # every file in this batch.
-                    from ._parallel_download import download_file_parallel_flattened
+                    from .download.parallel import download_file_parallel_flattened
 
                     result = await download_file_parallel_flattened(
                         client=self._ensure_client(),

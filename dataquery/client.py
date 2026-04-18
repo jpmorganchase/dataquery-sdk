@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
 if TYPE_CHECKING:
-    from .sse_subscriber import NotificationDownloadManager
+    from .sse.subscriber import NotificationDownloadManager
 
 import aiohttp
 import structlog
@@ -24,6 +24,7 @@ except ImportError:
     pd = None
     HAS_PANDAS = False
 
+from . import _constants as C
 from ._mixins import (
     DataFrameMixin,
     GridMixin,
@@ -31,8 +32,6 @@ from ._mixins import (
     MetadataMixin,
     TimeSeriesMixin,
 )
-from .auth import OAuthManager
-from .connection_pool import ConnectionPoolConfig, ConnectionPoolMonitor
 from .exceptions import (
     AuthenticationError,
     ConfigurationError,
@@ -60,13 +59,15 @@ from .models import (
     InstrumentsResponse,
     TimeSeriesResponse,
 )
-from .rate_limiter import (
+from .transport.auth import OAuthManager
+from .transport.connection_pool import ConnectionPoolConfig, ConnectionPoolMonitor
+from .transport.rate_limiter import (
     QueuePriority,
     RateLimitConfig,
     RateLimitContext,
     TokenBucketRateLimiter,
 )
-from .retry import RetryConfig, RetryManager, RetryStrategy
+from .transport.retry import RetryConfig, RetryManager, RetryStrategy
 from .utils import format_duration as _format_duration
 from .utils import format_file_size as _format_file_size
 from .utils import (
@@ -562,7 +563,7 @@ class DataQueryClient(
         """
         await self._ensure_connected()
 
-        url = self._build_api_url("groups")
+        url = self._build_api_url(C.API_GROUPS)
         params = {}
         if limit is not None:
             params["limit"] = str(limit)
@@ -594,7 +595,7 @@ class DataQueryClient(
         await self._ensure_connected()
 
         all_groups: List[Group] = []
-        next_url: Optional[str] = self._build_api_url("groups")
+        next_url: Optional[str] = self._build_api_url(C.API_GROUPS)
         page_count = 0
         # Guard against pathological servers that loop the next-link or that
         # paginate without bound. 1000 pages is far above any realistic
@@ -682,7 +683,7 @@ class DataQueryClient(
         if offset is not None:
             params["offset"] = str(offset)
 
-        url = self._build_api_url("groups/search")
+        url = self._build_api_url(C.API_GROUPS_SEARCH)
 
         try:
             async with await self._make_authenticated_request("GET", url, params=params) as response:
@@ -714,7 +715,7 @@ class DataQueryClient(
         if file_group_id:
             params["file-group-id"] = file_group_id
 
-        url = self._build_files_api_url("group/files")
+        url = self._build_files_api_url(C.API_GROUP_FILES)
 
         try:
             async with await self._make_authenticated_request("GET", url, params=params) as response:
@@ -764,7 +765,7 @@ class DataQueryClient(
         validate_file_datetime(file_datetime)
         params = {"file-group-id": file_group_id, "file-datetime": file_datetime}
 
-        url = self._build_files_api_url("group/file/availability")
+        url = self._build_files_api_url(C.API_GROUP_FILE_AVAILABILITY)
 
         try:
             async with await self._make_authenticated_request("GET", url, params=params) as response:
@@ -922,10 +923,10 @@ class DataQueryClient(
             )
 
         try:
-            url = self._build_files_api_url("group/file/download")
+            url = self._build_files_api_url(C.API_GROUP_FILE_DOWNLOAD)
 
             # Probe size with a 1-byte range request
-            probe_headers = {"Range": "bytes=0-0"}
+            probe_headers = C.PROBE_HEADERS
             async with await self._enter_request_cm("GET", url, params=params, headers=probe_headers) as probe_resp:
                 await self._handle_response(probe_resp)
                 content_range = probe_resp.headers.get("content-range") or probe_resp.headers.get("Content-Range")
@@ -944,8 +945,7 @@ class DataQueryClient(
                     )
 
                 # Small files → single stream (per-part overhead isn't worth it).
-                ten_mb = 10 * 1024 * 1024
-                if total_bytes and total_bytes < ten_mb:
+                if total_bytes and total_bytes < C.SMALL_FILE_THRESHOLD:
                     return await self._download_file_single_stream(
                         file_group_id=file_group_id,
                         file_datetime=file_datetime,
@@ -963,8 +963,8 @@ class DataQueryClient(
             # Prepare temp file with full size for random access writes
             if not isinstance(destination, Path):
                 raise ValueError(f"Invalid destination path: {destination}")
-            temp_destination = destination.with_suffix(destination.suffix + ".part")
-            with open(temp_destination, "wb", buffering=1024 * 1024) as f:  # 1MB buffer for network drives
+            temp_destination = destination.with_suffix(destination.suffix + C.TEMP_SUFFIX)
+            with open(temp_destination, "wb", buffering=C.PREALLOC_BUFFER_SIZE) as f:
                 f.truncate(total_bytes)
 
             # Compute ranges
@@ -984,13 +984,13 @@ class DataQueryClient(
                 start_time=datetime.now(),
             )
 
-            chunk_size = options.chunk_size or 1048576  # 1MB default
+            chunk_size = options.chunk_size or C.DEFAULT_CHUNK_SIZE
 
             # Progress callback optimization: track last callback state
             last_callback_bytes = 0
             last_callback_time = time.time()
-            callback_threshold_bytes = 1024 * 1024  # 1MB
-            callback_threshold_time = 0.5  # 0.5 seconds
+            callback_threshold_bytes = C.CALLBACK_BYTE_THRESHOLD
+            callback_threshold_time = C.CALLBACK_TIME_THRESHOLD
 
             # Per-part retry configuration
             max_part_retries = options.max_retries
@@ -1172,7 +1172,7 @@ class DataQueryClient(
         destination = None  # Initialize destination variable
 
         try:
-            url = self._build_files_api_url("group/file/download")
+            url = self._build_files_api_url(C.API_GROUP_FILE_DOWNLOAD)
 
             # Support either an awaitable that yields a context manager, or a context manager directly
             async with await self._make_authenticated_request("GET", url, params=params, headers=headers) as response:
@@ -1201,13 +1201,15 @@ class DataQueryClient(
                 if not isinstance(destination, Path):
                     raise ValueError(f"Invalid destination path: {destination}")
                 # Write to a temp file first, then atomically rename upon success
-                temp_destination = destination.with_suffix(destination.suffix + ".part")
+                temp_destination = destination.with_suffix(destination.suffix + C.TEMP_SUFFIX)
 
                 # Optimize chunk size based on file size
-                chunk_size = options.chunk_size or 1048576  # 1MB default for better performance
+                chunk_size = options.chunk_size or C.DEFAULT_CHUNK_SIZE
                 if total_bytes > 0:
-                    # Use larger chunks for bigger files, cap at 8MB for files >1GB
-                    max_chunk = 8 * 1024 * 1024 if total_bytes > 1024 * 1024 * 1024 else 1024 * 1024
+                    # Use larger chunks for files >= LARGE_FILE_THRESHOLD (1 GB).
+                    max_chunk = (
+                        C.LARGE_FILE_CHUNK_SIZE if total_bytes > C.LARGE_FILE_THRESHOLD else C.DEFAULT_CHUNK_SIZE
+                    )
                     optimal_chunk_size = min(max(chunk_size, total_bytes // 1000), max_chunk)
                     chunk_size = optimal_chunk_size
 
@@ -1216,7 +1218,7 @@ class DataQueryClient(
                 last_progress_update = 0
 
                 # Dynamic buffer size based on chunk size (minimum 1MB, maximum 8MB)
-                buffer_size = min(max(chunk_size, 1024 * 1024), 8 * 1024 * 1024)
+                buffer_size = min(max(chunk_size, C.DEFAULT_CHUNK_SIZE), C.LARGE_FILE_CHUNK_SIZE)
                 with open(temp_destination, "wb", buffering=buffer_size) as f:
                     async for chunk in response.content.iter_chunked(chunk_size):
                         await asyncio.to_thread(f.write, chunk)
@@ -1308,7 +1310,7 @@ class DataQueryClient(
         if end_date:
             params["end-date"] = end_date
 
-        url = self._build_files_api_url("group/files/available-files")
+        url = self._build_files_api_url(C.API_GROUP_FILES_AVAILABLE)
 
         try:
             async with await self._make_authenticated_request("GET", url, params=params) as response:
@@ -1331,7 +1333,7 @@ class DataQueryClient(
     async def health_check_async(self) -> bool:
         """Check if the DataQuery service is available."""
         try:
-            url = self._build_api_url("services/heartbeat")
+            url = self._build_api_url(C.API_HEARTBEAT)
             async with await self._make_authenticated_request("GET", url) as response:
                 return response.status == 200
         except Exception as e:
@@ -1571,7 +1573,7 @@ class DataQueryClient(
                 file_group_id=["JPM_CPI", "JPM_GDP"],
             )
         """
-        from .sse_subscriber import NotificationDownloadManager
+        from .sse.subscriber import NotificationDownloadManager
 
         manager = NotificationDownloadManager(
             client=self,

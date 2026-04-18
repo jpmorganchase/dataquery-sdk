@@ -15,7 +15,7 @@ from typing import Any, Callable, Dict, List, Optional, Type
 
 import structlog
 
-from .exceptions import NetworkError
+from ..exceptions import NetworkError
 
 logger = structlog.get_logger(__name__)
 

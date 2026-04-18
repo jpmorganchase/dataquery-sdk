@@ -9,9 +9,9 @@ from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pytest
 
-from dataquery.auth import OAuthManager, TokenManager
 from dataquery.exceptions import AuthenticationError, ConfigurationError
 from dataquery.models import ClientConfig, OAuthToken, TokenResponse
+from dataquery.transport.auth import OAuthManager, TokenManager
 
 
 class TestOAuthManager:
@@ -282,7 +282,7 @@ class TestTokenManager:
 
         token_manager = TokenManager(config)
 
-        with patch("dataquery.auth.logger") as mock_logger:
+        with patch("dataquery.transport.auth.logger") as mock_logger:
             token = await token_manager.get_valid_token()
             assert token is None
             mock_logger.warning.assert_called_once()

@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from dataquery.models import ClientConfig
-from dataquery.sse_client import SSEClient, SSEEvent
+from dataquery.sse.client import SSEClient, SSEEvent
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -388,7 +388,7 @@ async def test_run_loop_reconnects_with_exponential_backoff_then_stops():
 
     client._stop_event = asyncio.Event()
     # Patch asyncio.wait_for only within the sse_client module.
-    import dataquery.sse_client as sse_mod
+    import dataquery.sse.client as sse_mod
 
     sse_mod.asyncio.wait_for = capturing_wait_for  # type: ignore[assignment]
     try:
@@ -409,7 +409,7 @@ async def test_run_loop_reconnects_with_exponential_backoff_then_stops():
 
 
 def test_constructor_seeds_last_event_id_from_store(tmp_path):
-    from dataquery.sse_event_store import SSEEventIdStore
+    from dataquery.sse.event_store import SSEEventIdStore
 
     store_path = tmp_path / "state.json"
     store_path.write_text('{"last_event_id": "evt-99"}')
@@ -420,7 +420,7 @@ def test_constructor_seeds_last_event_id_from_store(tmp_path):
 
 
 def test_constructor_handles_empty_store(tmp_path):
-    from dataquery.sse_event_store import SSEEventIdStore
+    from dataquery.sse.event_store import SSEEventIdStore
 
     store = SSEEventIdStore(tmp_path / "missing.json")
     client = SSEClient(config=_make_config(), auth_manager=_make_auth_manager(), event_id_store=store)
@@ -455,7 +455,7 @@ def test_build_request_params_returns_none_when_nothing_to_send():
 
 @pytest.mark.asyncio
 async def test_parse_sse_stream_persists_event_id_to_store(tmp_path):
-    from dataquery.sse_event_store import SSEEventIdStore
+    from dataquery.sse.event_store import SSEEventIdStore
 
     store = SSEEventIdStore(tmp_path / "state.json")
     client = SSEClient(
@@ -486,7 +486,7 @@ async def test_parse_sse_stream_persists_event_id_to_store(tmp_path):
 async def test_stop_drains_pending_save_tasks(tmp_path):
     """After stop(), any in-flight event-id saves must be flushed so the
     next process invocation sees the latest id."""
-    from dataquery.sse_event_store import SSEEventIdStore
+    from dataquery.sse.event_store import SSEEventIdStore
 
     store = SSEEventIdStore(tmp_path / "state.json")
     client = SSEClient(
@@ -515,7 +515,7 @@ async def test_backoff_resets_after_healthy_connection_then_disconnect():
     """A long-lived connection (>= _HEALTHY_CONNECTION_SECONDS) must reset
     the backoff so the next reconnect uses ``reconnect_delay`` again, not the
     inflated value from the previous failure loop."""
-    import dataquery.sse_client as sse_mod
+    import dataquery.sse.client as sse_mod
 
     client = SSEClient(
         config=_make_config(),

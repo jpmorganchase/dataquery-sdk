@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
 
 import aiohttp
 
+from . import _constants as C
 from .models import (
     AttributesResponse,
     FiltersResponse,
@@ -107,7 +108,7 @@ class InstrumentsMixin(_RequestProto):
         if page:
             params["page"] = page
 
-        url = self._build_api_url("group/instruments")
+        url = self._build_api_url(C.API_GROUP_INSTRUMENTS)
         async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             data = await response.json()
@@ -124,7 +125,7 @@ class InstrumentsMixin(_RequestProto):
         if page:
             params["page"] = page
 
-        url = self._build_api_url("group/instruments/search")
+        url = self._build_api_url(C.API_GROUP_INSTRUMENTS_SEARCH)
         async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             data = await response.json()
@@ -140,7 +141,7 @@ class MetadataMixin(_RequestProto):
         if page:
             params["page"] = page
 
-        url = self._build_api_url("group/filters")
+        url = self._build_api_url(C.API_GROUP_FILTERS)
         async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             payload = await response.json()
@@ -159,7 +160,7 @@ class MetadataMixin(_RequestProto):
         if page:
             params["page"] = page
 
-        url = self._build_api_url("group/attributes")
+        url = self._build_api_url(C.API_GROUP_ATTRIBUTES)
         async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             payload = await response.json()
@@ -208,7 +209,7 @@ class TimeSeriesMixin(_RequestProto):
         if page is not None:
             params["page"] = page
 
-        url = self._build_api_url("instruments/time-series")
+        url = self._build_api_url(C.API_INSTRUMENTS_TIME_SERIES)
         async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             payload = await response.json()
@@ -254,7 +255,7 @@ class TimeSeriesMixin(_RequestProto):
         if page is not None:
             params["page"] = page
 
-        url = self._build_api_url("expressions/time-series")
+        url = self._build_api_url(C.API_EXPRESSIONS_TIME_SERIES)
         async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             payload = await response.json()
@@ -301,7 +302,7 @@ class TimeSeriesMixin(_RequestProto):
         if page is not None:
             params["page"] = page
 
-        url = self._build_api_url("group/time-series")
+        url = self._build_api_url(C.API_GROUP_TIME_SERIES)
         async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             payload = await response.json()
@@ -333,7 +334,7 @@ class GridMixin(_RequestProto):
         if date is not None:
             params["date"] = date
 
-        url = self._build_api_url("grid-data")
+        url = self._build_api_url(C.API_GRID_DATA)
         async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             payload = await response.json()

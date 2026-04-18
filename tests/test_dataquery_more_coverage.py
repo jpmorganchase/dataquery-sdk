@@ -80,7 +80,7 @@ async def test_run_group_download_async_filters_availability(monkeypatch):
             # The parallel downloader is a module-level helper imported inside
             # run_group_download_async; patch it at its source module.
             with patch(
-                "dataquery._parallel_download.download_file_parallel_flattened",
+                "dataquery.download.parallel.download_file_parallel_flattened",
                 new=AsyncMock(return_value=mock_download_result),
             ):
                 report = await dq.run_group_download_async(

@@ -14,17 +14,12 @@ from typing import Awaitable, Callable, Optional, Union
 
 import aiohttp
 
-from .auth import OAuthManager
-from .models import ClientConfig
-from .sse_event_store import SSEEventIdStore
+from .. import _constants as C
+from ..models import ClientConfig
+from ..transport.auth import OAuthManager
+from .event_store import SSEEventIdStore
 
 logger = logging.getLogger(__name__)
-
-# A connection that stays open for at least this many seconds is considered
-# "healthy" — the next disconnect resets the exponential backoff so that the
-# expected periodic server-side recycle (e.g. a 5-minute idle timeout) doesn't
-# inflate the reconnect delay over time.
-_HEALTHY_CONNECTION_SECONDS = 30.0
 
 
 @dataclass
@@ -169,7 +164,7 @@ class SSEClient:
 
     def _build_notification_url(self) -> str:
         base = self.config.api_base_url.rstrip("/")
-        return f"{base}/sse/event/notification"
+        return f"{base}{C.SSE_NOTIFICATION_PATH}"
 
     async def _get_headers(self) -> dict:
         headers = await self.auth_manager.get_headers()
@@ -183,9 +178,9 @@ class SSEClient:
         """Outer loop: reconnect with exponential backoff on failure.
 
         The backoff is reset whenever the preceding connection lasted long
-        enough to count as "healthy" (see ``_HEALTHY_CONNECTION_SECONDS``) so
-        an expected periodic server recycle — e.g. a 5-minute idle timeout —
-        doesn't grow the reconnect delay across cycles.
+        enough to count as "healthy" (see ``SSE_HEALTHY_CONNECTION_SECONDS``
+        in ``_constants``) so an expected periodic server recycle — e.g. a
+        5-minute idle timeout — doesn't grow the reconnect delay across cycles.
         """
         delay = self.reconnect_delay
         while self._running:
@@ -220,7 +215,7 @@ class SSEClient:
             except asyncio.TimeoutError:
                 pass
 
-            if self._last_connection_duration >= _HEALTHY_CONNECTION_SECONDS:
+            if self._last_connection_duration >= C.SSE_HEALTHY_CONNECTION_SECONDS:
                 # The previous connection lasted long enough to be considered
                 # successful, so the next hiccup should start from a fresh
                 # short delay rather than inheriting the last backoff value.

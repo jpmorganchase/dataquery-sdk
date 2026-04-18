@@ -7,7 +7,7 @@ Enables cross-process event replay: when a subscription reconnects, the stored
 the client was disconnected.
 
 The on-disk format and atomic-write pattern mirrors the OAuth token persistence
-in :mod:`dataquery.auth` (owner-only ``0o600`` temp file, then atomic rename).
+in :mod:`dataquery.transport.auth` (owner-only ``0o600`` temp file, then atomic rename).
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Tuple, Union
 
-from .models import ClientConfig
+from ..models import ClientConfig
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +93,7 @@ def _fingerprint_subscription(group_id: str, file_group_id: Optional[Union[str, 
 def resolve_sse_state_dir(config: ClientConfig) -> Optional[Path]:
     """Resolve the directory where SSE event-id state files live.
 
-    Mirrors the resolution order used by :class:`dataquery.auth.TokenManager`:
+    Mirrors the resolution order used by :class:`dataquery.transport.auth.TokenManager`:
 
     1. ``token_storage_enabled`` + ``token_storage_dir`` → ``<dir>/.sse_state/``
     2. ``download_dir`` set → ``<download_dir>/.sse_state/``
@@ -148,7 +148,7 @@ class SSEEventIdStore:
       one (server reconnect echoes the boundary id repeatedly),
     - writes compact JSON (no indent) since the file is machine-read,
     - serialises concurrent saves through a per-instance lock so the
-      fire-and-forget save tasks in :mod:`dataquery.sse_client` don't
+      fire-and-forget save tasks in :mod:`dataquery.sse.client` don't
       pile up unbounded writes for the same instance.
     """
 
