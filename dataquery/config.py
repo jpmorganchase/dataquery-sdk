@@ -1,230 +1,173 @@
 """
 Environment-based configuration for the DATAQUERY SDK.
 
-This module provides a comprehensive configuration system that loads all settings
-from environment variables with proper defaults, validation, and type conversion.
+Loads settings from environment variables (or a ``.env`` file) into a
+:class:`ClientConfig` Pydantic model. Field declarations live on
+``ClientConfig`` — this module only handles the env-var → field projection,
+type coercion, and cross-field validation.
+
+Single source of truth: :data:`ClientConfig.model_fields`. The
+``DEFAULTS`` table here is derived from the model at import time so the two
+cannot drift.
 """
+
+from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union, get_args, get_origin
 
 from dotenv import load_dotenv
+from pydantic_core import PydanticUndefined
 
 from .exceptions import ConfigurationError
 from .models import ClientConfig
 
+# ---------------------------------------------------------------------------
+# Per-field metadata that the model itself does not encode.
+# ---------------------------------------------------------------------------
+
+# Field-name → env-key overrides for fields whose env name does not follow
+# the field-name-uppercased convention. Keep this list short — every entry
+# is a deliberate deviation, not a typo.
+_ENV_NAME_OVERRIDES: Dict[str, str] = {
+    "aud": "OAUTH_AUD",
+}
+
+# Env keys whose default differs from the model default. Currently only
+# ``TOKEN_STORAGE_DIR``: the model declares ``None`` (the directory is
+# resolved from ``download_dir`` at use-time) but historically the env
+# fallback has been ``.tokens``.
+_DEFAULT_OVERRIDES: Dict[str, str] = {
+    "TOKEN_STORAGE_DIR": ".tokens",
+}
+
+# Field names whose values must be redacted from log output / serialised
+# config dumps.
+_SENSITIVE_FIELDS = frozenset(
+    {
+        "client_id",
+        "client_secret",
+        "bearer_token",
+        "oauth_token_url",
+        "aud",
+    }
+)
+
+
+def _env_name_for(field_name: str) -> str:
+    """Project a Pydantic field name to its env-var key (no PREFIX)."""
+    return _ENV_NAME_OVERRIDES.get(field_name, field_name.upper())
+
+
+def _unwrap_optional(annotation: Any) -> Any:
+    """``Optional[X]`` → ``X``; pass-through for everything else."""
+    if get_origin(annotation) is Union:
+        args = [a for a in get_args(annotation) if a is not type(None)]
+        if len(args) == 1:
+            return args[0]
+    return annotation
+
+
+def _build_defaults() -> Dict[str, Optional[str]]:
+    """Compute the ``EnvConfig.DEFAULTS`` table from the model.
+
+    Booleans become ``"true"``/``"false"`` (lowercase, matching the
+    tokens :meth:`EnvConfig.get_bool` accepts). Numeric / string defaults
+    are stringified directly. ``None`` defaults stay ``None``.
+    """
+    defaults: Dict[str, Optional[str]] = {}
+    for field_name, field in ClientConfig.model_fields.items():
+        env_key = _env_name_for(field_name)
+        if field.default is PydanticUndefined or field.default is None:
+            defaults[env_key] = None
+            continue
+        value = field.default
+        if isinstance(value, bool):
+            defaults[env_key] = "true" if value else "false"
+        else:
+            defaults[env_key] = str(value)
+    defaults.update(_DEFAULT_OVERRIDES)
+    return defaults
+
 
 class EnvConfig:
-    """Environment-based configuration loader for DATAQUERY SDK."""
+    """Environment-based configuration loader for the DataQuery SDK.
 
-    # Environment variable prefix
+    All methods are class methods — this class is a namespace, never
+    instantiated. Field definitions, types, and defaults all originate from
+    :class:`dataquery.models.ClientConfig`.
+    """
+
     PREFIX = "DATAQUERY_"
+    DEFAULTS: Dict[str, Optional[str]] = _build_defaults()
 
-    # Default values for configuration
-    DEFAULTS = {
-        # API Configuration
-        "BASE_URL": "https://api-developer.jpmorgan.com",
-        "CONTEXT_PATH": "/research/dataquery-authe/api/v2",
-        "API_VERSION": "2.0.0",
-        # Optional separate files host
-        "FILES_BASE_URL": "https://api-dataquery.jpmchase.com",
-        "FILES_CONTEXT_PATH": "/research/dataquery-authe/api/v2",
-        # OAuth Configuration
-        "OAUTH_ENABLED": "true",
-        "OAUTH_TOKEN_URL": "https://authe.jpmorgan.com/as/token.oauth2",
-        "CLIENT_ID": None,
-        "CLIENT_SECRET": None,
-        "OAUTH_AUD": "JPMC:URI:RS-06785-DataQueryExternalApi-PROD",
-        "GRANT_TYPE": "client_credentials",
-        # Bearer Token Configuration
-        "BEARER_TOKEN": None,
-        "TOKEN_REFRESH_THRESHOLD": "300",
-        # HTTP Configuration
-        "TIMEOUT": "600.0",
-        "MAX_RETRIES": "3",
-        "RETRY_DELAY": "1.0",
-        "CIRCUIT_BREAKER_THRESHOLD": "5",
-        # Connection Pooling
-        "POOL_CONNECTIONS": "10",
-        "POOL_MAXSIZE": "20",
-        # Rate Limiting - conservative 5 TPS default
-        "REQUESTS_PER_MINUTE": "300",
-        "BURST_CAPACITY": "5",
-        # Proxy Configuration
-        "PROXY_ENABLED": "false",
-        "PROXY_URL": "",
-        "PROXY_USERNAME": "",
-        "PROXY_PASSWORD": "",
-        "PROXY_VERIFY_SSL": "true",
-        # Logging
-        "LOG_LEVEL": "INFO",
-        "ENABLE_DEBUG_LOGGING": "false",
-        # Download Configuration
-        "DOWNLOAD_DIR": "./downloads",
-        "CREATE_DIRECTORIES": "true",
-        "OVERWRITE_EXISTING": "false",
-        # Batch Download Configuration
-        "MAX_CONCURRENT_DOWNLOADS": "5",
-        "BATCH_SIZE": "10",
-        "RETRY_FAILED": "true",
-        "MAX_RETRY_ATTEMPTS": "2",
-        "CREATE_DATE_FOLDERS": "true",
-        "PRESERVE_PATH_STRUCTURE": "true",
-        "FLATTEN_STRUCTURE": "false",
-        "SHOW_BATCH_PROGRESS": "true",
-        "SHOW_INDIVIDUAL_PROGRESS": "true",
-        "CONTINUE_ON_ERROR": "true",
-        "LOG_ERRORS": "true",
-        "SAVE_ERROR_LOG": "true",
-        "USE_ASYNC_DOWNLOADS": "true",
-        "ENABLE_RANGE_DOWNLOADS": "false",
-        "CHUNK_SIZE": "1048576",  # 1MB default for better performance with large files
-        # Download Options
-        "ENABLE_RANGE_REQUESTS": "true",
-        "SHOW_PROGRESS": "true",
-        # Workflow Configuration
-        "WORKFLOW_DIR": "workflow",
-        "GROUPS_DIR": "groups",
-        "AVAILABILITY_DIR": "availability",
-        "DEFAULT_DIR": "files",
-        # Security
-        "MASK_SECRETS": "true",
-        "TOKEN_STORAGE_ENABLED": "false",
-        "TOKEN_STORAGE_DIR": ".tokens",
-    }
-
-    # Environment variable names
-    ENV_VARS = {
-        # API Configuration
-        "base_url": "DATAQUERY_BASE_URL",
-        "context_path": "DATAQUERY_CONTEXT_PATH",
-        "api_version": "DATAQUERY_API_VERSION",
-        # Optional separate files host
-        "files_base_url": "DATAQUERY_FILES_BASE_URL",
-        "files_context_path": "DATAQUERY_FILES_CONTEXT_PATH",
-        # OAuth Configuration
-        "oauth_enabled": "DATAQUERY_OAUTH_ENABLED",
-        "oauth_token_url": "DATAQUERY_OAUTH_TOKEN_URL",
-        "client_id": "DATAQUERY_CLIENT_ID",
-        "client_secret": "DATAQUERY_CLIENT_SECRET",
-        "aud": "DATAQUERY_OAUTH_AUD",
-        "grant_type": "DATAQUERY_OAUTH_GRANT_TYPE",
-        # Bearer Token Configuration
-        "bearer_token": "DATAQUERY_BEARER_TOKEN",
-        "token_refresh_threshold": "DATAQUERY_TOKEN_REFRESH_THRESHOLD",
-        # HTTP Configuration
-        "timeout": "DATAQUERY_TIMEOUT",
-        "max_retries": "DATAQUERY_MAX_RETRIES",
-        "retry_delay": "DATAQUERY_RETRY_DELAY",
-        "circuit_breaker_threshold": "DATAQUERY_CIRCUIT_BREAKER_THRESHOLD",
-        # Connection Pooling
-        "pool_connections": "DATAQUERY_POOL_CONNECTIONS",
-        "pool_maxsize": "DATAQUERY_POOL_MAXSIZE",
-        # Rate Limiting
-        "requests_per_minute": "DATAQUERY_REQUESTS_PER_MINUTE",
-        "burst_capacity": "DATAQUERY_BURST_CAPACITY",
-        # Proxy Configuration
-        "proxy_enabled": "DATAQUERY_PROXY_ENABLED",
-        "proxy_url": "DATAQUERY_PROXY_URL",
-        "proxy_username": "DATAQUERY_PROXY_USERNAME",
-        "proxy_password": "DATAQUERY_PROXY_PASSWORD",
-        "proxy_verify_ssl": "DATAQUERY_PROXY_VERIFY_SSL",
-        # Logging
-        "log_level": "DATAQUERY_LOG_LEVEL",
-        "enable_debug_logging": "DATAQUERY_ENABLE_DEBUG_LOGGING",
-        # Download Configuration
-        "download_dir": "DATAQUERY_DOWNLOAD_DIR",
-        "create_directories": "DATAQUERY_CREATE_DIRECTORIES",
-        "overwrite_existing": "DATAQUERY_OVERWRITE_EXISTING",
-        "enable_range_downloads": "DATAQUERY_ENABLE_RANGE_DOWNLOADS",
-    }
+    # ------------------------------------------------------------------
+    # .env file loading
+    # ------------------------------------------------------------------
 
     @classmethod
     def load_env_file(cls, env_file: Optional[Path] = None) -> None:
-        """Load environment variables from .env file."""
+        """Load environment variables from a ``.env`` file (no-op if missing)."""
         if env_file is None:
             env_file = Path(".env")
-
         if env_file.exists():
             load_dotenv(env_file)
 
+    # ------------------------------------------------------------------
+    # Typed env-var getters
+    #
+    # Empty strings are treated as "unset" — the legacy contract preserved
+    # so callers that read ``EnvConfig.get_int("MAX_RETRIES")`` with the
+    # var explicitly set to "" still get ``0``, not the model default.
+    # ------------------------------------------------------------------
+
     @classmethod
     def get_env_var(cls, key: str, default: Optional[str] = None) -> Optional[str]:
-        """Get environment variable with prefix, using DEFAULTS if no default provided."""
-        env_key = f"{cls.PREFIX}{key}"
-
-        # Use default from DEFAULTS if no default provided
+        """Read ``$DATAQUERY_<key>`` with the model default as the fallback."""
         if default is None:
             default = cls.DEFAULTS.get(key)
-
-        value = os.getenv(env_key, default)
-
-        # Handle empty strings as None
-        if value == "":
-            return None
-
-        return value
+        value = os.getenv(f"{cls.PREFIX}{key}", default)
+        return None if value == "" else value
 
     @classmethod
     def get_bool(cls, key: str, default: Optional[str] = None) -> bool:
-        """Get boolean environment variable."""
-        if default is None:
-            default = cls.DEFAULTS.get(key, "false")
-        value = cls.get_env_var(key, default)
-        if value is None:
-            return False
-        return value.lower() in ("true", "1", "yes", "on")
+        value = cls.get_env_var(key, default if default is not None else cls.DEFAULTS.get(key, "false"))
+        return value.lower() in ("true", "1", "yes", "on") if value else False
 
     @classmethod
     def get_int(cls, key: str, default: Optional[str] = None) -> int:
-        """Get integer environment variable."""
-        if default is None:
-            default = cls.DEFAULTS.get(key, "0")
-        value = cls.get_env_var(key, default)
+        value = cls.get_env_var(key, default if default is not None else cls.DEFAULTS.get(key, "0"))
         if value is None:
             return 0
         try:
             return int(value)
-        except ValueError:
-            raise ConfigurationError(f"Invalid integer value for {cls.PREFIX}{key}: {value}")
+        except ValueError as exc:
+            raise ConfigurationError(f"Invalid integer value for {cls.PREFIX}{key}: {value}") from exc
 
     @classmethod
     def get_float(cls, key: str, default: Optional[str] = None) -> float:
-        """Get float environment variable."""
-        if default is None:
-            default = cls.DEFAULTS.get(key, "0.0")
-        value = cls.get_env_var(key, default)
+        value = cls.get_env_var(key, default if default is not None else cls.DEFAULTS.get(key, "0.0"))
         if value is None:
             return 0.0
         try:
             return float(value)
-        except ValueError:
-            raise ConfigurationError(f"Invalid float value for {cls.PREFIX}{key}: {value}")
+        except ValueError as exc:
+            raise ConfigurationError(f"Invalid float value for {cls.PREFIX}{key}: {value}") from exc
 
     @classmethod
     def get_path(cls, key: str, default: str = ".") -> Path:
-        """Get path environment variable."""
         value = cls.get_env_var(key, default)
-        if value is None:
-            return Path(".")
-        return Path(value)
+        return Path(value) if value else Path(".")
+
+    # ------------------------------------------------------------------
+    # ClientConfig factory
+    # ------------------------------------------------------------------
 
     @classmethod
     def create_client_config_with_defaults(cls, base_url: str) -> ClientConfig:
-        """
-        Create ClientConfig with just base_url and all other defaults.
-
-        Args:
-            base_url: Base URL of the DataQuery API
-
-        Returns:
-            ClientConfig instance with defaults
-        """
-        return ClientConfig(
-            base_url=base_url,
-            # All other fields will use their default values from the model
-        )
+        """Build a :class:`ClientConfig` with only ``base_url`` overridden."""
+        return ClientConfig(base_url=base_url)
 
     @classmethod
     def create_client_config(
@@ -232,116 +175,58 @@ class EnvConfig:
         config_data: Optional[Dict[str, Any]] = None,
         env_file: Optional[Path] = None,
     ) -> ClientConfig:
+        """Build a :class:`ClientConfig` from env vars or an explicit dict.
+
+        When ``config_data`` is provided the env-var path is skipped entirely
+        — the dict is passed straight to :class:`ClientConfig`.
         """
-        Create ClientConfig from environment variables or provided config data.
-
-        Args:
-            config_data: Optional dictionary with configuration data
-            env_file: Optional path to .env file
-
-        Returns:
-            ClientConfig instance
-
-        Raises:
-            ConfigurationError: If required configuration is missing or invalid
-        """
-        if config_data is None:
-            # Load .env file if provided
-            if env_file is not None:
-                cls.load_env_file(env_file)
-
-            # Get base URL (required)
-            base_url = cls.get_env_var("BASE_URL")
-            if not base_url:
-                raise ConfigurationError(f"{cls.PREFIX}BASE_URL environment variable is required")
-
-            # Auto-generate OAuth token URL if not provided
-            oauth_token_url = cls.get_env_var("OAUTH_TOKEN_URL")
-            if not oauth_token_url and cls.get_bool("OAUTH_ENABLED"):
-                oauth_token_url = f"{base_url}/oauth/token"
-
-            return ClientConfig(
-                # API configuration
-                base_url=base_url,
-                context_path=cls.get_env_var("CONTEXT_PATH"),
-                api_version=cls.get_env_var("API_VERSION") or "2.0.0",
-                files_base_url=cls.get_env_var("FILES_BASE_URL"),
-                files_context_path=cls.get_env_var("FILES_CONTEXT_PATH"),
-                # OAuth configuration
-                oauth_enabled=cls.get_bool("OAUTH_ENABLED"),
-                oauth_token_url=oauth_token_url,
-                client_id=cls.get_env_var("CLIENT_ID"),
-                client_secret=cls.get_env_var("CLIENT_SECRET"),
-                aud=cls.get_env_var("OAUTH_AUD"),
-                grant_type=cls.get_env_var("GRANT_TYPE") or "client_credentials",
-                # Bearer token configuration
-                bearer_token=cls.get_env_var("BEARER_TOKEN"),
-                token_refresh_threshold=cls.get_int("TOKEN_REFRESH_THRESHOLD"),
-                # HTTP configuration
-                timeout=cls.get_float("TIMEOUT"),
-                max_retries=cls.get_int("MAX_RETRIES"),
-                retry_delay=cls.get_float("RETRY_DELAY"),
-                circuit_breaker_threshold=cls.get_int("CIRCUIT_BREAKER_THRESHOLD"),
-                # Connection pooling
-                pool_connections=cls.get_int("POOL_CONNECTIONS"),
-                pool_maxsize=cls.get_int("POOL_MAXSIZE"),
-                # Rate limiting
-                requests_per_minute=cls.get_int("REQUESTS_PER_MINUTE"),
-                burst_capacity=cls.get_int("BURST_CAPACITY"),
-                # Proxy configuration
-                proxy_enabled=cls.get_bool("PROXY_ENABLED"),
-                proxy_url=cls.get_env_var("PROXY_URL"),
-                proxy_username=cls.get_env_var("PROXY_USERNAME"),
-                proxy_password=cls.get_env_var("PROXY_PASSWORD"),
-                proxy_verify_ssl=cls.get_bool("PROXY_VERIFY_SSL"),
-                # Logging
-                log_level=cls.get_env_var("LOG_LEVEL") or "INFO",
-                enable_debug_logging=cls.get_bool("ENABLE_DEBUG_LOGGING"),
-                # Download configuration
-                download_dir=cls.get_env_var("DOWNLOAD_DIR") or "./downloads",
-                create_directories=cls.get_bool("CREATE_DIRECTORIES"),
-                overwrite_existing=cls.get_bool("OVERWRITE_EXISTING"),
-                # Batch Download Configuration
-                max_concurrent_downloads=cls.get_int("MAX_CONCURRENT_DOWNLOADS"),
-                batch_size=cls.get_int("BATCH_SIZE"),
-                retry_failed=cls.get_bool("RETRY_FAILED"),
-                max_retry_attempts=cls.get_int("MAX_RETRY_ATTEMPTS"),
-                create_date_folders=cls.get_bool("CREATE_DATE_FOLDERS"),
-                preserve_path_structure=cls.get_bool("PRESERVE_PATH_STRUCTURE"),
-                flatten_structure=cls.get_bool("FLATTEN_STRUCTURE"),
-                show_batch_progress=cls.get_bool("SHOW_BATCH_PROGRESS"),
-                show_individual_progress=cls.get_bool("SHOW_INDIVIDUAL_PROGRESS"),
-                continue_on_error=cls.get_bool("CONTINUE_ON_ERROR"),
-                log_errors=cls.get_bool("LOG_ERRORS"),
-                save_error_log=cls.get_bool("SAVE_ERROR_LOG"),
-                use_async_downloads=cls.get_bool("USE_ASYNC_DOWNLOADS"),
-                enable_range_downloads=cls.get_bool("ENABLE_RANGE_DOWNLOADS"),
-                chunk_size=cls.get_int("CHUNK_SIZE"),
-                # Download Options
-                enable_range_requests=cls.get_bool("ENABLE_RANGE_REQUESTS"),
-                show_progress=cls.get_bool("SHOW_PROGRESS"),
-                # Workflow Configuration
-                workflow_dir=cls.get_env_var("WORKFLOW_DIR") or "workflow",
-                groups_dir=cls.get_env_var("GROUPS_DIR") or "groups",
-                availability_dir=cls.get_env_var("AVAILABILITY_DIR") or "availability",
-                default_dir=cls.get_env_var("DEFAULT_DIR") or "files",
-                # Security
-                mask_secrets=cls.get_bool("MASK_SECRETS"),
-                token_storage_enabled=cls.get_bool("TOKEN_STORAGE_ENABLED"),
-                token_storage_dir=cls.get_env_var("TOKEN_STORAGE_DIR"),
-            )
-        else:
-            # Use provided config data
+        if config_data is not None:
             return ClientConfig(**config_data)
+
+        if env_file is not None:
+            cls.load_env_file(env_file)
+
+        if not cls.get_env_var("BASE_URL"):
+            raise ConfigurationError(f"{cls.PREFIX}BASE_URL environment variable is required")
+
+        kwargs: Dict[str, Any] = {}
+        for field_name, field in ClientConfig.model_fields.items():
+            kwargs[field_name] = cls._read_field(field_name, field)
+
+        # Auto-derive an OAuth token URL when OAuth is enabled but the URL
+        # is missing — preserves legacy behaviour for users who only set
+        # base_url + credentials.
+        if kwargs.get("oauth_enabled") and not kwargs.get("oauth_token_url"):
+            kwargs["oauth_token_url"] = f"{kwargs['base_url']}/oauth/token"
+
+        return ClientConfig(**kwargs)
+
+    @classmethod
+    def _read_field(cls, field_name: str, field: Any) -> Any:
+        """Read & coerce a single env var to the field's declared type."""
+        env_key = _env_name_for(field_name)
+        ann = _unwrap_optional(field.annotation)
+        if ann is bool:
+            return cls.get_bool(env_key)
+        if ann is int:
+            return cls.get_int(env_key)
+        if ann is float:
+            return cls.get_float(env_key)
+        # Strings, paths, anything else — return raw string or None.
+        return cls.get_env_var(env_key)
+
+    # ------------------------------------------------------------------
+    # Subset views (used by the CLI / examples)
+    # ------------------------------------------------------------------
 
     @classmethod
     def get_download_options(cls) -> Dict[str, Any]:
-        """Get download options from environment variables."""
+        """Subset of config relevant to a single-file download."""
         return {
-            "chunk_size": cls.get_int("CHUNK_SIZE", "1048576"),
-            "max_retries": cls.get_int("MAX_RETRIES", "3"),
-            "retry_delay": cls.get_float("RETRY_DELAY", "1.0"),
-            "timeout": cls.get_float("TIMEOUT", "600.0"),
+            "chunk_size": cls.get_int("CHUNK_SIZE"),
+            "max_retries": cls.get_int("MAX_RETRIES"),
+            "retry_delay": cls.get_float("RETRY_DELAY"),
+            "timeout": cls.get_float("TIMEOUT"),
             "enable_range_requests": cls.get_bool("ENABLE_RANGE_REQUESTS"),
             "show_progress": cls.get_bool("SHOW_PROGRESS"),
             "create_directories": cls.get_bool("CREATE_DIRECTORIES"),
@@ -350,12 +235,12 @@ class EnvConfig:
 
     @classmethod
     def get_batch_download_options(cls) -> Dict[str, Any]:
-        """Get batch download options from environment variables."""
+        """Subset of config relevant to batch downloads."""
         return {
-            "max_concurrent_downloads": cls.get_int("MAX_CONCURRENT_DOWNLOADS", "3"),
-            "batch_size": cls.get_int("BATCH_SIZE", "10"),
+            "max_concurrent_downloads": cls.get_int("MAX_CONCURRENT_DOWNLOADS"),
+            "batch_size": cls.get_int("BATCH_SIZE"),
             "retry_failed": cls.get_bool("RETRY_FAILED"),
-            "max_retry_attempts": cls.get_int("MAX_RETRY_ATTEMPTS", "2"),
+            "max_retry_attempts": cls.get_int("MAX_RETRY_ATTEMPTS"),
             "create_date_folders": cls.get_bool("CREATE_DATE_FOLDERS"),
             "preserve_path_structure": cls.get_bool("PRESERVE_PATH_STRUCTURE"),
             "flatten_structure": cls.get_bool("FLATTEN_STRUCTURE"),
@@ -365,40 +250,41 @@ class EnvConfig:
             "log_errors": cls.get_bool("LOG_ERRORS"),
             "save_error_log": cls.get_bool("SAVE_ERROR_LOG"),
             "use_async_downloads": cls.get_bool("USE_ASYNC_DOWNLOADS"),
-            "chunk_size": cls.get_int("CHUNK_SIZE", "1048576"),
+            "chunk_size": cls.get_int("CHUNK_SIZE"),
         }
 
     @classmethod
     def get_workflow_paths(cls) -> Dict[str, Path]:
-        """Get workflow directory paths from environment variables."""
-        base_download_dir = cls.get_path("DOWNLOAD_DIR", "./downloads")
-
+        """Resolve the workflow subdirectory layout under ``DOWNLOAD_DIR``."""
+        base = cls.get_path("DOWNLOAD_DIR", "./downloads")
         return {
-            "base": base_download_dir,
-            "workflow": base_download_dir / (cls.get_env_var("WORKFLOW_DIR") or "workflow"),
-            "groups": base_download_dir / (cls.get_env_var("GROUPS_DIR") or "groups"),
-            "availability": base_download_dir / (cls.get_env_var("AVAILABILITY_DIR") or "availability"),
-            "default": base_download_dir / (cls.get_env_var("DEFAULT_DIR") or "files"),
+            "base": base,
+            "workflow": base / (cls.get_env_var("WORKFLOW_DIR") or "workflow"),
+            "groups": base / (cls.get_env_var("GROUPS_DIR") or "groups"),
+            "availability": base / (cls.get_env_var("AVAILABILITY_DIR") or "availability"),
+            "default": base / (cls.get_env_var("DEFAULT_DIR") or "files"),
         }
 
     @classmethod
     def get_token_storage_config(cls) -> Dict[str, Any]:
-        """Get token storage configuration from environment variables."""
+        """OAuth token storage settings."""
         return {
             "enabled": cls.get_bool("TOKEN_STORAGE_ENABLED"),
             "directory": cls.get_env_var("TOKEN_STORAGE_DIR", ".tokens"),
         }
 
+    # ------------------------------------------------------------------
+    # Validation
+    # ------------------------------------------------------------------
+
     @classmethod
     def validate_config(cls, config: ClientConfig) -> None:
-        """Validate configuration and raise ConfigurationError if invalid."""
+        """Raise :class:`ConfigurationError` if the cross-field invariants fail."""
         errors = []
 
-        # Check required fields
         if not config.base_url:
             errors.append("BASE_URL is required")
 
-        # Check OAuth configuration
         if config.oauth_enabled:
             if not config.client_id:
                 errors.append("CLIENT_ID is required when OAuth is enabled")
@@ -407,11 +293,9 @@ class EnvConfig:
             if not config.oauth_token_url:
                 errors.append("OAUTH_TOKEN_URL is required when OAuth is enabled")
 
-        # Check Bearer token configuration
         if not config.has_oauth_credentials and not config.has_bearer_token:
             errors.append("Either OAuth credentials or Bearer token must be configured")
 
-        # Check numeric values
         if config.timeout <= 0:
             errors.append("TIMEOUT must be positive")
         if config.max_retries < 0:
@@ -430,135 +314,51 @@ class EnvConfig:
         if errors:
             raise ConfigurationError(f"Configuration validation failed: {'; '.join(errors)}")
 
+    # ------------------------------------------------------------------
+    # Template & introspection helpers
+    # ------------------------------------------------------------------
+
     @classmethod
     def create_env_template(cls, output_path: Optional[Path] = None) -> Path:
-        """
-        Create a .env template file with all available configuration options.
+        """Write a ``.env`` template listing every supported variable.
 
-        Args:
-            output_path: Optional output path for the template
-
-        Returns:
-            Path to the created template file
+        Lines are auto-generated from :data:`ClientConfig.model_fields` so a
+        new field shows up here automatically (no separate maintenance).
         """
         if output_path is None:
             output_path = Path(".env.template")
-
-        # Ensure output_path is a Path object
         if not isinstance(output_path, Path):
             output_path = Path(output_path)
 
-        template_content = f"""# DATAQUERY SDK Environment Configuration Template
-# Copy this file to .env and update the values as needed
+        lines = [
+            "# DATAQUERY SDK Environment Configuration Template",
+            "# Copy this file to .env and update the values as needed.",
+            "# Defaults shown are the values used when the variable is unset.",
+            "",
+        ]
+        for field_name, field in ClientConfig.model_fields.items():
+            env_key = _env_name_for(field_name)
+            default = cls.DEFAULTS.get(env_key)
+            description = (field.description or "").strip()
+            if description:
+                lines.append(f"# {description}")
+            lines.append(f"{cls.PREFIX}{env_key}={default if default is not None else ''}")
+            lines.append("")
 
-# API Configuration
-{cls.PREFIX}BASE_URL=https://api-developer.jpmorgan.com
-{cls.PREFIX}CONTEXT_PATH=/research/dataquery-authe/api/v2
-# Optional separate Files API host
-{cls.PREFIX}FILES_BASE_URL=https://api-dataquery.jpmchase.com
-{cls.PREFIX}FILES_CONTEXT_PATH=/research/dataquery-authe/api/v2
-
-# OAuth Configuration
-{cls.PREFIX}OAUTH_ENABLED=true
-{cls.PREFIX}OAUTH_TOKEN_URL=https://authe.jpmorgan.com/as/token.oauth2
-{cls.PREFIX}CLIENT_ID=your_client_id_here
-{cls.PREFIX}CLIENT_SECRET=your_client_secret_here
-{cls.PREFIX}GRANT_TYPE=client_credentials
-
-# Bearer Token Configuration (alternative to OAuth)
-{cls.PREFIX}BEARER_TOKEN=your_bearer_token_here
-{cls.PREFIX}TOKEN_REFRESH_THRESHOLD=300
-
-# HTTP Configuration
-{cls.PREFIX}TIMEOUT=600.0
-{cls.PREFIX}MAX_RETRIES=3
-{cls.PREFIX}RETRY_DELAY=1.0
-
-# Connection Pooling
-{cls.PREFIX}POOL_CONNECTIONS=10
-{cls.PREFIX}POOL_MAXSIZE=20
-
-# Rate Limiting
-{cls.PREFIX}REQUESTS_PER_MINUTE=100
-{cls.PREFIX}BURST_CAPACITY=20
-
-# Proxy Configuration
-{cls.PREFIX}PROXY_ENABLED=false
-{cls.PREFIX}PROXY_URL=
-{cls.PREFIX}PROXY_USERNAME=
-{cls.PREFIX}PROXY_PASSWORD=
-{cls.PREFIX}PROXY_VERIFY_SSL=true
-
-# Logging
-{cls.PREFIX}LOG_LEVEL=INFO
-{cls.PREFIX}ENABLE_DEBUG_LOGGING=false
-
-# Download Configuration
-{cls.PREFIX}DOWNLOAD_DIR=./downloads
-{cls.PREFIX}CREATE_DIRECTORIES=true
-{cls.PREFIX}OVERWRITE_EXISTING=false
-
-# Batch Download Configuration
-{cls.PREFIX}MAX_CONCURRENT_DOWNLOADS=5
-{cls.PREFIX}BATCH_SIZE=10
-{cls.PREFIX}RETRY_FAILED=true
-{cls.PREFIX}MAX_RETRY_ATTEMPTS=2
-{cls.PREFIX}CREATE_DATE_FOLDERS=true
-{cls.PREFIX}PRESERVE_PATH_STRUCTURE=true
-{cls.PREFIX}FLATTEN_STRUCTURE=false
-{cls.PREFIX}SHOW_BATCH_PROGRESS=true
-{cls.PREFIX}SHOW_INDIVIDUAL_PROGRESS=true
-{cls.PREFIX}CONTINUE_ON_ERROR=true
-{cls.PREFIX}LOG_ERRORS=true
-{cls.PREFIX}SAVE_ERROR_LOG=true
-{cls.PREFIX}USE_ASYNC_DOWNLOADS=true
-{cls.PREFIX}CHUNK_SIZE=1048576
-
-# Download Options
-{cls.PREFIX}ENABLE_RANGE_REQUESTS=true
-{cls.PREFIX}SHOW_PROGRESS=true
-
-# Workflow Configuration
-{cls.PREFIX}WORKFLOW_DIR=workflow
-{cls.PREFIX}GROUPS_DIR=groups
-{cls.PREFIX}AVAILABILITY_DIR=availability
-{cls.PREFIX}DEFAULT_DIR=files
-
-# Security
-{cls.PREFIX}MASK_SECRETS=true
-{cls.PREFIX}TOKEN_STORAGE_ENABLED=true
-{cls.PREFIX}TOKEN_STORAGE_DIR=.tokens
-"""
-
-        output_path.write_text(template_content)
+        output_path.write_text("\n".join(lines))
         return output_path
 
     @classmethod
     def get_all_env_vars(cls) -> Dict[str, str]:
-        """Get all DATAQUERY environment variables."""
-        env_vars: Dict[str, str] = {}
-        # Return only variables that are explicitly set in the environment, not defaults
-        prefix = cls.PREFIX
-        for k, v in os.environ.items():
-            if k.startswith(prefix):
-                env_key = k[len(prefix) :]
-                env_vars[env_key] = v
-        return env_vars
+        """Return only ``DATAQUERY_*`` vars actually set in the process env."""
+        prefix_len = len(cls.PREFIX)
+        return {k[prefix_len:]: v for k, v in os.environ.items() if k.startswith(cls.PREFIX)}
 
     @classmethod
     def mask_secrets(cls, config_dict: Dict[str, Any]) -> Dict[str, Any]:
-        """Mask sensitive configuration values."""
-        sensitive_keys = {
-            "client_id",
-            "client_secret",
-            "bearer_token",
-            "oauth_token_url",
-            "aud",
-        }
-
-        masked_config = config_dict.copy()
-        for key in sensitive_keys:
-            if key in masked_config and masked_config[key]:
-                masked_config[key] = "***"
-
-        return masked_config
+        """Return a copy of ``config_dict`` with sensitive values redacted."""
+        masked = config_dict.copy()
+        for key in _SENSITIVE_FIELDS:
+            if masked.get(key):
+                masked[key] = "***"
+        return masked

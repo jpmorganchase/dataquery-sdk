@@ -2197,6 +2197,8 @@ class DataQuery:
         show_progress: bool = True,
         enable_event_replay: bool = True,
         heartbeat_timeout: float = 0.0,
+        max_tracked_files: int = 10_000,
+        max_tracked_errors: int = 1_000,
     ):
         """Proxy to client's auto_download_async."""
         await self.connect_async()
@@ -2216,6 +2218,8 @@ class DataQuery:
             show_progress=show_progress,
             enable_event_replay=enable_event_replay,
             heartbeat_timeout=heartbeat_timeout,
+            max_tracked_files=max_tracked_files,
+            max_tracked_errors=max_tracked_errors,
         )
 
     # DataFrame conversion proxies

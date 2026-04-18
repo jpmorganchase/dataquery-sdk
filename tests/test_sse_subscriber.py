@@ -562,3 +562,144 @@ async def test_clear_event_id_removes_store_file(tmp_path):
     assert state_file.exists()
     mgr.clear_event_id()
     assert not state_file.exists()
+
+
+# ---------------------------------------------------------------------------
+# Bounded structures — required for true 24/7 operation
+# ---------------------------------------------------------------------------
+
+
+def test_downloaded_files_evicts_oldest_when_over_cap(tmp_path):
+    """LRU cap means an unbounded event stream cannot leak memory."""
+    client = _FakeClient()
+    mgr = NotificationDownloadManager(
+        client=client,
+        group_id="G",
+        destination_dir=str(tmp_path),
+        initial_check=False,
+        max_tracked_files=3,
+    )
+    for i in range(5):
+        mgr._downloaded_files.add(f"k{i}")
+    # Only the 3 most recently added survive.
+    assert len(mgr._downloaded_files) == 3
+    assert "k0" not in mgr._downloaded_files
+    assert "k1" not in mgr._downloaded_files
+    assert "k2" in mgr._downloaded_files
+    assert "k3" in mgr._downloaded_files
+    assert "k4" in mgr._downloaded_files
+
+
+def test_downloaded_files_membership_check_touches_lru(tmp_path):
+    """A `key in set` check refreshes the key so duplicate-event spam keeps
+    the entry hot — the manager won't drop and re-download a file that
+    notifications keep referencing."""
+    client = _FakeClient()
+    mgr = NotificationDownloadManager(
+        client=client,
+        group_id="G",
+        destination_dir=str(tmp_path),
+        initial_check=False,
+        max_tracked_files=3,
+    )
+    mgr._downloaded_files.add("hot")
+    mgr._downloaded_files.add("k1")
+    mgr._downloaded_files.add("k2")
+    # Touch "hot" then add three more — "hot" should survive while k1/k2 don't.
+    assert "hot" in mgr._downloaded_files
+    mgr._downloaded_files.add("k3")
+    mgr._downloaded_files.add("k4")
+    assert "hot" in mgr._downloaded_files
+    assert "k1" not in mgr._downloaded_files
+
+
+def test_failed_files_evicts_oldest_when_over_cap(tmp_path):
+    client = _FakeClient()
+    mgr = NotificationDownloadManager(
+        client=client,
+        group_id="G",
+        destination_dir=str(tmp_path),
+        initial_check=False,
+        max_tracked_files=3,
+    )
+    for i in range(5):
+        mgr._failed_files[f"k{i}"] = 1
+    assert len(mgr._failed_files) == 3
+    assert mgr._failed_files.get("k0", 0) == 0  # evicted
+    assert mgr._failed_files.get("k4", 0) == 1
+
+
+def test_failed_files_setitem_touches_lru(tmp_path):
+    """Re-assigning a key (incrementing its retry count) keeps it hot."""
+    client = _FakeClient()
+    mgr = NotificationDownloadManager(
+        client=client,
+        group_id="G",
+        destination_dir=str(tmp_path),
+        initial_check=False,
+        max_tracked_files=3,
+    )
+    mgr._failed_files["a"] = 1
+    mgr._failed_files["b"] = 1
+    mgr._failed_files["c"] = 1
+    mgr._failed_files["a"] = 2  # touch
+    mgr._failed_files["d"] = 1  # forces eviction of LRU — should be "b"
+    assert "a" in mgr._failed_files
+    assert "b" not in mgr._failed_files
+    assert mgr._failed_files.get("a", 0) == 2
+
+
+def test_failed_files_pop_removes_entry(tmp_path):
+    client = _FakeClient()
+    mgr = NotificationDownloadManager(
+        client=client,
+        group_id="G",
+        destination_dir=str(tmp_path),
+        initial_check=False,
+    )
+    mgr._failed_files["k"] = 5
+    assert mgr._failed_files.pop("k", None) == 5
+    assert "k" not in mgr._failed_files
+    # Pop of missing key returns the default — no exception.
+    assert mgr._failed_files.pop("missing", "sentinel") == "sentinel"
+
+
+@pytest.mark.asyncio
+async def test_errors_are_a_bounded_ring_buffer(tmp_path):
+    """`stats["errors"]` must not grow unboundedly across long-running sessions."""
+    client = _FakeClient()
+    mgr = NotificationDownloadManager(
+        client=client,
+        group_id="G",
+        destination_dir=str(tmp_path),
+        initial_check=False,
+        max_tracked_errors=5,
+    )
+    for i in range(20):
+        await mgr._dispatch_error(RuntimeError(f"err-{i}"))
+    assert len(mgr.stats["errors"]) == 5
+    # Ring buffer keeps the most recent — first surviving entry is err-15.
+    first = mgr.stats["errors"][0]
+    last = mgr.stats["errors"][-1]
+    assert "err-15" in first["error"]
+    assert "err-19" in last["error"]
+
+
+@pytest.mark.asyncio
+async def test_get_stats_serialises_errors_as_plain_list(tmp_path):
+    """get_stats() must return a JSON-serialisable snapshot — the deque is
+    converted to a list so callers (CLI --watch, json.dumps) just work."""
+    import json
+
+    client = _FakeClient()
+    mgr = NotificationDownloadManager(
+        client=client,
+        group_id="G",
+        destination_dir=str(tmp_path),
+        initial_check=False,
+    )
+    await mgr._dispatch_error(RuntimeError("boom"))
+    snap = mgr.get_stats()
+    assert isinstance(snap["errors"], list)
+    # Round-trips through json.dumps without a TypeError.
+    json.dumps({k: v for k, v in snap.items() if k not in ("start_time",)})

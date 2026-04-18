@@ -10,9 +10,34 @@ import asyncio
 import inspect
 import logging
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Set
+from typing import Any, Callable, Dict, Optional, Protocol
 
 from .models import DownloadOptions, DownloadProgress, DownloadStatus
+
+
+class _SupportsAddContains(Protocol):
+    """Set-like protocol used by :func:`download_and_track`.
+
+    The concrete implementation is either a plain ``set`` or the bounded
+    LRU container in :mod:`dataquery.sse_subscriber`. Only ``add`` and
+    ``__contains__`` are exercised here.
+    """
+
+    def add(self, key: str) -> None: ...
+    def __contains__(self, key: object) -> bool: ...
+
+
+class _SupportsRetryCounter(Protocol):
+    """Dict-like protocol for the per-file retry counter.
+
+    Concrete impl is either a plain ``dict`` or the bounded LRU container
+    in :mod:`dataquery.sse_subscriber`. Only ``get``, ``pop`` and item
+    assignment are exercised here.
+    """
+
+    def get(self, key: str, default: int = ...) -> int: ...
+    def pop(self, key: str, default: Any = ...) -> Any: ...
+    def __setitem__(self, key: str, value: int) -> None: ...
 
 logger = logging.getLogger(__name__)
 
@@ -55,8 +80,8 @@ async def download_and_track(
     file_key: str,
     download_options: DownloadOptions,
     stats: Dict[str, Any],
-    downloaded_files: Set[str],
-    failed_files: Dict[str, int],
+    downloaded_files: _SupportsAddContains,
+    failed_files: _SupportsRetryCounter,
     progress_callback: Optional[Callable] = None,
     logger_instance: Optional[logging.Logger] = None,
 ) -> None:

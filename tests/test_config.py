@@ -470,3 +470,50 @@ class TestEnvConfig:
         masked = EnvConfig.mask_secrets(config_dict)
 
         assert masked == config_dict  # No changes should be made
+
+
+class TestEnvConfigSingleSourceOfTruth:
+    """Lock in the invariant that ``EnvConfig.DEFAULTS`` is derived from
+    :class:`ClientConfig.model_fields`. If a new field is added to the model,
+    a corresponding entry should appear in DEFAULTS automatically — no
+    parallel maintenance required.
+    """
+
+    def test_defaults_table_covers_every_model_field(self):
+        from dataquery.config import _env_name_for
+
+        for field_name in ClientConfig.model_fields:
+            env_key = _env_name_for(field_name)
+            assert env_key in EnvConfig.DEFAULTS, (
+                f"Field '{field_name}' missing from EnvConfig.DEFAULTS — "
+                f"the model and the env table have drifted."
+            )
+
+    def test_defaults_match_model_values(self):
+        """Stringified model defaults must equal the DEFAULTS entries
+        (modulo lowercase booleans and the explicit override list)."""
+        from dataquery.config import _DEFAULT_OVERRIDES, _env_name_for
+        from pydantic_core import PydanticUndefined
+
+        for field_name, field in ClientConfig.model_fields.items():
+            env_key = _env_name_for(field_name)
+            if env_key in _DEFAULT_OVERRIDES:
+                continue  # explicit override — see _DEFAULT_OVERRIDES docstring
+            actual = EnvConfig.DEFAULTS[env_key]
+            if field.default is PydanticUndefined or field.default is None:
+                assert actual is None
+            elif isinstance(field.default, bool):
+                assert actual == ("true" if field.default else "false")
+            else:
+                assert actual == str(field.default)
+
+    def test_env_template_includes_every_field(self, tmp_path):
+        """Auto-generated template must mention every model field once."""
+        from dataquery.config import _env_name_for
+
+        template = tmp_path / ".env.template"
+        EnvConfig.create_env_template(template)
+        content = template.read_text()
+        for field_name in ClientConfig.model_fields:
+            env_key = _env_name_for(field_name)
+            assert f"DATAQUERY_{env_key}=" in content, f"Missing {env_key} in template"

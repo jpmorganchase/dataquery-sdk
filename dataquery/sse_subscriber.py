@@ -15,9 +15,10 @@ import asyncio
 import inspect
 import json
 import logging
+from collections import OrderedDict, deque
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from ._download_utils import download_and_track, file_exists_locally
 from .models import DownloadOptions, DownloadProgress
@@ -25,6 +26,80 @@ from .sse_client import SSEClient, SSEEvent
 from .sse_event_store import SSEEventIdStore, Subscription, build_event_id_store
 
 logger = logging.getLogger(__name__)
+
+
+class _BoundedKeySet:
+    """Set-like LRU container used to remember already-downloaded file keys.
+
+    Bounded so the manager can run indefinitely (24/7) without unbounded
+    memory growth. Touching a key on access (``__contains__``) keeps the
+    "hot" keys alive so a duplicate-event burst won't re-trigger downloads.
+    """
+
+    __slots__ = ("_data", "_maxsize")
+
+    def __init__(self, maxsize: int) -> None:
+        self._maxsize = max(1, int(maxsize))
+        self._data: "OrderedDict[str, None]" = OrderedDict()
+
+    def add(self, key: str) -> None:
+        if key in self._data:
+            self._data.move_to_end(key)
+            return
+        self._data[key] = None
+        if len(self._data) > self._maxsize:
+            self._data.popitem(last=False)
+
+    def __contains__(self, key: object) -> bool:
+        if key in self._data:
+            self._data.move_to_end(key)  # type: ignore[arg-type]
+            return True
+        return False
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __iter__(self):
+        return iter(self._data)
+
+
+class _BoundedRetryMap:
+    """Dict-like LRU container used to remember per-file retry counts.
+
+    Mirrors :class:`_BoundedKeySet` but stores integer values instead of a
+    set membership marker. ``__setitem__`` touches the key (LRU on write).
+    """
+
+    __slots__ = ("_data", "_maxsize")
+
+    def __init__(self, maxsize: int) -> None:
+        self._maxsize = max(1, int(maxsize))
+        self._data: "OrderedDict[str, int]" = OrderedDict()
+
+    def get(self, key: str, default: int = 0) -> int:
+        return self._data.get(key, default)
+
+    def pop(self, key: str, default: Any = None) -> Any:
+        return self._data.pop(key, default)
+
+    def __setitem__(self, key: str, value: int) -> None:
+        if key in self._data:
+            self._data.move_to_end(key)
+        self._data[key] = value
+        while len(self._data) > self._maxsize:
+            self._data.popitem(last=False)
+
+    def __getitem__(self, key: str) -> int:
+        return self._data[key]
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._data
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __iter__(self):
+        return iter(self._data)
 
 
 class NotificationDownloadManager:
@@ -78,6 +153,8 @@ class NotificationDownloadManager:
         show_progress: bool = True,
         enable_event_replay: bool = True,
         heartbeat_timeout: float = 0.0,
+        max_tracked_files: int = 10_000,
+        max_tracked_errors: int = 1_000,
     ):
         """
         Initialise the manager.
@@ -123,6 +200,15 @@ class NotificationDownloadManager:
                            recycle wouldn't otherwise surface. Must be larger
                            than the server's keep-alive interval. ``0`` (the
                            default) disables the watchdog.
+            max_tracked_files: Maximum number of file keys to remember in the
+                           in-memory dedup / retry maps. Bounded so the manager
+                           can run indefinitely without unbounded memory growth.
+                           Eviction is LRU — keys still seeing traffic stay hot.
+                           Default 10,000 ≈ a few MB, sufficient for years of
+                           realistic SSE volume.
+            max_tracked_errors: Maximum number of recent errors retained in
+                           ``stats["errors"]``. Implemented as a ring buffer.
+                           Default 1,000.
         """
         self.client = client
         self.subscription = Subscription.from_user(group_id, file_group_id)
@@ -148,13 +234,16 @@ class NotificationDownloadManager:
         self._heartbeat_timeout = heartbeat_timeout
         self._event_id_store: Optional[SSEEventIdStore] = None
 
-        # State
+        # State — bounded so the manager can run 24/7 without leaking.
         self._running = False
-        self._downloaded_files: Set[str] = set()
-        self._failed_files: Dict[str, int] = {}  # file_key -> retry_count
-        self._download_lock = asyncio.Lock()
+        self._downloaded_files: _BoundedKeySet = _BoundedKeySet(max_tracked_files)
+        self._failed_files: _BoundedRetryMap = _BoundedRetryMap(max_tracked_files)
+        # Lazy-init: ``asyncio.Lock()`` on Python 3.9 eagerly binds to the
+        # running loop, which breaks construction from sync code. Mirrors
+        # the same pattern used in :class:`SSEEventIdStore`.
+        self._download_lock: Optional[asyncio.Lock] = None
 
-        # Statistics
+        # Statistics — ``errors`` is a ring buffer for the same reason.
         self.stats: Dict[str, Any] = {
             "start_time": None,
             "notifications_received": 0,
@@ -164,7 +253,7 @@ class NotificationDownloadManager:
             "files_skipped": 0,
             "download_failures": 0,
             "total_bytes_downloaded": 0,
-            "errors": [],
+            "errors": deque(maxlen=max(1, int(max_tracked_errors))),
         }
 
         self._download_options = DownloadOptions(
@@ -252,7 +341,7 @@ class NotificationDownloadManager:
         last_event_id = None
         if self._sse_client is not None:
             last_event_id = self._sse_client._last_event_id
-        return {
+        snapshot = {
             **self.stats,
             "runtime_seconds": runtime,
             "is_running": self._running,
@@ -262,6 +351,11 @@ class NotificationDownloadManager:
             "failed_file_keys": len(self._failed_files),
             "last_event_id": last_event_id,
         }
+        # Convert the bounded ring buffer to a plain list so callers that
+        # JSON-serialise the snapshot (CLI --watch, get_stats consumers) do
+        # not need to know about the underlying deque.
+        snapshot["errors"] = list(self.stats["errors"])
+        return snapshot
 
     def clear_event_id(self) -> None:
         """Delete the persisted SSE event id so the next start() replays from

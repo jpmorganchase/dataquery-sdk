@@ -1508,6 +1508,8 @@ class DataQueryClient(
         show_progress: bool = True,
         enable_event_replay: bool = True,
         heartbeat_timeout: float = 0.0,
+        max_tracked_files: int = 10_000,
+        max_tracked_errors: int = 1_000,
     ) -> "NotificationDownloadManager":
         """
         Subscribe to the /notification SSE endpoint and download new files.
@@ -1549,6 +1551,11 @@ class DataQueryClient(
                            heartbeats) arrive within this window. ``0`` (the
                            default) disables the watchdog and relies on the
                            server to close the stream cleanly.
+            max_tracked_files: Bound on the in-memory dedup / retry maps so
+                           the manager can run 24/7 without unbounded memory
+                           growth. LRU eviction; default 10,000.
+            max_tracked_errors: Bound on ``stats["errors"]`` (ring buffer);
+                           default 1,000.
 
         Returns:
             A running :class:`NotificationDownloadManager` instance.
@@ -1582,6 +1589,8 @@ class DataQueryClient(
             show_progress=show_progress,
             enable_event_replay=enable_event_replay,
             heartbeat_timeout=heartbeat_timeout,
+            max_tracked_files=max_tracked_files,
+            max_tracked_errors=max_tracked_errors,
         )
         await manager.start()
         return manager
