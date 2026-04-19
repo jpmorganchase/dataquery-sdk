@@ -2,7 +2,7 @@
 
 import pytest
 
-from dataquery.exceptions import (
+from dataquery.types.exceptions import (
     AuthenticationError,
     AvailabilityError,
     ConfigurationError,
@@ -202,7 +202,7 @@ class TestFileNotFoundError:
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            from dataquery.exceptions import FileNotFoundError as DeprecatedAlias
+            from dataquery.types.exceptions import FileNotFoundError as DeprecatedAlias
 
             assert DeprecatedAlias is FileNotFoundInGroupError
             assert len(w) == 1

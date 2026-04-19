@@ -3,9 +3,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from dataquery.client import DataQueryClient
-from dataquery.exceptions import AuthenticationError, FileNotFoundInGroupError, ValidationError
-from dataquery.models import ClientConfig
+from dataquery.core.client import DataQueryClient
+from dataquery.types.exceptions import AuthenticationError, FileNotFoundInGroupError, ValidationError
+from dataquery.types.models import ClientConfig
 
 
 class DummyLogger:

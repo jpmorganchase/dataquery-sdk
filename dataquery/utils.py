@@ -11,8 +11,8 @@ from typing import Any, List, Optional
 import aiohttp
 import structlog
 
-from .exceptions import ValidationError
-from .models import ClientConfig
+from .types.exceptions import ValidationError
+from .types.models import ClientConfig
 
 # Note: load_dotenv is imported where used to avoid unused import in environments
 

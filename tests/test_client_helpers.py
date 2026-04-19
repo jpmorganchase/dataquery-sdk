@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from dataquery.client import (
+from dataquery.core.client import (
     DataQueryClient,
     get_filename_from_response,
     validate_attributes_list,
@@ -12,7 +12,7 @@ from dataquery.client import (
     validate_file_datetime,
     validate_instruments_list,
 )
-from dataquery.exceptions import (
+from dataquery.types.exceptions import (
     AuthenticationError,
     NetworkError,
     NotFoundError,

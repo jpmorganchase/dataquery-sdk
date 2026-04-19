@@ -15,8 +15,8 @@ from typing import Awaitable, Callable, Optional, Union
 import aiohttp
 
 from .. import constants as C
-from ..models import ClientConfig
 from ..transport.auth import OAuthManager
+from ..types.models import ClientConfig
 from .event_store import SSEEventIdStore
 
 logger = logging.getLogger(__name__)

@@ -23,15 +23,15 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
 
 import aiohttp
 
-from . import constants as C
-from .models import (
+from .. import constants as C
+from ..types.models import (
     AttributesResponse,
     FiltersResponse,
     GridDataResponse,
     InstrumentsResponse,
     TimeSeriesResponse,
 )
-from .utils import (
+from ..utils import (
     validate_attributes_list,
     validate_date_format,
     validate_instruments_list,
@@ -48,7 +48,7 @@ except ImportError:
 if TYPE_CHECKING:
     import structlog
 
-    from .models import FileInfo, FileList, Group, GroupList
+    from ..types.models import FileInfo, FileList, Group, GroupList
 
 
 __all__ = [

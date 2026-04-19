@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from dataquery.dataquery import DataQuery
-from dataquery.exceptions import ConfigurationError
-from dataquery.models import (
+from dataquery.core.dataquery import DataQuery
+from dataquery.types.exceptions import ConfigurationError
+from dataquery.types.models import (
     AvailabilityInfo,
     ClientConfig,
     DownloadResult,
@@ -128,7 +128,7 @@ async def test_run_group_download_async_no_available_files():
 
 def test_init_raises_configurationerror_on_validate_failure():
     cfg = ClientConfig(base_url="https://api.example.com", oauth_enabled=False, bearer_token="t")
-    with patch("dataquery.dataquery.EnvConfig.validate_config", side_effect=Exception("boom")):
+    with patch("dataquery.core.dataquery.EnvConfig.validate_config", side_effect=Exception("boom")):
         with pytest.raises(ConfigurationError):
             DataQuery(config_or_env_file=cfg)
 
@@ -140,14 +140,14 @@ def test_token_url_autoderive_when_client_id_given():
         bearer_token="t",
         oauth_token_url=None,
     )
-    with patch("dataquery.dataquery.EnvConfig.validate_config", return_value=None):
+    with patch("dataquery.core.dataquery.EnvConfig.validate_config", return_value=None):
         dq = DataQuery(config_or_env_file=cfg, client_id="id")
         assert dq.client_config.oauth_token_url == "https://api.example.com/oauth/token"
 
 
 def test_overrides_applied_basic():
     cfg = ClientConfig(base_url="https://api.example.com", oauth_enabled=False, bearer_token="t")
-    with patch("dataquery.dataquery.EnvConfig.validate_config", return_value=None):
+    with patch("dataquery.core.dataquery.EnvConfig.validate_config", return_value=None):
         dq = DataQuery(config_or_env_file=cfg, timeout=123.0, max_retries=5)
         assert dq.client_config.timeout == 123.0
         assert dq.client_config.max_retries == 5
@@ -225,7 +225,7 @@ async def test_wrapper_methods_delegate_to_client():
         async def close(self):
             return None
 
-    from dataquery.models import (
+    from dataquery.types.models import (
         AttributesResponse,
         FileList,
         FiltersResponse,
@@ -282,7 +282,7 @@ async def test_connect_async_and_close_async_create_and_cleanup_client(monkeypat
             created["closed"] = True
             return None
 
-    monkeypatch.setattr("dataquery.dataquery.DataQueryClient", DummyClient)
+    monkeypatch.setattr("dataquery.core.dataquery.DataQueryClient", DummyClient)
 
     dq = DataQuery(
         config_or_env_file=ClientConfig(base_url="https://api.example.com", oauth_enabled=False, bearer_token="t")

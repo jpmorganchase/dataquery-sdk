@@ -21,7 +21,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # noqa: E402
 
 from dataquery import DataQuery  # noqa: E402
-from dataquery.exceptions import AuthenticationError  # noqa: E402
+from dataquery.types.exceptions import AuthenticationError  # noqa: E402
 
 
 def _parse_file_group_ids(raw: str):

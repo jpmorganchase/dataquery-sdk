@@ -20,8 +20,8 @@ from typing import Any, Dict, Optional, Union, get_args, get_origin
 from dotenv import load_dotenv
 from pydantic_core import PydanticUndefined
 
-from .exceptions import ConfigurationError
-from .models import ClientConfig
+from ..types.exceptions import ConfigurationError
+from ..types.models import ClientConfig
 
 # ---------------------------------------------------------------------------
 # Per-field metadata that the model itself does not encode.
@@ -96,7 +96,7 @@ class EnvConfig:
 
     All methods are class methods — this class is a namespace, never
     instantiated. Field definitions, types, and defaults all originate from
-    :class:`dataquery.models.ClientConfig`.
+    :class:`dataquery.types.models.ClientConfig`.
     """
 
     PREFIX = "DATAQUERY_"

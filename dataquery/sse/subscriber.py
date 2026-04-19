@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 
 from ..download.utils import download_and_track, file_exists_locally
-from ..models import DownloadOptions, DownloadProgress
+from ..types.models import DownloadOptions, DownloadProgress
 from .client import SSEClient, SSEEvent
 from .event_store import SSEEventIdStore, Subscription, build_event_id_store
 

@@ -11,20 +11,23 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
 if TYPE_CHECKING:
-    from .sse.subscriber import NotificationDownloadManager
+    from ..sse.subscriber import NotificationDownloadManager
 
 import aiohttp
 import structlog
 
-from . import constants as C
-from ._mixins import (
-    DataFrameMixin,
-    GridMixin,
-    InstrumentsMixin,
-    MetadataMixin,
-    TimeSeriesMixin,
+from .. import constants as C
+from ..config import LogFormat, LoggingConfig, LoggingManager, LogLevel
+from ..transport.auth import OAuthManager
+from ..transport.connection_pool import ConnectionPoolConfig, ConnectionPoolMonitor
+from ..transport.rate_limiter import (
+    QueuePriority,
+    RateLimitConfig,
+    RateLimitContext,
+    TokenBucketRateLimiter,
 )
-from .exceptions import (
+from ..transport.retry import RetryConfig, RetryManager, RetryStrategy
+from ..types.exceptions import (
     AuthenticationError,
     ConfigurationError,
     FileNotFoundInGroupError,
@@ -33,8 +36,7 @@ from .exceptions import (
     RateLimitError,
     ValidationError,
 )
-from .logging_config import LogFormat, LoggingConfig, LoggingManager, LogLevel
-from .models import (
+from ..types.models import (
     AttributesResponse,
     AvailabilityInfo,
     ClientConfig,
@@ -51,22 +53,20 @@ from .models import (
     InstrumentsResponse,
     TimeSeriesResponse,
 )
-from .transport.auth import OAuthManager
-from .transport.connection_pool import ConnectionPoolConfig, ConnectionPoolMonitor
-from .transport.rate_limiter import (
-    QueuePriority,
-    RateLimitConfig,
-    RateLimitContext,
-    TokenBucketRateLimiter,
-)
-from .transport.retry import RetryConfig, RetryManager, RetryStrategy
-from .utils import (
+from ..utils import (
     format_file_size,
     get_filename_from_response,
     validate_attributes_list,
     validate_date_format,
     validate_file_datetime,
     validate_instruments_list,
+)
+from ._mixins import (
+    DataFrameMixin,
+    GridMixin,
+    InstrumentsMixin,
+    MetadataMixin,
+    TimeSeriesMixin,
 )
 
 __all__ = [
@@ -885,7 +885,7 @@ class DataQueryClient(
                 progress_callback=progress_callback,
             )
 
-        from .download.parallel import download_file_multipart
+        from ..download.parallel import download_file_multipart
 
         return await download_file_multipart(
             client=self,
@@ -1335,7 +1335,7 @@ class DataQueryClient(
                 file_group_id=["JPM_CPI", "JPM_GDP"],
             )
         """
-        from .sse.subscriber import NotificationDownloadManager
+        from ..sse.subscriber import NotificationDownloadManager
 
         manager = NotificationDownloadManager(
             client=self,
@@ -1398,7 +1398,7 @@ class DataQueryClient(
         """Synchronous wrapper using an event-loop aware runner."""
         # If destination_path is provided but options is None, create options with destination_path
         if destination_path is not None and options is None:
-            from .models import DownloadOptions
+            from ..types.models import DownloadOptions
 
             options = DownloadOptions(destination_path=destination_path)
         elif destination_path is not None and options is not None:

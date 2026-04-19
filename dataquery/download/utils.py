@@ -12,7 +12,7 @@ import logging
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Protocol
 
-from ..models import DownloadOptions, DownloadProgress, DownloadStatus
+from ..types.models import DownloadOptions, DownloadProgress, DownloadStatus
 
 
 class _SupportsAddContains(Protocol):

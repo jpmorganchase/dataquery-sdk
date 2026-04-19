@@ -14,8 +14,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from dataquery.models import ClientConfig
 from dataquery.sse.client import SSEClient, SSEEvent
+from dataquery.types.models import ClientConfig
 
 # ---------------------------------------------------------------------------
 # Helpers

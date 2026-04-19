@@ -242,7 +242,7 @@ async def cmd_download(args: argparse.Namespace) -> int:
         # Single-file download path.
         dest_path = Path(args.destination) if args.destination else None
 
-        from dataquery.models import DownloadOptions
+        from dataquery.types.models import DownloadOptions
 
         options = DownloadOptions(
             destination_path=dest_path,

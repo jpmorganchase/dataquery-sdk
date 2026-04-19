@@ -21,10 +21,11 @@ __license__ = "MIT"
 __url__ = "https://github.com/jpmorganchase/dataquery-sdk"
 
 # Core
-from .client import DataQueryClient
 from .config import EnvConfig
-from .dataquery import DataQuery
-from .exceptions import (
+from .core import DataQuery, DataQueryClient
+from .sse.client import SSEClient, SSEEvent
+from .sse.subscriber import NotificationDownloadManager
+from .types.exceptions import (
     AuthenticationError,
     AvailabilityError,
     ConfigurationError,
@@ -40,7 +41,7 @@ from .exceptions import (
     ValidationError,
     WorkflowError,
 )
-from .models import (
+from .types.models import (
     AvailabilityInfo,
     AvailableFilesResponse,
     ClientConfig,
@@ -54,8 +55,6 @@ from .models import (
     Group,
     GroupList,
 )
-from .sse.client import SSEClient, SSEEvent
-from .sse.subscriber import NotificationDownloadManager
 
 # Type aliases for convenience
 __all__ = [

@@ -22,7 +22,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Tuple, Union
 
-from ..models import ClientConfig
+from ..types.models import ClientConfig
 
 logger = logging.getLogger(__name__)
 

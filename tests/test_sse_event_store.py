@@ -12,7 +12,6 @@ from pathlib import Path
 
 import pytest
 
-from dataquery.models import ClientConfig
 from dataquery.sse.event_store import (
     SSEEventIdStore,
     Subscription,
@@ -20,6 +19,7 @@ from dataquery.sse.event_store import (
     build_event_id_store,
     resolve_sse_state_dir,
 )
+from dataquery.types.models import ClientConfig
 
 
 def _config(tmp_path: Path, **overrides) -> ClientConfig:

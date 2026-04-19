@@ -2,8 +2,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from dataquery.client import DataQueryClient
-from dataquery.models import ClientConfig
+from dataquery.core.client import DataQueryClient
+from dataquery.types.models import ClientConfig
 
 
 def test_dataframe_nested_list_and_metadata(monkeypatch):

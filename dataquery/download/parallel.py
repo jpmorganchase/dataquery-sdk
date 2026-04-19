@@ -22,8 +22,8 @@ import aiohttp
 import structlog
 
 from .. import constants as C
-from ..client import get_filename_from_response, validate_file_datetime
-from ..models import (
+from ..core.client import get_filename_from_response, validate_file_datetime
+from ..types.models import (
     BandwidthThrottler,
     DownloadOptions,
     DownloadProgress,
@@ -33,7 +33,7 @@ from ..models import (
 from ..utils import format_file_size as _format_file_size
 
 if TYPE_CHECKING:
-    from ..client import DataQueryClient
+    from ..core.client import DataQueryClient
 
 logger = structlog.get_logger(__name__)
 

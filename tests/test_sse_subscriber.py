@@ -15,9 +15,9 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from dataquery.models import DownloadResult, DownloadStatus
 from dataquery.sse.client import SSEEvent
 from dataquery.sse.subscriber import NotificationDownloadManager
+from dataquery.types.models import DownloadResult, DownloadStatus
 
 # ---------------------------------------------------------------------------
 # Fakes

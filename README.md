@@ -283,7 +283,7 @@ All errors inherit from `DataQueryError`:
 
 ```python
 from dataquery import DataQuery
-from dataquery.exceptions import (
+from dataquery.types.exceptions import (
     DataQueryError,
     AuthenticationError,
     NotFoundError,

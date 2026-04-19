@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from dataquery.models import (
+from dataquery.types.models import (
     AuthenticationErrorResponse,
     Available,
     Calendar,

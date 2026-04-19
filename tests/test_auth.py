@@ -9,9 +9,9 @@ from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 import pytest
 
-from dataquery.exceptions import AuthenticationError, ConfigurationError
-from dataquery.models import ClientConfig, OAuthToken, TokenResponse
 from dataquery.transport.auth import OAuthManager, TokenManager
+from dataquery.types.exceptions import AuthenticationError, ConfigurationError
+from dataquery.types.models import ClientConfig, OAuthToken, TokenResponse
 
 
 class TestOAuthManager:

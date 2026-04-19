@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from dataquery.models import ClientConfig, OAuthToken, TokenResponse
 from dataquery.transport.auth import OAuthManager, TokenManager
+from dataquery.types.models import ClientConfig, OAuthToken, TokenResponse
 
 
 def make_config(tmp_path: Path, oauth: bool = True) -> ClientConfig:

@@ -15,10 +15,9 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import structlog
 from dotenv import load_dotenv
 
-from .client import DataQueryClient
-from .config import EnvConfig
-from .exceptions import ConfigurationError
-from .models import (
+from ..config import EnvConfig
+from ..types.exceptions import ConfigurationError
+from ..types.models import (
     AttributesResponse,
     AvailabilityInfo,
     ClientConfig,
@@ -32,6 +31,7 @@ from .models import (
     InstrumentsResponse,
     TimeSeriesResponse,
 )
+from .client import DataQueryClient
 
 # Note: load_dotenv() is called inside DataQuery.__init__() to avoid module-level side effects
 
@@ -1001,7 +1001,7 @@ class DataQuery:
                     # Delegate to the shared parallel range helper so the global
                     # semaphore covers every in-flight HTTP range across every
                     # file in this batch.
-                    from .download.parallel import download_file_parallel
+                    from ..download.parallel import download_file_parallel
 
                     result = await download_file_parallel(
                         client=self._ensure_client(),

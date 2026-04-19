@@ -13,8 +13,8 @@ from typing import Any, Dict, Optional
 import aiohttp
 import structlog
 
-from ..exceptions import AuthenticationError, ConfigurationError
-from ..models import ClientConfig, OAuthToken, TokenRequest, TokenResponse
+from ..types.exceptions import AuthenticationError, ConfigurationError
+from ..types.models import ClientConfig, OAuthToken, TokenRequest, TokenResponse
 
 logger = structlog.get_logger(__name__)
 

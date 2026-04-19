@@ -8,14 +8,14 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from dataquery.client import (
+from dataquery.core.client import (
     DataQueryClient,
     get_filename_from_response,
     validate_attributes_list,
     validate_date_format,
     validate_file_datetime,
 )
-from dataquery.exceptions import (
+from dataquery.types.exceptions import (
     AuthenticationError,
     ConfigurationError,
     NetworkError,
@@ -23,7 +23,7 @@ from dataquery.exceptions import (
     RateLimitError,
     ValidationError,
 )
-from dataquery.models import (
+from dataquery.types.models import (
     ClientConfig,
     DownloadOptions,
     DownloadStatus,
@@ -961,7 +961,7 @@ class TestAuthenticationFlows:
     @pytest.mark.asyncio
     async def test_execute_request_with_auth_headers_failure(self):
         """Test request execution raises AuthenticationError when auth headers fail."""
-        from dataquery.exceptions import AuthenticationError
+        from dataquery.types.exceptions import AuthenticationError
 
         client = create_test_client()
 
@@ -977,7 +977,7 @@ class TestAuthenticationFlows:
     @pytest.mark.asyncio
     async def test_execute_request_auth_header_failure(self):
         """Test request execution raises AuthenticationError when auth headers fail."""
-        from dataquery.exceptions import AuthenticationError
+        from dataquery.types.exceptions import AuthenticationError
 
         client = create_test_client()
 

@@ -2,20 +2,20 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from dataquery.dataquery import DataQuery
-from dataquery.models import ClientConfig
+from dataquery.core.dataquery import DataQuery
+from dataquery.types.models import ClientConfig
 
 
 def _dq(monkeypatch) -> DataQuery:
     cfg = ClientConfig(base_url="https://api.example.com")
-    monkeypatch.setattr("dataquery.dataquery.EnvConfig.validate_config", lambda _cfg: None)
+    monkeypatch.setattr("dataquery.core.dataquery.EnvConfig.validate_config", lambda _cfg: None)
     return DataQuery(cfg)
 
 
 @pytest.mark.asyncio
 async def test_more_async_endpoints(monkeypatch):
     dq = _dq(monkeypatch)
-    with patch("dataquery.dataquery.DataQueryClient") as Fake:
+    with patch("dataquery.core.dataquery.DataQueryClient") as Fake:
         inst = Fake.return_value
         inst.connect = AsyncMock()
         inst.close = AsyncMock()
@@ -42,6 +42,6 @@ async def test_more_async_endpoints(monkeypatch):
 
 def test_sync_proxies_more(monkeypatch):
     dq = _dq(monkeypatch)
-    with patch("dataquery.dataquery.DataQuery._run_sync", return_value={"ok": True}) as ra:
+    with patch("dataquery.core.dataquery.DataQuery._run_sync", return_value={"ok": True}) as ra:
         assert dq.get_grid_data(expr="x") == {"ok": True}
         assert ra.called

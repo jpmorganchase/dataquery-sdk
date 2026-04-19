@@ -1,5 +1,5 @@
-from dataquery.client import DataQueryClient
-from dataquery.models import ClientConfig
+from dataquery.core.client import DataQueryClient
+from dataquery.types.models import ClientConfig
 
 
 def test_url_builders_and_extract():

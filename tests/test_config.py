@@ -8,8 +8,8 @@ from unittest.mock import mock_open, patch
 import pytest
 
 from dataquery.config import EnvConfig
-from dataquery.exceptions import ConfigurationError
-from dataquery.models import ClientConfig
+from dataquery.types.exceptions import ConfigurationError
+from dataquery.types.models import ClientConfig
 
 
 class TestEnvConfig:
@@ -92,7 +92,7 @@ class TestEnvConfig:
 
     def test_env_config_load_env_file(self):
         """Test load_env_file method."""
-        with patch("dataquery.config.load_dotenv") as mock_load_dotenv:
+        with patch("dataquery.config.env.load_dotenv") as mock_load_dotenv:
             with patch("pathlib.Path.exists", return_value=True):
                 EnvConfig.load_env_file()
                 mock_load_dotenv.assert_called_once_with(Path(".env"))
@@ -100,14 +100,14 @@ class TestEnvConfig:
     def test_env_config_load_env_file_custom_path(self):
         """Test load_env_file method with custom path."""
         custom_path = Path("/custom/.env")
-        with patch("dataquery.config.load_dotenv") as mock_load_dotenv:
+        with patch("dataquery.config.env.load_dotenv") as mock_load_dotenv:
             with patch("pathlib.Path.exists", return_value=True):
                 EnvConfig.load_env_file(custom_path)
                 mock_load_dotenv.assert_called_once_with(custom_path)
 
     def test_env_config_load_env_file_not_exists(self):
         """Test load_env_file method when file doesn't exist."""
-        with patch("dataquery.config.load_dotenv") as mock_load_dotenv:
+        with patch("dataquery.config.env.load_dotenv") as mock_load_dotenv:
             with patch("pathlib.Path.exists", return_value=False):
                 EnvConfig.load_env_file()
                 mock_load_dotenv.assert_not_called()
@@ -480,7 +480,7 @@ class TestEnvConfigSingleSourceOfTruth:
     """
 
     def test_defaults_table_covers_every_model_field(self):
-        from dataquery.config import _env_name_for
+        from dataquery.config.env import _env_name_for
 
         for field_name in ClientConfig.model_fields:
             env_key = _env_name_for(field_name)
@@ -493,7 +493,7 @@ class TestEnvConfigSingleSourceOfTruth:
         (modulo lowercase booleans and the explicit override list)."""
         from pydantic_core import PydanticUndefined
 
-        from dataquery.config import _DEFAULT_OVERRIDES, _env_name_for
+        from dataquery.config.env import _DEFAULT_OVERRIDES, _env_name_for
 
         for field_name, field in ClientConfig.model_fields.items():
             env_key = _env_name_for(field_name)
@@ -509,7 +509,7 @@ class TestEnvConfigSingleSourceOfTruth:
 
     def test_env_template_includes_every_field(self, tmp_path):
         """Auto-generated template must mention every model field once."""
-        from dataquery.config import _env_name_for
+        from dataquery.config.env import _env_name_for
 
         template = tmp_path / ".env.template"
         EnvConfig.create_env_template(template)

@@ -14,9 +14,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from aiohttp import BasicAuth
 
-from dataquery.models import ClientConfig, OAuthToken, TokenResponse
 from dataquery.sse.client import SSEClient
 from dataquery.transport.auth import TokenManager
+from dataquery.types.models import ClientConfig, OAuthToken, TokenResponse
 
 # ---------------------------------------------------------------------------
 # ClientConfig.get_proxy_kwargs — the single source of truth

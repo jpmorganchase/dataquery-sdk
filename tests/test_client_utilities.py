@@ -8,14 +8,14 @@ from unittest.mock import Mock, patch
 import aiohttp
 import pytest
 
-from dataquery.client import (
+from dataquery.core.client import (
     get_filename_from_response,
     validate_attributes_list,
     validate_date_format,
     validate_file_datetime,
     validate_instruments_list,
 )
-from dataquery.exceptions import ValidationError
+from dataquery.types.exceptions import ValidationError
 from dataquery.utils import parse_content_disposition, validate_required_param
 
 

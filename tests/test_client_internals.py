@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from dataquery.client import DataQueryClient
-from dataquery.models import ClientConfig
+from dataquery.core.client import DataQueryClient
+from dataquery.types.models import ClientConfig
 
 
 def make_cfg(**over):
@@ -89,14 +89,14 @@ async def test_connect_and_close_create_session_and_cleanup(monkeypatch):
             created["connector"] = kwargs
 
     # Patch aiohttp objects used inside connect
-    monkeypatch.setattr("dataquery.client.aiohttp.ClientSession", DummySession)
-    monkeypatch.setattr("dataquery.client.aiohttp.TCPConnector", DummyConnector)
+    monkeypatch.setattr("dataquery.core.client.aiohttp.ClientSession", DummySession)
+    monkeypatch.setattr("dataquery.core.client.aiohttp.TCPConnector", DummyConnector)
 
     class DummyTimeout:
         def __init__(self, **kwargs):
             created["timeout"] = kwargs
 
-    monkeypatch.setattr("dataquery.client.aiohttp.ClientTimeout", DummyTimeout)
+    monkeypatch.setattr("dataquery.core.client.aiohttp.ClientTimeout", DummyTimeout)
 
     # Avoid monitoring side-effects
     with (

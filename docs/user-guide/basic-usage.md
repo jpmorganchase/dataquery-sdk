@@ -9,7 +9,7 @@ Learn the fundamental concepts and patterns for using DataQuery SDK effectively.
 Use the high-level `DataQuery` interface for most operations (downloads, listing groups/files, availability, instruments, time series, grid, etc.).
 
 ```python
-from dataquery.dataquery import DataQuery
+from dataquery.core.dataquery import DataQuery
 
 async def main():
     async with DataQuery() as dq:
@@ -58,7 +58,7 @@ asyncio.run(download_single_file())
 ### Download with Options
 
 ```python
-from dataquery.models import DownloadOptions
+from dataquery.types.models import DownloadOptions
 
 async def download_with_options():
     options = DownloadOptions(
@@ -124,7 +124,7 @@ asyncio.run(download_group_concurrent())
 ### Basic Progress Callback
 
 ```python
-from dataquery.models import DownloadProgress
+from dataquery.types.models import DownloadProgress
 
 def progress_callback(progress: DownloadProgress):
     pct = f"{progress.percentage:.1f}%" if progress.total_bytes else "..."
@@ -146,7 +146,7 @@ asyncio.run(download_with_progress())
 
 ```python
 import time
-from dataquery.models import DownloadProgress
+from dataquery.types.models import DownloadProgress
 
 class ProgressTracker:
     def __init__(self):
@@ -185,7 +185,7 @@ asyncio.run(download_with_advanced_progress())
 ### Basic Error Handling
 
 ```python
-from dataquery.exceptions import DataQueryError, DownloadError
+from dataquery.types.exceptions import DataQueryError, DownloadError
 
 async def robust_download():
     try:
@@ -215,7 +215,7 @@ asyncio.run(robust_download())
 
 ```python
 import asyncio
-from dataquery.exceptions import DownloadError
+from dataquery.types.exceptions import DownloadError
 
 async def download_with_retry(max_retries=3):
     for attempt in range(max_retries):

@@ -99,7 +99,7 @@ asyncio.run(main())
 !!! example "Usage Example"
     ```python
     import asyncio
-    from dataquery.dataquery import DataQuery
+    from dataquery.core.dataquery import DataQuery
 
     async def ex():
         async with DataQuery() as dq:
@@ -296,7 +296,7 @@ async def download_file_async(
     ```python
     import asyncio
     from pathlib import Path
-    from dataquery.dataquery import DataQuery
+    from dataquery.core.dataquery import DataQuery
 
     async def ex():
         async with DataQuery() as dq:

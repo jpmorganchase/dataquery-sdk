@@ -1,14 +1,14 @@
 import pytest
 
-from dataquery.client import DataQueryClient
-from dataquery.exceptions import (
+from dataquery.core.client import DataQueryClient
+from dataquery.types.exceptions import (
     AuthenticationError,
     NetworkError,
     NotFoundError,
     RateLimitError,
     ValidationError,
 )
-from dataquery.models import ClientConfig
+from dataquery.types.models import ClientConfig
 
 
 class Resp:
