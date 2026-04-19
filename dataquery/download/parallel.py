@@ -1,11 +1,10 @@
 """
-Flattened-concurrency parallel downloader.
+Parallel range downloader.
 
 Downloads one file as ``num_parts`` parallel HTTP range requests, where each
 range competes for a single ``global_semaphore`` shared across all files being
-downloaded concurrently. This gives true flattened concurrency where the total
-in-flight HTTP requests = ``max_concurrent × num_parts`` rather than a
-hierarchical file-then-parts model.
+downloaded concurrently. Total in-flight HTTP requests =
+``max_concurrent × num_parts`` rather than a hierarchical file-then-parts model.
 
 Used by ``DataQuery.run_group_download_async`` for bulk date-range downloads.
 """
@@ -172,7 +171,7 @@ class _ProgressReporter:
             self._callback(self._progress)
         elif self._show_progress:
             logger.debug(
-                "Download progress (flattened)",
+                "Download progress (parallel)",
                 file=self._file_group_id,
                 percentage=f"{self._progress.percentage:.1f}%",
                 downloaded=_format_file_size(self.bytes_downloaded, precision=2, strict=True),
@@ -322,9 +321,7 @@ async def download_file_multipart(
     try:
         url = client._build_files_api_url(C.API_GROUP_FILE_DOWNLOAD)
 
-        async with await client._enter_request_cm(
-            "GET", url, params=params, headers=C.PROBE_HEADERS
-        ) as probe_resp:
+        async with await client._enter_request_cm("GET", url, params=params, headers=C.PROBE_HEADERS) as probe_resp:
             await client._handle_response(probe_resp)
             content_range = probe_resp.headers.get("content-range") or probe_resp.headers.get("Content-Range")
             if not (content_range and "/" in content_range):
@@ -412,7 +409,7 @@ async def download_file_multipart(
         )
 
 
-async def download_file_parallel_flattened(
+async def download_file_parallel(
     client: "DataQueryClient",
     file_group_id: str,
     file_datetime: Optional[str],

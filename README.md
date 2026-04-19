@@ -323,7 +323,7 @@ start_date="TODAY-1Y"
 
 ## Performance tuning
 
-`run_group_download_async` uses a flattened concurrency model — total concurrent
+`run_group_download_async` parallelizes at the range level — total concurrent
 HTTP requests = `max_concurrent × num_parts`.
 
 With `num_parts=1` (the default) each file downloads as a single streaming GET.

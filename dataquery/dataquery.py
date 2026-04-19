@@ -821,9 +821,9 @@ class DataQuery:
         """
         Download all files in a group for a date range using parallel HTTP range requests.
 
-        This method implements a flattened concurrency model where the total concurrent
-        HTTP requests = max_concurrent × num_parts, providing true parallelism across
-        all file parts rather than hierarchical file-then-parts concurrency.
+        Total concurrent HTTP requests = max_concurrent × num_parts, providing true
+        parallelism across all file parts rather than hierarchical file-then-parts
+        concurrency.
 
         Args:
             group_id: Group ID to download files from
@@ -949,14 +949,14 @@ class DataQuery:
 
             logger.info("Found available files", count=len(filtered_files))
 
-            # Step 2: Download all available files using flattened concurrency model
-            logger.info("Step 2: Downloading Available Files with flattened concurrency model")
+            # Step 2: Download all available files using parallel range requests
+            logger.info("Step 2: Downloading Available Files with parallel range requests")
 
             # Create destination directory
             dest_dir = destination_dir / group_id
             dest_dir.mkdir(parents=True, exist_ok=True)
 
-            # Rate-limit-aware flattened concurrency with delay-based protection
+            # Rate-limit-aware concurrency with delay-based protection
             total_concurrent_requests = max_concurrent * num_parts
 
             # Use full concurrency but with intelligent delay calculation
@@ -977,7 +977,7 @@ class DataQuery:
                 files=len(filtered_files),
             )
 
-            # Create all download tasks with flattened concurrency and staggered delays
+            # Create all download tasks with parallel concurrency and staggered delays
             async def download_file_concurrent(file_info, delay_seconds: float = 0.0):
                 file_group_id = file_info.get("file-group-id", file_info.get("file_group_id"))
                 file_datetime = file_info.get("file-datetime", file_info.get("file_datetime"))
@@ -998,12 +998,12 @@ class DataQuery:
                 destination_path = dest_dir
 
                 try:
-                    # Delegate to the shared flattened-concurrency helper so the
-                    # global semaphore covers every in-flight HTTP range across
-                    # every file in this batch.
-                    from .download.parallel import download_file_parallel_flattened
+                    # Delegate to the shared parallel range helper so the global
+                    # semaphore covers every in-flight HTTP range across every
+                    # file in this batch.
+                    from .download.parallel import download_file_parallel
 
-                    result = await download_file_parallel_flattened(
+                    result = await download_file_parallel(
                         client=self._ensure_client(),
                         file_group_id=file_group_id,
                         file_datetime=file_datetime,
@@ -1013,7 +1013,7 @@ class DataQuery:
                         progress_callback=progress_callback,
                     )
                     logger.info(
-                        "Downloaded file (flattened concurrency)",
+                        "Downloaded file (parallel ranges)",
                         file_group_id=file_group_id,
                         file_datetime=file_datetime,
                         status=result.status.value if result else "failed",
