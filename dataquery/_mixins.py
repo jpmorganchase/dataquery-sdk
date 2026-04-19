@@ -661,7 +661,7 @@ class DataFrameMixin:
                         pd.to_datetime(sample_values.iloc[0])  # probe
                         df[column] = pd.to_datetime(df[column], errors="coerce")
                         continue
-                except Exception:
+                except (ValueError, TypeError):
                     pass
 
             if any(hint in column_lower for hint in _NUMERIC_HINTS):
@@ -669,7 +669,7 @@ class DataFrameMixin:
                     numeric_series = pd.to_numeric(df[column], errors="coerce")
                     if numeric_series.notna().sum() / len(df) > 0.7:
                         df[column] = numeric_series
-                except Exception:
+                except (ValueError, TypeError):
                     pass
 
         return df

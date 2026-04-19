@@ -16,14 +16,6 @@ if TYPE_CHECKING:
 import aiohttp
 import structlog
 
-try:
-    import pandas as pd
-
-    HAS_PANDAS = True
-except ImportError:
-    pd = None
-    HAS_PANDAS = False
-
 from . import _constants as C
 from ._mixins import (
     DataFrameMixin,
@@ -68,9 +60,8 @@ from .transport.rate_limiter import (
     TokenBucketRateLimiter,
 )
 from .transport.retry import RetryConfig, RetryManager, RetryStrategy
-from .utils import format_duration as _format_duration
-from .utils import format_file_size as _format_file_size
 from .utils import (
+    format_file_size,
     get_filename_from_response,
     validate_attributes_list,
     validate_date_format,
@@ -78,12 +69,8 @@ from .utils import (
     validate_instruments_list,
 )
 
-# Re-exports for backward compatibility. These validators are used by mixin
-# implementations; callers historically imported them from here.
 __all__ = [
     "DataQueryClient",
-    "format_duration",
-    "format_file_size",
     "get_filename_from_response",
     "validate_attributes_list",
     "validate_date_format",
@@ -92,16 +79,6 @@ __all__ = [
 ]
 
 logger = structlog.get_logger(__name__)
-
-
-def format_file_size(size_bytes: int) -> str:
-    """Wrapper for utils.format_file_size to maintain client compatibility."""
-    return _format_file_size(size_bytes, precision=2, strict=True)
-
-
-def format_duration(seconds: float) -> str:
-    """Wrapper for utils.format_duration to maintain client compatibility."""
-    return _format_duration(seconds, compact=True)
 
 
 class DataQueryClient(
@@ -166,7 +143,6 @@ class DataQueryClient(
                 ConnectionError,
                 TimeoutError,
                 asyncio.TimeoutError,
-                OSError,
                 RateLimitError,
                 NetworkError,
             ],
@@ -281,7 +257,7 @@ class DataQueryClient(
         await self.connect()
         return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
+    async def __aexit__(self, *_):
         """Async context manager exit."""
         await self.close()
 
@@ -538,9 +514,10 @@ class DataQueryClient(
 
             # Check for retryable server errors (5xx) - these should trigger retry
             if response.status >= 500:
+                # Drain body so the connection can be reused; ignore decode errors.
                 try:
                     await response.text()
-                except Exception:
+                except (UnicodeDecodeError, aiohttp.ClientPayloadError):
                     pass
                 raise NetworkError(f"Server error: {response.status}", status_code=response.status)
 
@@ -772,19 +749,12 @@ class DataQueryClient(
                 await self._handle_response(response)
                 data = await response.json()
                 # Extract a single availability item matching the requested datetime if present
-                items: List[Dict[str, Any]] = []
-                try:
-                    items = data.get("availability") or []
-                except Exception:
-                    items = []
+                items: List[Dict[str, Any]] = data.get("availability") or [] if isinstance(data, dict) else []
                 selected = None
                 for it in items:
-                    try:
-                        if it.get("file-datetime") == file_datetime:
-                            selected = it
-                            break
-                    except Exception:
-                        pass
+                    if isinstance(it, dict) and it.get("file-datetime") == file_datetime:
+                        selected = it
+                        break
                 if selected is None:
                     selected = (
                         items[0]
@@ -892,7 +862,7 @@ class DataQueryClient(
         progress_callback: Optional[Callable] = None,
     ) -> DownloadResult:
         """
-        Download a specific file using parallel HTTP range requests.
+        Download a specific file using single-stream or parallel HTTP range requests.
 
         Args:
             file_group_id: File ID to download
@@ -905,15 +875,8 @@ class DataQueryClient(
         Returns:
             DownloadResult with download information
         """
-        params, options, num_parts = self._prepare_download_params(file_group_id, file_datetime, options, num_parts)
+        _, options, num_parts = self._prepare_download_params(file_group_id, file_datetime, options, num_parts)
 
-        start_time = time.time()
-        bytes_downloaded = 0
-        destination: Optional[Path] = None
-        temp_destination: Optional[Path] = None
-        total_bytes: int = 0
-
-        # Single part or range downloads disabled → skip the probe/preallocate overhead.
         if num_parts <= 1 or not self.config.enable_range_downloads:
             return await self._download_file_single_stream(
                 file_group_id=file_group_id,
@@ -922,220 +885,16 @@ class DataQueryClient(
                 progress_callback=progress_callback,
             )
 
-        try:
-            url = self._build_files_api_url(C.API_GROUP_FILE_DOWNLOAD)
+        from .download.parallel import download_file_multipart
 
-            # Probe size with a 1-byte range request
-            probe_headers = C.PROBE_HEADERS
-            async with await self._enter_request_cm("GET", url, params=params, headers=probe_headers) as probe_resp:
-                await self._handle_response(probe_resp)
-                content_range = probe_resp.headers.get("content-range") or probe_resp.headers.get("Content-Range")
-                if content_range and "/" in content_range:
-                    try:
-                        total_bytes = int(content_range.split("/")[-1])
-                    except Exception:
-                        total_bytes = int(probe_resp.headers.get("content-length", "0"))
-                else:
-                    # Fallback to single-stream download if range not supported
-                    return await self._download_file_single_stream(
-                        file_group_id=file_group_id,
-                        file_datetime=file_datetime,
-                        options=options,
-                        progress_callback=progress_callback,
-                    )
-
-                # Small files → single stream (per-part overhead isn't worth it).
-                if total_bytes and total_bytes < C.SMALL_FILE_THRESHOLD:
-                    return await self._download_file_single_stream(
-                        file_group_id=file_group_id,
-                        file_datetime=file_datetime,
-                        options=options,
-                        progress_callback=progress_callback,
-                    )
-
-                # Determine filename and destination
-                filename = get_filename_from_response(probe_resp, file_group_id, file_datetime)
-                destination = self._resolve_destination(options, file_group_id, filename)
-
-                if destination.exists() and not options.overwrite_existing:
-                    raise FileExistsError(f"File already exists: {destination}")
-
-            # Prepare temp file with full size for random access writes
-            if not isinstance(destination, Path):
-                raise ValueError(f"Invalid destination path: {destination}")
-            temp_destination = destination.with_suffix(destination.suffix + C.TEMP_SUFFIX)
-            with open(temp_destination, "wb", buffering=C.PREALLOC_BUFFER_SIZE) as f:
-                f.truncate(total_bytes)
-
-            # Compute ranges
-            part_size = total_bytes // num_parts
-            ranges = []
-            start = 0
-            for i in range(num_parts):
-                end = (start + part_size - 1) if i < num_parts - 1 else (total_bytes - 1)
-                if start > end:
-                    break
-                ranges.append((start, end))
-                start = end + 1
-
-            progress = DownloadProgress(
-                file_group_id=file_group_id,
-                total_bytes=total_bytes,
-                start_time=datetime.now(),
-            )
-
-            chunk_size = options.chunk_size or C.DEFAULT_CHUNK_SIZE
-
-            # Progress callback optimization: track last callback state
-            last_callback_bytes = 0
-            last_callback_time = time.time()
-            callback_threshold_bytes = C.CALLBACK_BYTE_THRESHOLD
-            callback_threshold_time = C.CALLBACK_TIME_THRESHOLD
-
-            # Per-part retry configuration
-            max_part_retries = options.max_retries
-            part_retry_delay = options.retry_delay
-
-            # For large file parts, disable the total timeout (which caps the entire
-            # transfer) but keep sock_read so stalled connections are detected.
-            range_timeout = aiohttp.ClientTimeout(
-                total=None,
-                sock_read=self.config.timeout,
-            )
-
-            # Get the current event loop
-            loop = asyncio.get_running_loop()
-            bytes_lock = asyncio.Lock()
-
-            async def download_range(start_byte: int, end_byte: int):
-                nonlocal bytes_downloaded, last_callback_bytes, last_callback_time
-                range_headers = {"Range": f"bytes={start_byte}-{end_byte}"}
-                part_bytes_written = 0  # Track bytes written by this part for retry rollback
-
-                for attempt in range(max_part_retries + 1):
-                    try:
-                        # On retry, subtract previously counted bytes for this part
-                        if attempt > 0 and part_bytes_written > 0:
-                            async with bytes_lock:
-                                bytes_downloaded -= part_bytes_written
-                                progress.update_progress(bytes_downloaded)
-                            part_bytes_written = 0
-                            await asyncio.sleep(part_retry_delay * (2 ** (attempt - 1)))
-
-                        with open(temp_destination, "r+b") as part_fh:
-                            async with await self._enter_request_cm(
-                                "GET",
-                                url,
-                                params=params,
-                                headers=range_headers,
-                                timeout=range_timeout,
-                            ) as resp:
-                                await self._handle_response(resp)
-                                current_pos = start_byte
-
-                                def _seek_write(fh, pos, data):
-                                    fh.seek(pos)
-                                    fh.write(data)
-
-                                async for chunk in resp.content.iter_chunked(chunk_size):
-                                    await loop.run_in_executor(None, _seek_write, part_fh, current_pos, chunk)
-
-                                    chunk_len = len(chunk)
-                                    current_pos += chunk_len
-                                    part_bytes_written += chunk_len
-
-                                    # Update counters under lock, invoke callback outside
-                                    should_callback = False
-                                    async with bytes_lock:
-                                        bytes_downloaded += chunk_len
-                                        progress.update_progress(bytes_downloaded)
-
-                                        current_time = time.time()
-                                        bytes_diff = bytes_downloaded - last_callback_bytes
-                                        time_diff = current_time - last_callback_time
-
-                                        should_callback = (
-                                            bytes_diff >= callback_threshold_bytes
-                                            or time_diff >= callback_threshold_time
-                                            or bytes_downloaded == total_bytes  # Always callback on completion
-                                        )
-
-                                        if should_callback:
-                                            last_callback_bytes = bytes_downloaded
-                                            last_callback_time = current_time
-
-                                    if should_callback:
-                                        if progress_callback:
-                                            progress_callback(progress)
-                                        elif options.show_progress:
-                                            self.logger.debug(
-                                                "Download progress",
-                                                file=file_group_id,
-                                                percentage=f"{progress.percentage:.1f}%",
-                                                downloaded=format_file_size(bytes_downloaded),
-                                            )
-                        # Part completed successfully
-                        return
-                    except Exception:
-                        if attempt == max_part_retries:
-                            raise  # Exhausted retries, propagate to gather
-
-            # Run all parts concurrently
-            await asyncio.gather(*(download_range(s, e) for s, e in ranges))
-            # Rename temp to final
-            temp_destination.replace(destination)
-
-            return self._create_download_result(
-                file_group_id,
-                destination,
-                total_bytes,
-                bytes_downloaded,
-                start_time,
-                DownloadStatus.COMPLETED,
-            )
-        except FileExistsError as e:
-            return self._create_download_result(
-                file_group_id,
-                destination,
-                0,
-                0,
-                start_time,
-                DownloadStatus.ALREADY_EXISTS,
-                e,
-            )
-        except Exception as e:
-            try:
-                # Attempt salvage: if temp file exists and appears complete, finalize it
-                if temp_destination and temp_destination.exists():
-                    try:
-                        # Ensure any open handle is closed
-                        if total_bytes and bytes_downloaded >= total_bytes:
-                            if destination is None:
-                                destination = temp_destination.with_suffix("")
-                            temp_destination.replace(destination)
-                            return self._create_download_result(
-                                file_group_id,
-                                destination,
-                                total_bytes,
-                                max(bytes_downloaded, total_bytes),
-                                start_time,
-                                DownloadStatus.COMPLETED,
-                            )
-                        else:
-                            temp_destination.unlink()
-                    except Exception:
-                        temp_destination.unlink()
-            except Exception:
-                pass
-            return self._create_download_result(
-                file_group_id,
-                destination,
-                0,
-                bytes_downloaded,
-                start_time,
-                DownloadStatus.FAILED,
-                e,
-            )
+        return await download_file_multipart(
+            client=self,
+            file_group_id=file_group_id,
+            file_datetime=file_datetime,
+            options=options,
+            num_parts=num_parts,
+            progress_callback=progress_callback,
+        )
 
     async def _download_file_single_stream(
         self,
@@ -1266,12 +1025,15 @@ class DataQueryClient(
                 e,
             )
         except Exception as e:
-            # Clean up partial file on error
+            # Clean up partial file on error; filesystem errors are logged, not raised.
             try:
-                if "temp_destination" in locals() and isinstance(temp_destination, Path) and temp_destination.exists():
-                    temp_destination.unlink()
-            except Exception:
-                pass
+                if "temp_destination" in locals() and isinstance(temp_destination, Path):
+                    temp_destination.unlink(missing_ok=True)
+            except OSError as cleanup_err:
+                self.logger.warning(
+                    "Partial file cleanup failed after download error",
+                    cleanup_error=str(cleanup_err),
+                )
 
             return self._create_download_result(
                 file_group_id,

@@ -1,17 +1,5 @@
-from dataquery.client import DataQueryClient, format_duration, format_file_size
+from dataquery.client import DataQueryClient
 from dataquery.models import ClientConfig
-
-
-def test_format_file_size():
-    assert format_file_size(0) == "0 B"
-    assert format_file_size(1023) in ("1023 B", "1023.00 B")
-    assert format_file_size(1024) in ("1.0 KB", "1.00 KB")
-    assert format_file_size(1024 * 1024) in ("1.0 MB", "1.00 MB")
-
-
-def test_format_duration():
-    assert format_duration(0) in ("0s", "0.0s", "0.00s")
-    assert format_duration(1).endswith("s")
 
 
 def test_url_builders_and_extract():

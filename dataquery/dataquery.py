@@ -149,10 +149,7 @@ class DataQuery:
                 self.client_config.client_secret = client_secret
             # Auto-derive token URL if missing
             if not self.client_config.oauth_token_url and self.client_config.base_url:
-                try:
-                    self.client_config.oauth_token_url = f"{self.client_config.base_url.rstrip('/')}/oauth/token"
-                except Exception:
-                    pass
+                self.client_config.oauth_token_url = f"{self.client_config.base_url.rstrip('/')}/oauth/token"
 
         # Apply any non-credential overrides (e.g., base_url, context_path, files_base_url, etc.)
         for key, value in (overrides or {}).items():
@@ -688,15 +685,12 @@ class DataQuery:
             logger.info("Step 2: Summary Report")
             # Collect file types robustly (handles str or List[str])
             _collected_types = []
-            try:
-                for _f in files:
-                    _ft = getattr(_f, "file_type", None)
-                    if isinstance(_ft, list):
-                        _collected_types.extend([t for t in _ft if isinstance(t, str)])
-                    elif isinstance(_ft, str):
-                        _collected_types.append(_ft)
-            except Exception:
-                pass
+            for _f in files:
+                _ft = getattr(_f, "file_type", None)
+                if isinstance(_ft, list):
+                    _collected_types.extend([t for t in _ft if isinstance(t, str)])
+                elif isinstance(_ft, str):
+                    _collected_types.append(_ft)
             report = {
                 "group_id": group_id,
                 "total_files": len(files),

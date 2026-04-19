@@ -117,11 +117,12 @@ async def download_and_track(
             stats["files_downloaded"] += 1
             downloaded_files.add(file_key)
             failed_files.pop(file_key, None)
-            try:
-                if getattr(result, "file_size", None):
-                    stats["total_bytes_downloaded"] += int(result.file_size or 0)
-            except Exception:
-                pass
+            file_size = getattr(result, "file_size", None)
+            if file_size:
+                try:
+                    stats["total_bytes_downloaded"] += int(file_size)
+                except (TypeError, ValueError):
+                    pass
 
         else:
             error_msg = getattr(result, "error_message", "Unknown") if result else "No result"

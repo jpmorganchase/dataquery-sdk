@@ -434,8 +434,5 @@ def create_connection_pool_config(
         enable_cleanup=enable_cleanup,
         cleanup_interval=cleanup_interval,
     )
-    try:
-        cfg.max_keepalive_connections = max_connections_per_host
-    except Exception:
-        pass
+    cfg.max_keepalive_connections = max_connections_per_host
     return cfg

@@ -6,8 +6,6 @@ import pytest
 
 from dataquery.client import (
     DataQueryClient,
-    format_duration,
-    format_file_size,
     get_filename_from_response,
     validate_attributes_list,
     validate_date_format,
@@ -75,22 +73,6 @@ def _make_bare_client():
     client.rate_limiter = StubRateLimiter()
     client.config = SimpleNamespace(api_base_url="https://api.example.com", base_url="https://api.example.com")
     return client
-
-
-def test_format_file_size_various_units():
-    assert format_file_size(0) == "0 B"
-    assert format_file_size(512) == "512.00 B"
-    assert format_file_size(1024) == "1.00 KB"
-    assert format_file_size(1024 * 1024) == "1.00 MB"
-    assert format_file_size(-2048) == "-2.00 KB"
-
-
-def test_format_duration_various_ranges():
-    assert format_duration(0) == "0s"
-    assert format_duration(1.23) == "1.2s"
-    assert format_duration(120) == "2.0m"
-    assert format_duration(7200) == "2.0h"
-    assert format_duration(-90) == "-1.5m"
 
 
 @pytest.mark.parametrize(

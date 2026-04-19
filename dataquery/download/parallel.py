@@ -278,14 +278,138 @@ def _salvage(
                 DownloadStatus.COMPLETED,
             )
         temp_destination.unlink(missing_ok=True)
-    except Exception:
-        pass
+    except OSError as cleanup_err:
+        logger.warning(
+            "Salvage cleanup failed",
+            temp_path=str(temp_destination),
+            error=str(cleanup_err),
+        )
     return None
 
 
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
+
+
+async def download_file_multipart(
+    client: "DataQueryClient",
+    file_group_id: str,
+    file_datetime: Optional[str],
+    options: DownloadOptions,
+    num_parts: int,
+    progress_callback: Optional[Callable] = None,
+) -> DownloadResult:
+    """Download one file via parallel HTTP range requests into a preallocated temp file.
+
+    Each part runs concurrently without external concurrency control. Small
+    files (< ``SMALL_FILE_THRESHOLD``) and servers that don't honor ranges fall
+    back to ``client._download_file_single_stream``. On unrecoverable failure
+    the partial temp file is salvaged when all bytes arrived, otherwise a
+    ``FAILED`` result is returned.
+    """
+    params: dict = {"file-group-id": file_group_id}
+    if file_datetime:
+        params["file-datetime"] = file_datetime
+
+    start_time = time.time()
+    destination: Optional[Path] = None
+    temp_destination: Optional[Path] = None
+    total_bytes: int = 0
+    reporter: Optional[_ProgressReporter] = None
+    loop = asyncio.get_running_loop()
+
+    try:
+        url = client._build_files_api_url(C.API_GROUP_FILE_DOWNLOAD)
+
+        async with await client._enter_request_cm(
+            "GET", url, params=params, headers=C.PROBE_HEADERS
+        ) as probe_resp:
+            await client._handle_response(probe_resp)
+            content_range = probe_resp.headers.get("content-range") or probe_resp.headers.get("Content-Range")
+            if not (content_range and "/" in content_range):
+                return await client._download_file_single_stream(
+                    file_group_id=file_group_id,
+                    file_datetime=file_datetime,
+                    options=options,
+                    progress_callback=progress_callback,
+                )
+            try:
+                total_bytes = int(content_range.split("/")[-1])
+            except ValueError:
+                total_bytes = int(probe_resp.headers.get("content-length", "0"))
+
+            if total_bytes and total_bytes < C.SMALL_FILE_THRESHOLD:
+                return await client._download_file_single_stream(
+                    file_group_id=file_group_id,
+                    file_datetime=file_datetime,
+                    options=options,
+                    progress_callback=progress_callback,
+                )
+
+            filename = get_filename_from_response(probe_resp, file_group_id, file_datetime)
+            destination = client._resolve_destination(options, file_group_id, filename)
+            if destination.exists() and not options.overwrite_existing:
+                raise FileExistsError(f"File already exists: {destination}")
+
+        temp_destination = destination.with_suffix(destination.suffix + C.TEMP_SUFFIX)
+        await loop.run_in_executor(None, _preallocate_file, temp_destination, total_bytes)
+
+        progress = DownloadProgress(
+            file_group_id=file_group_id,
+            total_bytes=total_bytes,
+            start_time=datetime.now(),
+        )
+        reporter = _ProgressReporter(
+            progress=progress,
+            total_bytes=total_bytes,
+            progress_callback=progress_callback,
+            show_progress=options.show_progress,
+            file_group_id=file_group_id,
+        )
+
+        # One slot per part → all parts run concurrently without external throttling.
+        ctx = _RangeContext(
+            client=client,
+            url=url,
+            params=params,
+            temp_path=temp_destination,
+            chunk_size=options.chunk_size or C.DEFAULT_CHUNK_SIZE,
+            semaphore=asyncio.Semaphore(num_parts),
+            timeout=aiohttp.ClientTimeout(total=None, sock_read=client.config.timeout),
+            throttler=None,
+            reporter=reporter,
+            max_retries=options.max_retries,
+            retry_delay=options.retry_delay,
+        )
+
+        ranges = _compute_ranges(total_bytes, num_parts)
+        await asyncio.gather(*(_download_range(ctx, s, e) for s, e in ranges))
+        reporter.flush()
+        temp_destination.replace(destination)
+
+        return client._create_download_result(
+            file_group_id,
+            destination,
+            total_bytes,
+            reporter.bytes_downloaded,
+            start_time,
+            DownloadStatus.COMPLETED,
+        )
+    except FileExistsError as e:
+        return client._create_download_result(
+            file_group_id, destination, 0, 0, start_time, DownloadStatus.ALREADY_EXISTS, e
+        )
+    except Exception as e:
+        bytes_downloaded = reporter.bytes_downloaded if reporter else 0
+        salvaged = _salvage(
+            client, file_group_id, destination, temp_destination, total_bytes, bytes_downloaded, start_time
+        )
+        if salvaged is not None:
+            return salvaged
+        return client._create_download_result(
+            file_group_id, destination, 0, bytes_downloaded, start_time, DownloadStatus.FAILED, e
+        )
 
 
 async def download_file_parallel_flattened(

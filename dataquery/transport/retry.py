@@ -173,13 +173,12 @@ class RetryManager:
         self.stats = RetryStats()
         self.circuit_breaker = CircuitBreaker(config) if config.enable_circuit_breaker else None
 
-        # Default retryable exceptions
+        # Default retryable exceptions (transient network / timeout only)
         if not config.retryable_exceptions:
             config.retryable_exceptions = [
                 ConnectionError,
                 TimeoutError,
                 asyncio.TimeoutError,
-                OSError,
             ]
 
         logger.info(

@@ -281,11 +281,10 @@ class TokenManager:
             logger.warning("Failed to save token to storage", error=str(e))
             # Clean up temp file if it exists
             temp_file = self.token_file.with_suffix(".tmp")
-            if temp_file.exists():
-                try:
-                    temp_file.unlink()
-                except Exception:
-                    pass
+            try:
+                temp_file.unlink(missing_ok=True)
+            except OSError as cleanup_err:
+                logger.warning("Failed to remove temp token file", error=str(cleanup_err))
 
     def clear_token(self) -> None:
         """Clear the current token."""

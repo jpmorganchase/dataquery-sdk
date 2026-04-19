@@ -620,10 +620,7 @@ def get_filename_from_response(
         filename += ".bin"
 
     # Final sanitize fallback
-    try:
-        filename = Path(filename).name
-    except Exception:
-        pass
+    filename = Path(filename).name
     return filename
 
 

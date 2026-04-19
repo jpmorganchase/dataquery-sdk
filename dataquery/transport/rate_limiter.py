@@ -156,51 +156,41 @@ class EnhancedTokenBucketRateLimiter:
 
     async def _process_queue(self):
         """Background task to process queued requests."""
-        while not self._get_shutdown_event().is_set():
+        shutdown = self._get_shutdown_event()
+        while not shutdown.is_set():
             try:
                 async with self._get_lock():
-                    if not self.state.queue:
-                        # Wait for new requests
+                    queue_empty = not self.state.queue
+                    if queue_empty:
                         self._queue_event.clear()
-                        # Release lock before waiting
 
-                    if not self.state.queue:
-                        # Double check pattern not needed here as we released lock?
-                        # Actually we need to wait outside the lock
-                        pass
-
-                if not self.state.queue:
+                if queue_empty:
                     await self._queue_event.wait()
-                # Check if queue is empty
-                async with self._get_lock():
-                    if not self.state.queue:
-                        continue
+                    continue
 
-                    # Get next request from queue (priority-based)
+                async with self._get_lock():
                     request = self._get_next_request()
                     if request is None:
-                        await asyncio.sleep(0.1)
                         continue
 
-                    # Check if request has timed out
                     if request.timeout and time.time() - request.timestamp > request.timeout:
+                        self.state.queue.remove(request)
                         if not request.future.done():
                             request.future.set_exception(asyncio.TimeoutError("Request timed out in queue"))
                         continue
 
-                    # Try to acquire token
                     if await self._try_acquire_token():
-                        # Remove from queue and resolve future
                         self.state.queue.remove(request)
                         if not request.future.done():
                             request.future.set_result(True)
-                    else:
-                        # Put back at front of queue and wait
-                        # Put back at front of queue and wait
-                        # Calculate exact wait time
-                        wait_time = self._calculate_wait_time()
-                        await asyncio.sleep(wait_time)
+                        continue
 
+                    wait_time = self._calculate_wait_time()
+
+                await asyncio.sleep(wait_time)
+
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
                 logger.error("Error in queue processor", error=str(e))
                 await asyncio.sleep(1.0)

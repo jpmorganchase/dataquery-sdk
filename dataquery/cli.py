@@ -233,8 +233,8 @@ async def cmd_download(args: argparse.Namespace) -> int:
             finally:
                 try:
                     await mgr.stop()
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"Failed to stop notification manager: {e}", file=sys.stderr)
             stats: dict = getattr(mgr, "get_stats", lambda: {})()
             print(json.dumps(stats))
             return 0

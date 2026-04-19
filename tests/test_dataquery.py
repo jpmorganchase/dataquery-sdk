@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from dataquery.client import format_duration, format_file_size
 from dataquery.dataquery import (
     ConfigManager,
     DataQuery,
@@ -36,24 +35,6 @@ from dataquery.utils import ensure_directory, get_download_paths
 
 class TestUtilityFunctions:
     """Test utility functions in dataquery module."""
-
-    def test_format_file_size(self):
-        """Test format_file_size function."""
-        assert format_file_size(0) == "0 B"
-        assert format_file_size(1024) == "1.00 KB"
-        assert format_file_size(1024 * 1024) == "1.00 MB"
-        assert format_file_size(1024 * 1024 * 1024) == "1.00 GB"
-        assert format_file_size(1024 * 1024 * 1024 * 1024) == "1.00 TB"
-        assert format_file_size(1500) == "1.46 KB"
-        assert format_file_size(500) == "500.00 B"
-
-    def test_format_duration(self):
-        """Test format_duration function."""
-        assert format_duration(30.5) == "30.5s"
-        assert format_duration(90.0) == "1.5m"
-        assert format_duration(7200.0) == "2.0h"
-        assert format_duration(0.5) == "0.5s"
-        assert format_duration(3600.0) == "1.0h"
 
     def test_ensure_directory(self):
         """Test ensure_directory function."""

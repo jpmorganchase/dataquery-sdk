@@ -9,7 +9,6 @@ import aiohttp
 import pytest
 
 from dataquery.client import (
-    format_file_size,
     get_filename_from_response,
     validate_attributes_list,
     validate_date_format,
@@ -18,46 +17,6 @@ from dataquery.client import (
 )
 from dataquery.exceptions import ValidationError
 from dataquery.utils import parse_content_disposition, validate_required_param
-
-
-class TestFormatFileSize:
-    """Test format_file_size utility function."""
-
-    def test_format_zero_bytes(self):
-        """Test formatting zero bytes."""
-        assert format_file_size(0) == "0 B"
-
-    def test_format_bytes(self):
-        """Test formatting small byte values."""
-        assert format_file_size(512) == "512.00 B"
-        assert format_file_size(1023) == "1023.00 B"
-
-    def test_format_kilobytes(self):
-        """Test formatting kilobyte values."""
-        assert format_file_size(1024) == "1.00 KB"
-        assert format_file_size(2048) == "2.00 KB"
-        assert format_file_size(1536) == "1.50 KB"
-
-    def test_format_megabytes(self):
-        """Test formatting megabyte values."""
-        assert format_file_size(1024 * 1024) == "1.00 MB"
-        assert format_file_size(1024 * 1024 * 2.5) == "2.50 MB"
-
-    def test_format_gigabytes(self):
-        """Test formatting gigabyte values."""
-        assert format_file_size(1024 * 1024 * 1024) == "1.00 GB"
-        assert format_file_size(1024 * 1024 * 1024 * 3) == "3.00 GB"
-
-    def test_format_terabytes(self):
-        """Test formatting terabyte values."""
-        assert format_file_size(1024 * 1024 * 1024 * 1024) == "1.00 TB"
-
-    def test_format_very_large(self):
-        """Test formatting very large values stays in TB."""
-        very_large = 1024 * 1024 * 1024 * 1024 * 5
-        result = format_file_size(very_large)
-        assert "TB" in result
-        assert "5.00 TB" == result
 
 
 class TestParseContentDisposition:
@@ -412,13 +371,7 @@ class TestUtilityFunctionsIntegration:
     """Integration tests for utility functions."""
 
     def test_file_size_and_filename_integration(self):
-        """Test file size formatting and filename extraction work together."""
-        # Test file size formatting
-        size = 1024 * 1024 * 2.5  # 2.5 MB
-        formatted_size = format_file_size(int(size))
-        assert "2.50 MB" == formatted_size
-
-        # Test filename extraction
+        """Test filename extraction works with content-disposition."""
         response = Mock(spec=aiohttp.ClientResponse)
         response.headers = {
             "content-disposition": 'attachment; filename="large_data.csv"',
