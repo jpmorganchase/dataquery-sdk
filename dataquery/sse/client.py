@@ -14,7 +14,7 @@ from typing import Awaitable, Callable, Optional, Union
 
 import aiohttp
 
-from .. import _constants as C
+from .. import constants as C
 from ..models import ClientConfig
 from ..transport.auth import OAuthManager
 from .event_store import SSEEventIdStore
@@ -182,7 +182,7 @@ class SSEClient:
 
         The backoff is reset whenever the preceding connection lasted long
         enough to count as "healthy" (see ``SSE_HEALTHY_CONNECTION_SECONDS``
-        in ``_constants``) so an expected periodic server recycle — e.g. a
+        in ``constants``) so an expected periodic server recycle — e.g. a
         5-minute idle timeout — doesn't grow the reconnect delay across cycles.
         """
         delay = self.reconnect_delay

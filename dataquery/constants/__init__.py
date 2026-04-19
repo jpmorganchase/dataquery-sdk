@@ -7,9 +7,9 @@ bounds are intentionally NOT hoisted here — those are part of the public
 schema.
 
 Constants are organized into topical submodules; this ``__init__`` re-exports
-them so existing call sites using ``from . import _constants as C`` keep
+them so existing call sites using ``from . import constants as C`` keep
 working without change. New code may also import from a specific submodule,
-e.g. ``from dataquery._constants.api import API_GROUPS``.
+e.g. ``from dataquery.constants.api import API_GROUPS``.
 """
 
 from __future__ import annotations

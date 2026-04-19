@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 import aiohttp
 import structlog
 
-from . import _constants as C
+from . import constants as C
 from ._mixins import (
     DataFrameMixin,
     GridMixin,

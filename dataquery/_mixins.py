@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
 
 import aiohttp
 
-from . import _constants as C
+from . import constants as C
 from .models import (
     AttributesResponse,
     FiltersResponse,

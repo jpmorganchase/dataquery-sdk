@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Union, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from . import _constants as C
+from . import constants as C
 
 
 class DownloadStatus(str, Enum):

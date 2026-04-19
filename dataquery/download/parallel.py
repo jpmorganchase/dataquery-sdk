@@ -21,7 +21,7 @@ from typing import IO, TYPE_CHECKING, Callable, Optional
 import aiohttp
 import structlog
 
-from .. import _constants as C
+from .. import constants as C
 from ..client import get_filename_from_response, validate_file_datetime
 from ..models import (
     BandwidthThrottler,

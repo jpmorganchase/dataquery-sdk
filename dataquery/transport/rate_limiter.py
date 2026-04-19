@@ -14,7 +14,7 @@ from typing import Any, Dict, Optional
 
 import structlog
 
-from .. import _constants as C
+from .. import constants as C
 
 logger = structlog.get_logger(__name__)
 
