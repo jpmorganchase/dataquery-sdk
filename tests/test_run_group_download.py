@@ -3,15 +3,15 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from dataquery.core.dataquery import DataQuery
+from dataquery.dataquery import DataQuery
 
 
 @pytest.mark.asyncio
 async def test_run_group_download_async_filters_availability(monkeypatch):
     """Ensure only entries with is-available True are queued for download."""
     # Provide minimal valid client config via env bypass using patch
-    with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-        with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_cls:
+    with patch("dataquery.dataquery.EnvConfig.validate_config"):
+        with patch("dataquery.dataquery.DataQueryClient") as mock_client_cls:
             mock_client = mock_client_cls.return_value
             # Ensure awaited connect/close work
             mock_client.connect = AsyncMock(return_value=None)

@@ -9,7 +9,7 @@ Learn the fundamental concepts and patterns for using DataQuery SDK effectively.
 Use the high-level `DataQuery` interface for most operations (downloads, listing groups/files, availability, instruments, time series, grid, etc.).
 
 ```python
-from dataquery.core.dataquery import DataQuery
+from dataquery.dataquery import DataQuery
 
 async def main():
     async with DataQuery() as dq:

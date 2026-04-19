@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from dataquery.core.dataquery import (
+from dataquery.dataquery import (
     ConfigManager,
     DataQuery,
     ProgressTracker,
@@ -90,7 +90,7 @@ class TestConfigManager:
 
     def test_get_client_config_with_env_file(self):
         """Test get_client_config with environment file."""
-        with patch("dataquery.core.dataquery.EnvConfig.create_client_config") as mock_create_config:
+        with patch("dataquery.dataquery.EnvConfig.create_client_config") as mock_create_config:
             mock_config = ClientConfig(
                 base_url="https://api.example.com",
                 oauth_enabled=False,
@@ -108,7 +108,7 @@ class TestConfigManager:
 
     def test_get_client_config_without_env_file(self):
         """Test get_client_config without environment file."""
-        with patch("dataquery.core.dataquery.EnvConfig.create_client_config") as mock_create_config:
+        with patch("dataquery.dataquery.EnvConfig.create_client_config") as mock_create_config:
             mock_config = ClientConfig(
                 base_url="https://api.example.com",
                 oauth_enabled=False,
@@ -175,14 +175,14 @@ class TestDataQueryInitialization:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
             dataquery = DataQuery(config)
             assert dataquery.client_config == config
             assert dataquery._client is None
 
     def test_dataquery_initialization_with_env_file(self):
         """Test DataQuery initialization with environment file."""
-        with patch("dataquery.core.dataquery.ConfigManager") as mock_config_manager:
+        with patch("dataquery.dataquery.ConfigManager") as mock_config_manager:
             mock_manager = MagicMock()
             mock_config_manager.return_value = mock_manager
 
@@ -193,7 +193,7 @@ class TestDataQueryInitialization:
             )
             mock_manager.get_client_config.return_value = mock_config
 
-            with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.EnvConfig.validate_config"):
                 dataquery = DataQuery(".env")
 
                 assert dataquery.client_config == mock_config
@@ -205,7 +205,7 @@ class TestDataQueryInitialization:
 
     def test_dataquery_initialization_with_path(self):
         """Test DataQuery initialization with Path object."""
-        with patch("dataquery.core.dataquery.ConfigManager") as mock_config_manager:
+        with patch("dataquery.dataquery.ConfigManager") as mock_config_manager:
             mock_manager = MagicMock()
             mock_config_manager.return_value = mock_manager
 
@@ -216,7 +216,7 @@ class TestDataQueryInitialization:
             )
             mock_manager.get_client_config.return_value = mock_config
 
-            with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.EnvConfig.validate_config"):
                 dataquery = DataQuery(Path(".env"))
 
                 assert dataquery.client_config == mock_config
@@ -227,7 +227,7 @@ class TestDataQueryInitialization:
 
     def test_dataquery_initialization_without_config(self):
         """Test DataQuery initialization without config."""
-        with patch("dataquery.core.dataquery.ConfigManager") as mock_config_manager:
+        with patch("dataquery.dataquery.ConfigManager") as mock_config_manager:
             mock_manager = MagicMock()
             mock_config_manager.return_value = mock_manager
 
@@ -238,7 +238,7 @@ class TestDataQueryInitialization:
             )
             mock_manager.get_client_config.return_value = mock_config
 
-            with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.EnvConfig.validate_config"):
                 dataquery = DataQuery()
 
                 assert dataquery.client_config == mock_config
@@ -260,8 +260,8 @@ class TestDataQueryContextManager:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
@@ -281,8 +281,8 @@ class TestDataQueryContextManager:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
@@ -308,8 +308,8 @@ class TestDataQueryContextManager:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
@@ -334,8 +334,8 @@ class TestDataQueryAsyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
@@ -363,8 +363,8 @@ class TestDataQueryAsyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
@@ -390,8 +390,8 @@ class TestDataQueryAsyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
@@ -421,8 +421,8 @@ class TestDataQueryAsyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
@@ -447,8 +447,8 @@ class TestDataQueryAsyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
@@ -483,8 +483,8 @@ class TestDataQueryAsyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
@@ -514,8 +514,8 @@ class TestDataQueryAsyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
@@ -539,8 +539,8 @@ class TestDataQueryAsyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
@@ -579,8 +579,8 @@ class TestDataQueryAsyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
@@ -614,8 +614,8 @@ class TestDataQueryAsyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
@@ -663,8 +663,8 @@ class TestDataQueryAsyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
@@ -711,8 +711,8 @@ class TestDataQueryAsyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
@@ -743,8 +743,8 @@ class TestDataQueryAsyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
@@ -792,8 +792,8 @@ class TestDataQueryAsyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
@@ -842,8 +842,8 @@ class TestDataQueryAsyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
@@ -878,8 +878,8 @@ class TestDataQueryAsyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
@@ -917,8 +917,8 @@ class TestDataQuerySyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()  # Use AsyncMock instead of MagicMock
                 mock_client_class.return_value = mock_client
 
@@ -941,8 +941,8 @@ class TestDataQuerySyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()  # Use AsyncMock instead of MagicMock
                 mock_client_class.return_value = mock_client
 
@@ -967,8 +967,8 @@ class TestDataQuerySyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()  # Use AsyncMock instead of MagicMock
                 mock_client_class.return_value = mock_client
 
@@ -993,8 +993,8 @@ class TestDataQuerySyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()  # Use AsyncMock instead of MagicMock
                 mock_client_class.return_value = mock_client
 
@@ -1019,8 +1019,8 @@ class TestDataQuerySyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()  # Use AsyncMock instead of MagicMock
                 mock_client_class.return_value = mock_client
 
@@ -1046,8 +1046,8 @@ class TestDataQuerySyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()  # Use AsyncMock instead of MagicMock
                 mock_client_class.return_value = mock_client
 
@@ -1080,8 +1080,8 @@ class TestDataQuerySyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()  # Use AsyncMock instead of MagicMock
                 mock_client_class.return_value = mock_client
 
@@ -1104,8 +1104,8 @@ class TestDataQuerySyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()  # Use AsyncMock instead of MagicMock
                 mock_client_class.return_value = mock_client
 
@@ -1130,8 +1130,8 @@ class TestDataQuerySyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()  # Use AsyncMock instead of MagicMock
                 mock_client_class.return_value = mock_client
 
@@ -1156,8 +1156,8 @@ class TestDataQuerySyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()  # Use AsyncMock instead of MagicMock
                 mock_client_class.return_value = mock_client
 
@@ -1192,8 +1192,8 @@ class TestDataQuerySyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()  # Use AsyncMock instead of MagicMock
                 mock_client_class.return_value = mock_client
 
@@ -1242,8 +1242,8 @@ class TestDataQuerySyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()  # Use AsyncMock instead of MagicMock
                 mock_client_class.return_value = mock_client
 
@@ -1291,8 +1291,8 @@ class TestDataQuerySyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()  # Use AsyncMock instead of MagicMock
                 mock_client_class.return_value = mock_client
 
@@ -1324,8 +1324,8 @@ class TestDataQuerySyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()  # Use AsyncMock instead of MagicMock
                 mock_client_class.return_value = mock_client
 
@@ -1374,8 +1374,8 @@ class TestDataQuerySyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()  # Use AsyncMock instead of MagicMock
                 mock_client_class.return_value = mock_client
 
@@ -1425,8 +1425,8 @@ class TestDataQuerySyncMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()  # Use AsyncMock instead of MagicMock
                 mock_client_class.return_value = mock_client
 
@@ -1466,8 +1466,8 @@ class TestDataQueryWorkflowMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
@@ -1503,8 +1503,8 @@ class TestDataQueryWorkflowMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
@@ -1539,8 +1539,8 @@ class TestDataQueryWorkflowMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
@@ -1569,8 +1569,8 @@ class TestDataQueryWorkflowMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
@@ -1613,8 +1613,8 @@ class TestDataQueryWorkflowMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
@@ -1681,8 +1681,8 @@ class TestDataQueryWorkflowMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
@@ -1762,7 +1762,7 @@ class TestDataQueryWorkflowMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
             dataquery = DataQuery(config)
             expected = {
                 "group_id": "group1",
@@ -1798,8 +1798,8 @@ class TestDataQueryWorkflowMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()  # Use AsyncMock instead of MagicMock
                 mock_client_class.return_value = mock_client
 
@@ -1824,8 +1824,8 @@ class TestDataQueryWorkflowMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()  # Use AsyncMock instead of MagicMock
                 mock_client_class.return_value = mock_client
 
@@ -1850,8 +1850,8 @@ class TestDataQueryWorkflowMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()  # Use AsyncMock instead of MagicMock
                 mock_client_class.return_value = mock_client
 
@@ -1877,8 +1877,8 @@ class TestDataQueryWorkflowMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()  # Use AsyncMock instead of MagicMock
                 mock_client_class.return_value = mock_client
 
@@ -1911,8 +1911,8 @@ class TestDataQueryWorkflowMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()  # Use AsyncMock instead of MagicMock
                 mock_client_class.return_value = mock_client
 
@@ -1956,7 +1956,7 @@ class TestDataQueryImprovedSyncCalls:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
             dataquery = DataQuery(config)
 
             # Test that sync methods use _run_sync
@@ -1972,8 +1972,8 @@ class TestDataQueryImprovedSyncCalls:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
@@ -2011,8 +2011,8 @@ class TestDataQueryImprovedSyncCalls:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
@@ -2056,8 +2056,8 @@ class TestDataQueryUtilityMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = MagicMock()
                 mock_client_class.return_value = mock_client
 
@@ -2080,8 +2080,8 @@ class TestDataQueryUtilityMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = MagicMock()
                 mock_client_class.return_value = mock_client
 
@@ -2104,7 +2104,7 @@ class TestDataQueryUtilityMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
             dataquery = DataQuery(config)
 
             callback = dataquery.create_progress_callback(log_interval=5)
@@ -2128,8 +2128,8 @@ class TestDataQueryUtilityMethods:
             bearer_token="test_token",
         )
 
-        with patch("dataquery.core.dataquery.EnvConfig.validate_config"):
-            with patch("dataquery.core.dataquery.DataQueryClient") as mock_client_class:
+        with patch("dataquery.dataquery.EnvConfig.validate_config"):
+            with patch("dataquery.dataquery.DataQueryClient") as mock_client_class:
                 mock_client = AsyncMock()  # Use AsyncMock instead of MagicMock
                 mock_client_class.return_value = mock_client
 

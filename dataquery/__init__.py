@@ -22,7 +22,8 @@ __url__ = "https://github.com/jpmorganchase/dataquery-sdk"
 
 # Core
 from .config import EnvConfig
-from .core import DataQuery, DataQueryClient
+from .core import DataQueryClient
+from .dataquery import DataQuery
 from .sse.client import SSEClient, SSEEvent
 from .sse.subscriber import NotificationDownloadManager
 from .types.exceptions import (
