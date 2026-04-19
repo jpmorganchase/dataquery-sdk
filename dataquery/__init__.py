@@ -110,5 +110,5 @@ __package_info__ = {
     "license": __license__,
     "url": __url__,
     "description": "Python SDK for DATAQUERY Data API - Query, download, and check availability of economic data files",
-    "python_requires": ">=3.10",
+    "python_requires": ">=3.11",
 }

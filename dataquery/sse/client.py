@@ -152,6 +152,9 @@ class SSEClient:
                     pass
         if self._save_tasks:
             await asyncio.gather(*self._save_tasks, return_exceptions=True)
+            # Done-callbacks that remove completed tasks from the set are scheduled
+            # via call_soon, so they may not have fired yet. Clear explicitly.
+            self._save_tasks.clear()
         logger.info("SSEClient stopped")
 
     @property
