@@ -55,12 +55,14 @@ async def test_cmd_download_group():
         env_file=None,
     )
 
+    from dataquery.types.models import OperationReport
+
     mock_dq_instance = AsyncMock()
-    mock_dq_instance.run_group_download_async.return_value = {
-        "successful": 10,
-        "failed": 0,
-        "results": [],
-    }
+    mock_dq_instance.run_group_download_async.return_value = OperationReport(
+        operation="group_download",
+        status="success",
+        counts={"successful_downloads": 10, "failed_downloads": 0, "total_files": 10},
+    )
 
     with patch("dataquery.cli.DataQuery") as MockDQ:
         MockDQ.return_value.__aenter__.return_value = mock_dq_instance

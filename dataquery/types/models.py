@@ -7,7 +7,7 @@ import time
 from datetime import date, datetime, timedelta
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union, cast
+from typing import Any, Dict, List, Literal, Optional, Union, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -770,6 +770,27 @@ class DownloadResult(BaseModel):
         if not self.download_time or self.download_time <= 0 or not self.file_size:
             return 0.0
         return (self.file_size / (1024 * 1024)) / self.download_time
+
+
+OperationStatus = Literal["success", "error", "partial"]
+
+
+class OperationReport(BaseModel):
+    """Unified summary report returned by all DataQuery.run_*_async methods.
+
+    Every run_* operation shares this shape so callers learn one schema:
+    pull identifiers from `subject`, metrics from `counts`/`timing`, the
+    main payload from `data`, and operation-specific fields from `details`.
+    """
+
+    operation: str
+    status: OperationStatus = "success"
+    subject: Dict[str, Any] = Field(default_factory=dict)
+    counts: Dict[str, int] = Field(default_factory=dict)
+    timing: Dict[str, Any] = Field(default_factory=dict)
+    data: List[Dict[str, Any]] = Field(default_factory=list)
+    error: Optional[str] = None
+    details: Dict[str, Any] = Field(default_factory=dict)
 
 
 class Instrument(BaseModel):

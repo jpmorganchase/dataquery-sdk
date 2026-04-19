@@ -24,7 +24,8 @@ async def test_run_groups_async_empty():
     )
     with patch.object(dq, "list_groups_async", new=AsyncMock(return_value=[])):
         result = await dq.run_groups_async()
-        assert result["error"] == "No groups found"
+        assert result.status == "error"
+        assert result.error == "No groups found"
 
 
 @pytest.mark.asyncio
@@ -39,8 +40,8 @@ async def test_run_groups_async_success():
     ]
     with patch.object(dq, "list_groups_async", new=AsyncMock(return_value=groups)):
         result = await dq.run_groups_async()
-        assert result["total_groups"] == 3
-        assert set(result["providers"]) == {"A", "B"}
+        assert result.counts["total_groups"] == 3
+        assert set(result.details["providers"]) == {"A", "B"}
 
 
 @pytest.mark.asyncio
@@ -50,7 +51,8 @@ async def test_run_group_files_async_empty():
     )
     with patch.object(dq, "list_files_async", new=AsyncMock(return_value=[])):
         result = await dq.run_group_files_async("grp")
-        assert result["error"] == "No files found"
+        assert result.status == "error"
+        assert result.error == "No files found"
 
 
 @pytest.mark.asyncio
@@ -64,10 +66,10 @@ async def test_run_group_files_async_success_types_and_dump():
     ]
     with patch.object(dq, "list_files_async", new=AsyncMock(return_value=files)):
         result = await dq.run_group_files_async("grp")
-        assert result["group_id"] == "grp"
-        assert result["total_files"] == 2
-        assert set(result["file_types"]) == {"JSON", "CSV"}
-        assert isinstance(result["files"], list)
+        assert result.subject["group_id"] == "grp"
+        assert result.counts["total_files"] == 2
+        assert set(result.details["file_types"]) == {"JSON", "CSV"}
+        assert isinstance(result.data, list)
 
 
 @pytest.mark.asyncio
@@ -91,9 +93,9 @@ async def test_run_availability_async_report():
     avail = AvailabilityInfo(file_date="20240101", is_available=True, file_name="a.txt")
     with patch.object(dq, "check_availability_async", new=AsyncMock(return_value=avail)):
         report = await dq.run_availability_async("fg", "20240101")
-        assert report["file_group_id"] == "fg"
-        assert report["file_datetime"] == "20240101"
-        assert report["is_available"] is True
+        assert report.subject["file_group_id"] == "fg"
+        assert report.subject["file_datetime"] == "20240101"
+        assert report.details["is_available"] is True
 
 
 @pytest.mark.asyncio
@@ -110,10 +112,10 @@ async def test_run_download_async_report_from_result():
     )
     with patch.object(dq, "download_file_async", new=AsyncMock(return_value=result)):
         report = await dq.run_download_async("fg", "20240101")
-        assert report["download_successful"] is True
-        # Use Path comparison for cross-platform compatibility
-        assert Path(report["local_path"]) == Path("/tmp/x")
-        assert report["file_size"] == result.file_size
+        assert report.status == "success"
+        assert report.details["download_successful"] is True
+        assert Path(report.details["local_path"]) == Path("/tmp/x")
+        assert report.details["file_size"] == result.file_size
 
 
 @pytest.mark.asyncio
@@ -123,7 +125,8 @@ async def test_run_group_download_async_no_available_files():
     )
     with patch.object(dq, "list_available_files_async", new=AsyncMock(return_value=[])):
         out = await dq.run_group_download_async("grp", "20240101", "20240102")
-        assert out["error"] == "No available files found for date range"
+        assert out.status == "error"
+        assert out.error == "No available files found for date range"
 
 
 def test_init_raises_configurationerror_on_validate_failure():

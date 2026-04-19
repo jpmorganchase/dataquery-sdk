@@ -30,12 +30,20 @@ from .types.models import (
     GridDataResponse,
     Group,
     InstrumentsResponse,
+    OperationReport,
     TimeSeriesResponse,
 )
 
 # Note: load_dotenv() is called inside DataQuery.__init__() to avoid module-level side effects
 
 logger = structlog.get_logger(__name__)
+
+
+def _format_duration(seconds: float) -> str:
+    """Format a duration in seconds as '1m 5s' or '0.4s'."""
+    if seconds >= 60:
+        return f"{int(seconds // 60)}m {int(seconds % 60)}s"
+    return f"{seconds:.1f}s"
 
 
 class ConfigManager:
@@ -636,79 +644,79 @@ class DataQuery:
 
     # Workflow Methods
 
-    async def run_groups_async(self, max_concurrent: int = 5) -> Dict[str, Any]:
+    async def run_groups_async(self, max_concurrent: int = 5) -> OperationReport:
         """Run complete operation for listing all groups."""
         logger.info("Starting groups operation")
 
         try:
-            # Step 1: List all groups
             logger.info("Step 1: Listing All Groups")
             groups = await self.list_groups_async()
 
             if not groups:
                 logger.warning("No groups found")
-                return {"error": "No groups found"}
+                return OperationReport(operation="groups", status="error", error="No groups found")
 
-            # Step 2: Generate summary report
-            logger.info("Step 2: Summary Report")
-            report = {
-                "total_groups": len(groups),
-                "total_files": sum((g.file_groups or 0) for g in groups),
-                "groups": [g.model_dump() for g in groups],
-                "file_types": [],  # Groups don't have file_types attribute
-                "providers": list(set(g.provider for g in groups if g.provider)),
-            }
+            report = OperationReport(
+                operation="groups",
+                status="success",
+                counts={
+                    "total_groups": len(groups),
+                    "total_files": sum((g.file_groups or 0) for g in groups),
+                },
+                data=[g.model_dump() for g in groups],
+                details={"providers": sorted({g.provider for g in groups if g.provider})},
+            )
 
-            logger.info("Groups operation completed successfully!")
-            logger.info("Summary report", **report)
-
+            logger.info("Groups operation completed successfully!", **report.model_dump(exclude={"data"}))
             return report
 
         except Exception as e:
             logger.error("Groups operation failed", error=str(e))
             raise
 
-    async def run_group_files_async(self, group_id: str, max_concurrent: int = 5) -> Dict[str, Any]:
+    async def run_group_files_async(self, group_id: str, max_concurrent: int = 5) -> OperationReport:
         """Run complete operation for a specific group."""
         logger.info("Starting group files operation", group_id=group_id)
 
         try:
-            # Step 1: List files in the group
             logger.info("Step 1: Listing Files")
             files = await self.list_files_async(group_id)
 
             if not files:
                 logger.warning("No files found for group", group_id=group_id)
-                return {"error": "No files found"}
+                return OperationReport(
+                    operation="group_files",
+                    status="error",
+                    subject={"group_id": group_id},
+                    error="No files found",
+                )
 
-            # Step 2: Generate summary report
-            logger.info("Step 2: Summary Report")
             # Collect file types robustly (handles str or List[str])
-            _collected_types = []
-            for _f in files:
-                _ft = getattr(_f, "file_type", None)
-                if isinstance(_ft, list):
-                    _collected_types.extend([t for t in _ft if isinstance(t, str)])
-                elif isinstance(_ft, str):
-                    _collected_types.append(_ft)
-            report = {
-                "group_id": group_id,
-                "total_files": len(files),
-                "file_types": list(set(_collected_types)),
-                "date_range": None,  # FileInfo doesn't have date_range attribute
-                "files": [f.model_dump() for f in files],
-            }
+            collected_types: List[str] = []
+            for f in files:
+                ft = getattr(f, "file_type", None)
+                if isinstance(ft, list):
+                    collected_types.extend(t for t in ft if isinstance(t, str))
+                elif isinstance(ft, str):
+                    collected_types.append(ft)
 
-            logger.info("Group files operation completed successfully!")
-            logger.info("Summary report", **report)
+            report = OperationReport(
+                operation="group_files",
+                status="success",
+                subject={"group_id": group_id},
+                counts={"total_files": len(files)},
+                data=[f.model_dump() for f in files],
+                details={"file_types": sorted(set(collected_types))},
+            )
 
+            logger.info("Group files operation completed successfully!", **report.model_dump(exclude={"data"}))
             return report
 
         except Exception as e:
             logger.error("Group files operation failed", group_id=group_id, error=str(e))
             raise
 
-    async def run_availability_async(self, file_group_id: str, file_datetime: str) -> Dict[str, Any]:
+    async def run_availability_async(self, file_group_id: str, file_datetime: str) -> OperationReport:
         """Run operation for checking file availability."""
         logger.info(
             "Starting availability operation",
@@ -717,24 +725,23 @@ class DataQuery:
         )
 
         try:
-            # Step 1: Check availability
             logger.info("Step 1: Checking Availability")
             availability = await self.check_availability_async(file_group_id, file_datetime)
 
-            # Step 2: Generate summary report
-            logger.info("Step 2: Summary Report")
-            report = {
-                "file_group_id": file_group_id,
-                "file_datetime": file_datetime,
-                "is_available": bool(getattr(availability, "is_available", False)),
-                "file_name": getattr(availability, "file_name", None),
-                "first_created_on": getattr(availability, "first_created_on", None),
-                "last_modified": getattr(availability, "last_modified", None),
-            }
+            is_available = bool(getattr(availability, "is_available", False))
+            report = OperationReport(
+                operation="availability",
+                status="success" if is_available else "error",
+                subject={"file_group_id": file_group_id, "file_datetime": file_datetime},
+                details={
+                    "is_available": is_available,
+                    "file_name": getattr(availability, "file_name", None),
+                    "first_created_on": getattr(availability, "first_created_on", None),
+                    "last_modified": getattr(availability, "last_modified", None),
+                },
+            )
 
-            logger.info("Availability operation completed successfully!")
-            logger.info("Summary report", **report)
-
+            logger.info("Availability operation completed successfully!", **report.model_dump())
             return report
 
         except Exception as e:
@@ -751,7 +758,7 @@ class DataQuery:
         file_datetime: Optional[str] = None,
         destination_path: Optional[Path] = None,
         max_concurrent: int = 1,
-    ) -> Dict[str, Any]:
+    ) -> OperationReport:
         """Run operation for downloading a single file."""
         logger.info(
             "Starting download operation",
@@ -760,7 +767,6 @@ class DataQuery:
         )
 
         try:
-            # Step 1: Download file
             logger.info("Step 1: Downloading File")
             download_options = (
                 DownloadOptions(
@@ -783,22 +789,21 @@ class DataQuery:
             )
             result = await self.download_file_async(file_group_id, file_datetime, destination_path, download_options)
 
-            # Step 2: Generate summary report
-            logger.info("Step 2: Summary Report")
-            report = {
-                "file_group_id": file_group_id,
-                "file_datetime": file_datetime,
-                "download_successful": result.status == DownloadStatus.COMPLETED,
-                "local_path": str(result.local_path),
-                "file_size": result.file_size,
-                "download_time": result.download_time,
-                "speed_mbps": result.speed_mbps,
-                "error_message": result.error_message,
-            }
+            successful = result.status == DownloadStatus.COMPLETED
+            report = OperationReport(
+                operation="download",
+                status="success" if successful else "error",
+                subject={"file_group_id": file_group_id, "file_datetime": file_datetime},
+                timing={"download_time": result.download_time, "speed_mbps": result.speed_mbps},
+                error=result.error_message,
+                details={
+                    "download_successful": successful,
+                    "local_path": str(result.local_path) if result.local_path else None,
+                    "file_size": result.file_size,
+                },
+            )
 
-            logger.info("Download operation completed successfully!")
-            logger.info("Summary report", **report)
-
+            logger.info("Download operation completed!", **report.model_dump())
             return report
 
         except Exception as e:
@@ -817,7 +822,7 @@ class DataQuery:
         delay_between_downloads: float = 0.2,  # 5 TPS (1/5 = 0.2s)
         max_retries: int = 3,
         file_group_id: Optional[Union[str, List[str]]] = None,
-    ) -> dict:
+    ) -> OperationReport:
         """
         Download all files in a group for a date range using parallel HTTP range requests.
 
@@ -929,23 +934,19 @@ class DataQuery:
                     start_date=start_date,
                     end_date=end_date,
                 )
-                return {
-                    "error": "No available files found for date range",
-                    "group_id": group_id,
-                    "start_date": start_date,
-                    "end_date": end_date,
-                    "total_files": 0,
-                    "successful_downloads": 0,
-                    "failed_downloads": 0,
-                    "success_rate": 0.0,
-                    "total_time_seconds": round(total_time_seconds, 2),
-                    "total_time_minutes": round(total_time_minutes, 2),
-                    "total_time_formatted": (
-                        f"{int(total_time_minutes)}m {int(total_time_seconds % 60)}s"
-                        if total_time_minutes >= 1
-                        else f"{total_time_seconds:.1f}s"
-                    ),
-                }
+                return OperationReport(
+                    operation="group_download",
+                    status="error",
+                    error="No available files found for date range",
+                    subject={"group_id": group_id, "start_date": start_date, "end_date": end_date},
+                    counts={"total_files": 0, "successful_downloads": 0, "failed_downloads": 0},
+                    timing={
+                        "total_time_seconds": round(total_time_seconds, 2),
+                        "total_time_minutes": round(total_time_minutes, 2),
+                        "total_time_formatted": _format_duration(total_time_seconds),
+                    },
+                    details={"success_rate": 0.0},
+                )
 
             logger.info("Found available files", count=len(filtered_files))
 
@@ -1146,49 +1147,60 @@ class DataQuery:
             min_file_time = min([ft["download_time_seconds"] for ft in file_times]) if file_times else 0.0
             max_file_time = max([ft["download_time_seconds"] for ft in file_times]) if file_times else 0.0
 
-            report = {
-                "group_id": group_id,
-                "start_date": start_date,
-                "end_date": end_date,
-                "total_files": len(filtered_files),
-                "successful_downloads": len(successful),
-                "failed_downloads": len(failed),
-                "retries_attempted": retry_count,
-                "max_retries": max_retries,
-                "success_rate": ((len(successful) / len(filtered_files)) * 100 if filtered_files else 0),
-                "downloaded_files": [r.file_group_id for r in successful],
-                "failed_files": [f.get("file-group-id", f.get("file_group_id", "unknown")) for f in failed],
-                "num_parts": num_parts,
-                "max_concurrent": max_concurrent,
-                "total_concurrent_requests": total_concurrent_requests,
-                "concurrency_model": "delay_based_rate_limit_protection",
-                "rate_limit_protection": "enabled",
-                "base_delay": delay_between_downloads,
-                "intelligent_delay": intelligent_delay,
-                "delay_range": f"0-{(len(filtered_files) - 1) * intelligent_delay:.1f}s",
-                "rate_limit_capacity": rate_limit_capacity,
-                "rate_limit_recommendations": recommendations,
-                "total_time_seconds": round(total_time_seconds, 2),
-                "total_time_minutes": round(total_time_minutes, 2),
-                "total_time_formatted": (
-                    f"{int(total_time_minutes)}m {int(total_time_seconds % 60)}s"
-                    if total_time_minutes >= 1
-                    else f"{total_time_seconds:.1f}s"
-                ),
-                "per_file_timing": {
-                    "file_times": file_times,
-                    "total_download_time_seconds": round(total_download_time, 2),
-                    "average_file_time_seconds": round(avg_file_time, 2),
-                    "min_file_time_seconds": round(min_file_time, 2),
-                    "max_file_time_seconds": round(max_file_time, 2),
-                    "total_download_time_formatted": (
-                        f"{int(total_download_time // 60)}m {int(total_download_time % 60)}s"
-                        if total_download_time >= 60
-                        else f"{total_download_time:.1f}s"
-                    ),
+            total_files = len(filtered_files)
+            success_rate = (len(successful) / total_files * 100) if total_files else 0.0
+            if len(failed) == 0:
+                status = "success"
+            elif len(successful) == 0:
+                status = "error"
+            else:
+                status = "partial"
+
+            report = OperationReport(
+                operation="group_download",
+                status=status,
+                subject={"group_id": group_id, "start_date": start_date, "end_date": end_date},
+                counts={
+                    "total_files": total_files,
+                    "successful_downloads": len(successful),
+                    "failed_downloads": len(failed),
+                    "retries_attempted": retry_count,
+                    "max_retries": max_retries,
                 },
-            }
-            logger.info("Group parallel download for date range operation completed!", **report)
+                timing={
+                    "total_time_seconds": round(total_time_seconds, 2),
+                    "total_time_minutes": round(total_time_minutes, 2),
+                    "total_time_formatted": _format_duration(total_time_seconds),
+                    "per_file_timing": {
+                        "file_times": file_times,
+                        "total_download_time_seconds": round(total_download_time, 2),
+                        "average_file_time_seconds": round(avg_file_time, 2),
+                        "min_file_time_seconds": round(min_file_time, 2),
+                        "max_file_time_seconds": round(max_file_time, 2),
+                        "total_download_time_formatted": _format_duration(total_download_time),
+                    },
+                },
+                data=[{"file_group_id": r.file_group_id} for r in successful],
+                details={
+                    "success_rate": success_rate,
+                    "downloaded_files": [r.file_group_id for r in successful],
+                    "failed_files": [f.get("file-group-id", f.get("file_group_id", "unknown")) for f in failed],
+                    "num_parts": num_parts,
+                    "max_concurrent": max_concurrent,
+                    "total_concurrent_requests": total_concurrent_requests,
+                    "concurrency_model": "delay_based_rate_limit_protection",
+                    "rate_limit_protection": "enabled",
+                    "base_delay": delay_between_downloads,
+                    "intelligent_delay": intelligent_delay,
+                    "delay_range": f"0-{(total_files - 1) * intelligent_delay:.1f}s",
+                    "rate_limit_capacity": rate_limit_capacity,
+                    "rate_limit_recommendations": recommendations,
+                },
+            )
+            logger.info(
+                "Group parallel download for date range operation completed!",
+                **report.model_dump(exclude={"data", "details"}),
+            )
             return report
         except Exception as e:
             logger.error(
@@ -1242,7 +1254,7 @@ class DataQuery:
         max_retries: int = 3,
         progress_callback: Optional[Callable] = None,
         chunk_delay: float = 2.0,
-    ) -> Dict[str, Any]:
+    ) -> OperationReport:
         """
         Download files for a group across a large date range by splitting into monthly chunks.
 
@@ -1292,7 +1304,7 @@ class DataQuery:
 
             chunk_time = time.time()
             try:
-                report = await self.run_group_download_async(
+                chunk_report = await self.run_group_download_async(
                     group_id=group_id,
                     start_date=chunk_start,
                     end_date=chunk_end,
@@ -1305,9 +1317,9 @@ class DataQuery:
                 )
 
                 chunk_elapsed = time.time() - chunk_time
-                success = report.get("successful_downloads", 0)
-                failed = report.get("failed_downloads", 0)
-                files = report.get("total_files", 0)
+                success = chunk_report.counts.get("successful_downloads", 0)
+                failed = chunk_report.counts.get("failed_downloads", 0)
+                files = chunk_report.counts.get("total_files", 0)
 
                 total_files += files
                 total_success += success
@@ -1322,7 +1334,7 @@ class DataQuery:
                         "successful_downloads": success,
                         "failed_downloads": failed,
                         "elapsed_seconds": round(chunk_elapsed, 2),
-                        "report": report,
+                        "report": chunk_report.model_dump(),
                     }
                 )
 
@@ -1360,26 +1372,36 @@ class DataQuery:
         total_minutes = total_elapsed / 60.0
 
         chunks_with_errors = [f"{c['start_date']}-{c['end_date']}" for c in chunk_results if "error" in c]
+        if total_failed == 0 and not chunks_with_errors:
+            status = "success"
+        elif total_success == 0:
+            status = "error"
+        else:
+            status = "partial"
 
-        summary = {
-            "group_id": group_id,
-            "start_date": start_date,
-            "end_date": end_date,
-            "monthly_chunks": len(monthly_ranges),
-            "total_files": total_files,
-            "successful_downloads": total_success,
-            "failed_downloads": total_failed,
-            "success_rate": (total_success / total_files * 100) if total_files else 0.0,
-            "total_time_seconds": round(total_elapsed, 2),
-            "total_time_minutes": round(total_minutes, 2),
-            "total_time_formatted": (
-                f"{int(total_minutes)}m {int(total_elapsed % 60)}s" if total_minutes >= 1 else f"{total_elapsed:.1f}s"
-            ),
-            "chunks_with_errors": chunks_with_errors,
-            "chunk_results": chunk_results,
-        }
+        summary = OperationReport(
+            operation="historical_download",
+            status=status,
+            subject={"group_id": group_id, "start_date": start_date, "end_date": end_date},
+            counts={
+                "monthly_chunks": len(monthly_ranges),
+                "total_files": total_files,
+                "successful_downloads": total_success,
+                "failed_downloads": total_failed,
+            },
+            timing={
+                "total_time_seconds": round(total_elapsed, 2),
+                "total_time_minutes": round(total_minutes, 2),
+                "total_time_formatted": _format_duration(total_elapsed),
+            },
+            data=chunk_results,
+            details={
+                "success_rate": (total_success / total_files * 100) if total_files else 0.0,
+                "chunks_with_errors": chunks_with_errors,
+            },
+        )
 
-        logger.info("Historical download completed", **{k: v for k, v in summary.items() if k != "chunk_results"})
+        logger.info("Historical download completed", **summary.model_dump(exclude={"data"}))
         return summary
 
     def _calculate_rate_limit_capacity(self) -> Dict[str, Any]:
@@ -2086,15 +2108,15 @@ class DataQuery:
         """
         return self._run_sync(self.get_grid_data_async(expr, grid_id, date))
 
-    def run_groups(self, max_concurrent: int = 5) -> Dict[str, Any]:
+    def run_groups(self, max_concurrent: int = 5) -> OperationReport:
         """Synchronous wrapper for run_groups_async."""
         return self._run_sync(self.run_groups_async(max_concurrent))
 
-    def run_group_files(self, group_id: str, max_concurrent: int = 5) -> Dict[str, Any]:
+    def run_group_files(self, group_id: str, max_concurrent: int = 5) -> OperationReport:
         """Synchronous wrapper for run_group_files_async."""
         return self._run_sync(self.run_group_files_async(group_id, max_concurrent))
 
-    def run_availability(self, file_group_id: str, file_datetime: str) -> Dict[str, Any]:
+    def run_availability(self, file_group_id: str, file_datetime: str) -> OperationReport:
         """Synchronous wrapper for run_availability_async."""
         return self._run_sync(self.run_availability_async(file_group_id, file_datetime))
 
@@ -2104,7 +2126,7 @@ class DataQuery:
         file_datetime: Optional[str] = None,
         destination_path: Optional[Path] = None,
         max_concurrent: int = 1,
-    ) -> Dict[str, Any]:
+    ) -> OperationReport:
         """Synchronous wrapper for run_download_async."""
         return self._run_sync(self.run_download_async(file_group_id, file_datetime, destination_path, max_concurrent))
 
@@ -2119,7 +2141,7 @@ class DataQuery:
         progress_callback: Optional[Callable] = None,
         delay_between_downloads: float = 1.0,
         file_group_id: Optional[Union[str, List[str]]] = None,
-    ) -> dict:
+    ) -> OperationReport:
         """Synchronous wrapper for run_group_download_async."""
         return self._run_sync(
             self.run_group_download_async(
@@ -2147,7 +2169,7 @@ class DataQuery:
         max_retries: int = 3,
         progress_callback: Optional[Callable] = None,
         chunk_delay: float = 2.0,
-    ) -> Dict[str, Any]:
+    ) -> OperationReport:
         """Synchronous wrapper for download_historical_async."""
         return self._run_sync(
             self.download_historical_async(

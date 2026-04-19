@@ -119,7 +119,7 @@ Examples:
             )
 
         # Print per-chunk results
-        for chunk in summary.get("chunk_results", []):
+        for chunk in summary.data:
             status = "Error" if "error" in chunk else "Done"
             s = chunk.get("successful_downloads", 0)
             t = chunk.get("total_files", 0)
@@ -131,12 +131,12 @@ Examples:
                 print(f"  [{status}] {chunk['start_date']}-{chunk['end_date']}: {s}/{t} files ({f} failed) in {e:.1f}s")
 
         # Print summary
-        total_files = summary.get("total_files", 0)
-        total_success = summary.get("successful_downloads", 0)
-        total_failed = summary.get("failed_downloads", 0)
-        total_time = summary.get("total_time_formatted", "N/A")
-        chunks = summary.get("monthly_chunks", 0)
-        chunks_with_errors = summary.get("chunks_with_errors", [])
+        total_files = summary.counts.get("total_files", 0)
+        total_success = summary.counts.get("successful_downloads", 0)
+        total_failed = summary.counts.get("failed_downloads", 0)
+        total_time = summary.timing.get("total_time_formatted", "N/A")
+        chunks = summary.counts.get("monthly_chunks", 0)
+        chunks_with_errors = summary.details.get("chunks_with_errors", [])
 
         print(f"\n{'=' * 60}")
         print("DOWNLOAD SUMMARY")

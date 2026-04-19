@@ -275,11 +275,13 @@ async def cmd_download_group(args: argparse.Namespace) -> int:
         )
 
         if args.json:
-            print(json.dumps(results, indent=2))
+            print(results.model_dump_json(indent=2))
         else:
-            print(f"Downloaded {results.get('successful', 0)} files to {args.destination}")
-            if results.get("failed", 0) > 0:
-                print(f"Failed: {results.get('failed', 0)}")
+            successful = results.counts.get("successful_downloads", 0)
+            failed = results.counts.get("failed_downloads", 0)
+            print(f"Downloaded {successful} files to {args.destination}")
+            if failed > 0:
+                print(f"Failed: {failed}")
     return 0
 
 

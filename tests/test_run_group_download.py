@@ -93,7 +93,7 @@ async def test_run_group_download_async_filters_availability(monkeypatch):
             await dq.close_async()
 
         # Only two entries are available True
-        assert report["total_files"] == 2
-        assert report["successful_downloads"] == 2
-        assert report["failed_downloads"] == 0
-        assert report["success_rate"] == 100.0
+        assert report.counts["total_files"] == 2
+        assert report.counts["successful_downloads"] == 2
+        assert report.counts["failed_downloads"] == 0
+        assert report.details["success_rate"] == 100.0
