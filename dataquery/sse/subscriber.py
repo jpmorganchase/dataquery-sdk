@@ -109,15 +109,15 @@ class NotificationDownloadManager:
     Each SSE event from ``/sse/event/notification`` carries::
 
         { "eventId": "...",
-          "data": { "fileGroupId": "...", "fileDateTime": "..." },
+          "data": { "file-group-id": "...", "file-datetime": "...", "file-action": "..." },
           "timestamp": "..." }
 
     When a notification arrives the manager:
 
-    1. Parses ``fileGroupId`` and ``fileDateTime`` from the event payload.
-    2. Calls ``check_availability_async`` for that specific file.
-    3. If ``is-available`` is true and the file is not already local,
-       downloads it directly.
+    1. Parses ``file-group-id``, ``file-datetime``, and ``file-action`` from the event payload.
+    2. Only proceeds if ``file-action`` equals ``"CREATED-UPDATED"``.
+    3. Checks if the file is not already local.
+    4. Downloads the file.
 
     On startup an initial bulk availability check is performed so that
     files published before the SSE connection was established are not
@@ -146,7 +146,7 @@ class NotificationDownloadManager:
         error_callback: Optional[Callable[[Exception], None]] = None,
         max_retries: int = 3,
         max_concurrent_downloads: int = 5,
-        initial_check: bool = True,
+        initial_check: bool = False,
         reconnect_delay: float = 5.0,
         max_reconnect_delay: float = 60.0,
         file_group_id: Optional[Union[str, List[str]]] = None,
@@ -373,8 +373,10 @@ class NotificationDownloadManager:
         Expected event structure::
 
             { "eventId": "...",
-              "data": { "fileGroupId": "...", "fileDateTime": "..." },
+              "data": { "file-group-id": "...", "file-datetime": "...", "file-action": "CREATED-UPDATED" },
               "timestamp": "..." }
+        
+        Note: Only files with file-action="CREATED-UPDATED" will be downloaded.
         """
         self.stats["notifications_received"] += 1
         logger.info(
@@ -402,7 +404,7 @@ class NotificationDownloadManager:
     # ------------------------------------------------------------------
 
     async def _handle_notification(self, event: SSEEvent) -> None:
-        """Extract fileGroupId/fileDateTime from the event, check availability, download."""
+        """Extract file-group-id/file-datetime/file-action from the event, check availability, download."""
         if not event.data:
             logger.debug("SSE event has no data payload — skipping")
             return
@@ -420,18 +422,35 @@ class NotificationDownloadManager:
         # which is wrong (an empty dict is a real, well-formed value).
         nested = payload.get("data") if isinstance(payload, dict) else None
         data = nested if isinstance(nested, dict) else (payload if isinstance(payload, dict) else {})
-        file_group_id: Optional[str] = data.get("fileGroupId")
-        file_date_time: Optional[str] = data.get("fileDateTime")
+        file_group_id: Optional[str] = data.get("file-group-id")
+        file_date_time: Optional[str] = data.get("file-datetime")
+        file_action: Optional[str] = data.get("file-action")
 
         if not file_group_id or not file_date_time:
             logger.warning(
-                "SSE event missing fileGroupId or fileDateTime: %s",
+                "SSE event missing file-group-id or file-datetime: %s",
                 event.data[:200],
             )
             return
 
         file_key = f"{file_group_id}_{file_date_time}"
         self.stats["checks_triggered"] += 1
+
+        logger.debug(
+            "Processing notification: file-group-id=%s, file-datetime=%s, file-action=%s",
+            file_group_id,
+            file_date_time,
+            file_action or "(none)",
+        )
+
+        # Only download files with CREATED-UPDATED action
+        if file_action != "CREATED-UPDATED":
+            logger.debug(
+                "Skipping file %s — file-action '%s' is not 'CREATED-UPDATED'",
+                file_key,
+                file_action or "(none)",
+            )
+            return
 
         # Already handled?
         if file_key in self._downloaded_files:
@@ -447,21 +466,14 @@ class NotificationDownloadManager:
             return
 
         # Optional user filter
-        if self.file_filter and not self.file_filter({"file-group-id": file_group_id, "file-datetime": file_date_time}):
+        filter_data = {
+            "file-group-id": file_group_id,
+            "file-datetime": file_date_time,
+        }
+        if file_action is not None:
+            filter_data["file-action"] = file_action
+        if self.file_filter and not self.file_filter(filter_data):
             logger.debug("File %s filtered out by user predicate", file_key)
-            return
-
-        # Check availability via the API
-        try:
-            availability = await self.client.check_availability_async(file_group_id, file_date_time)
-        except Exception as exc:
-            logger.error("Availability check failed for %s: %s", file_key, exc)
-            await self._dispatch_error(exc)
-            return
-
-        is_available = getattr(availability, "is_available", False)
-        if not is_available:
-            logger.debug("File %s is not available yet", file_key)
             return
 
         self.stats["files_discovered"] += 1

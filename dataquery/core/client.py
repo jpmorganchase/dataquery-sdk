@@ -1265,7 +1265,7 @@ class DataQueryClient(
         error_callback: Optional[Callable] = None,
         max_retries: int = 3,
         max_concurrent_downloads: int = 5,
-        initial_check: bool = True,
+        initial_check: bool = False,
         reconnect_delay: float = 5.0,
         max_reconnect_delay: float = 60.0,
         file_group_id: Optional[Union[str, List[str]]] = None,
