@@ -2,13 +2,14 @@
 Notification-driven download manager for the DataQuery SDK.
 
 Subscribes to the DataQuery /sse/event/notification SSE endpoint and
-downloads files as notifications arrive. Each SSE event carries the
-``fileGroupId`` and ``fileDateTime`` directly, so the manager calls the
-file-availability endpoint for that specific file and downloads it if
-``is-available`` is true — no need to list all available files.
+downloads files as notifications arrive. Each SSE event carries
+``file-group-id``, ``file-datetime``, and ``file-action`` in the JSON
+payload. Only events with ``file-action == "CREATED-UPDATED"`` trigger a
+download.
 
-On startup an initial bulk availability check is performed so that files
-published before the SSE connection was established are not missed.
+The ``event-id`` field from the JSON payload is persisted to disk so that
+cross-process replay via the ``last-event-id`` query parameter works
+correctly on reconnection.
 """
 
 import asyncio
@@ -108,20 +109,16 @@ class NotificationDownloadManager:
 
     Each SSE event from ``/sse/event/notification`` carries::
 
-        { "eventId": "...",
+        { "event-id": "unique-event-identifier",
           "data": { "file-group-id": "...", "file-datetime": "...", "file-action": "..." },
           "timestamp": "..." }
 
     When a notification arrives the manager:
 
-    1. Parses ``file-group-id``, ``file-datetime``, and ``file-action`` from the event payload.
+    1. Parses ``event-id`` for replay, and ``file-group-id``, ``file-datetime``, ``file-action`` from the event payload.
     2. Only proceeds if ``file-action`` equals ``"CREATED-UPDATED"``.
     3. Checks if the file is not already local.
     4. Downloads the file.
-
-    On startup an initial bulk availability check is performed so that
-    files published before the SSE connection was established are not
-    missed.
 
     Usage::
 
@@ -173,8 +170,8 @@ class NotificationDownloadManager:
                             download error occurs.  May be sync or async.
             max_retries: Maximum download retry attempts per file.
             max_concurrent_downloads: Concurrency limit for parallel downloads.
-            initial_check: If ``True`` (default) perform a file-availability
-                           check immediately on start before SSE events arrive.
+            initial_check: If ``True`` perform a file-availability check
+                           immediately on start before SSE events arrive.
             reconnect_delay: Initial SSE reconnection delay in seconds.
             max_reconnect_delay: Maximum SSE reconnection delay in seconds.
             file_group_id: Optional restriction to one or more file-group-ids.
@@ -372,11 +369,12 @@ class NotificationDownloadManager:
 
         Expected event structure::
 
-            { "eventId": "...",
+            { "event-id": "unique-event-identifier",
               "data": { "file-group-id": "...", "file-datetime": "...", "file-action": "CREATED-UPDATED" },
               "timestamp": "..." }
         
         Note: Only files with file-action="CREATED-UPDATED" will be downloaded.
+        The event-id field is persisted for cross-process event replay.
         """
         self.stats["notifications_received"] += 1
         logger.info(
@@ -422,6 +420,19 @@ class NotificationDownloadManager:
         # which is wrong (an empty dict is a real, well-formed value).
         nested = payload.get("data") if isinstance(payload, dict) else None
         data = nested if isinstance(nested, dict) else (payload if isinstance(payload, dict) else {})
+        
+        # Extract event-id from JSON payload for replay support
+        event_id_raw = payload.get("event-id") if isinstance(payload, dict) else None
+        event_id: Optional[str] = str(event_id_raw) if event_id_raw is not None else None
+        if event_id:
+            # Update the SSE client's last event ID so it's sent on reconnection
+            if self._sse_client is not None:
+                self._sse_client._last_event_id = event_id
+            # Persist the event ID for cross-process replay
+            if self._event_id_store is not None:
+                asyncio.create_task(self._event_id_store.save(event_id))
+            logger.debug("Captured event-id: %s", event_id)
+        
         file_group_id: Optional[str] = data.get("file-group-id")
         file_date_time: Optional[str] = data.get("file-datetime")
         file_action: Optional[str] = data.get("file-action")

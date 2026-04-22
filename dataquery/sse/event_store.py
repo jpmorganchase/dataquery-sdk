@@ -168,9 +168,11 @@ class SSEEventIdStore:
             with open(self.file_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             event_id = data.get("last_event_id")
-            if isinstance(event_id, str) and event_id:
-                self._last_saved_id = event_id
-                return event_id
+            if event_id is not None:
+                # Convert to string (some APIs send numeric event IDs)
+                event_id_str = str(event_id)
+                self._last_saved_id = event_id_str
+                return event_id_str
             return None
         except (OSError, json.JSONDecodeError, ValueError) as exc:
             logger.warning("Failed to load SSE event id from %s: %s", self.file_path, exc)

@@ -89,8 +89,8 @@ class SSEClient:
                     id. When provided, the stored id seeds ``_last_event_id``
                     on construction (so the very first connection includes it
                     as ``last-event-id`` query param + ``Last-Event-ID`` header
-                    for cross-process replay) and every received event id is
-                    written back to the store.
+                    for cross-process replay). Event IDs are extracted from the
+                    JSON payload by the subscriber and written to the store.
             heartbeat_timeout: When > 0, force-reconnect if no bytes (events
                     OR comment heartbeats) are received from the server within
                     this many seconds. Protects against silent half-open TCP
@@ -325,9 +325,6 @@ class SSEClient:
                         id=event_id,
                         retry=retry_ms,
                     )
-                    if event.id is not None:
-                        self._last_event_id = event.id
-                        self._persist_event_id(event.id)
                     await self._dispatch_event(event)
                 # Reset buffers for the next event.
                 event_type = "message"
@@ -351,31 +348,11 @@ class SSEClient:
                 event_type = field_value
             elif field_name == "data":
                 data_parts.append(field_value)
-            elif field_name == "id":
-                event_id = field_value
             elif field_name == "retry":
                 try:
                     retry_ms = int(field_value)
                 except ValueError:
                     pass
-
-    def _persist_event_id(self, event_id: str) -> None:
-        """Fire-and-forget save of the latest event id to the persistent store.
-
-        We don't ``await`` the save inside the parse loop — a slow disk would
-        block event dispatch and grow the read buffer. The save task is tracked
-        so it can be awaited on stop().
-        """
-        if self.event_id_store is None:
-            return
-        try:
-            task = asyncio.create_task(self.event_id_store.save(event_id))
-        except RuntimeError:
-            # No running loop (shouldn't happen inside _parse_sse_stream, but
-            # be defensive): fall back to scheduling on the current loop.
-            return
-        self._save_tasks.add(task)
-        task.add_done_callback(self._save_tasks.discard)
 
     async def _dispatch_event(self, event: SSEEvent) -> None:
         if not self.on_event:
