@@ -66,9 +66,9 @@ def _event(
     group_id: Optional[str] = "G",
 ) -> SSEEvent:
     """Create an SSE event using the new schema format.
-    
+
     New schema format::
-    
+
         id:714
         event:file-updated
         data: {
@@ -128,7 +128,7 @@ async def test_notification_with_file_updated_event_type(tmp_path):
     mgr = NotificationDownloadManager(client=client, group_id="G", destination_dir=str(tmp_path), initial_check=False)
     mgr._running = True
     await mgr._on_sse_event(_event(event_type="file-updated"))
-    
+
     assert mgr.stats["files_discovered"] == 1
     client.download_file_async.assert_awaited_once()
 

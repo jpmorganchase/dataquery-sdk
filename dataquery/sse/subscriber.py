@@ -380,7 +380,7 @@ class NotificationDownloadManager:
               "group-id": "JPMAQS",
               "timestamp": "2026-04-30T11:37:30.315105200Z"
             }
-        
+
         Note: Only events with event type ``file-updated`` will trigger downloads.
         The SSE ``id:`` field is persisted for cross-process event replay.
         """
@@ -422,7 +422,7 @@ class NotificationDownloadManager:
 
     async def _handle_notification(self, event: SSEEvent) -> None:
         """Extract file-group-id/file-datetime from the event and download.
-        
+
         Expected SSE format::
 
             id:714
@@ -449,24 +449,20 @@ class NotificationDownloadManager:
             return
 
         # Use SSE standard id: field for event replay
+        # Note: The SSEClient already handles updating _last_event_id and
+        # persisting to the event_id_store when parsing the stream, so we
+        # just log here for debugging.
         event_id: Optional[str] = str(event.id) if event.id is not None else None
-        
         if event_id:
-            # Update the SSE client's last event ID so it's sent on reconnection
-            if self._sse_client is not None:
-                self._sse_client._last_event_id = event_id
-            # Persist the event ID for cross-process replay
-            if self._event_id_store is not None:
-                asyncio.create_task(self._event_id_store.save(event_id))
-            logger.debug("Captured event-id: %s", event_id)
-        
+            logger.debug("Processing event with id: %s", event_id)
+
         # New schema: fields are at top level in the payload
         data: Dict[str, Any] = payload if isinstance(payload, dict) else {}
-        
+
         file_group_id: Optional[str] = data.get("file-group-id")
         file_date_time: Optional[str] = data.get("file-datetime")
         group_id: Optional[str] = data.get("group-id")
-        
+
         # Event type from SSE event: field (e.g., "file-updated")
         event_type = event.event
 

@@ -16,13 +16,13 @@ Press Ctrl+C to stop.
 
 import asyncio
 import sys
-
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # noqa: E402
 
 from dataquery import DataQuery  # noqa: E402
 from dataquery.types.exceptions import AuthenticationError  # noqa: E402
+
 
 def _parse_file_group_ids(raw: str):
     """Turn ``"FG1, FG2  FG3"`` into ``["FG1", "FG2", "FG3"]`` (or ``None``)."""

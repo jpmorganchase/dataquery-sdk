@@ -364,6 +364,12 @@ class SSEClient:
                 event_type = field_value
             elif field_name == "data":
                 data_parts.append(field_value)
+            elif field_name == "id":
+                event_id = field_value
+                # Update last_event_id immediately so reconnections use it
+                self._last_event_id = field_value
+                # Persist to store for cross-process replay
+                self._persist_event_id(field_value)
             elif field_name == "retry":
                 try:
                     retry_ms = int(field_value)
@@ -391,3 +397,22 @@ class SSEClient:
                 self.on_error(exc)
         except Exception as cb_exc:
             logger.error("Error in SSE on_error callback: %s", cb_exc)
+
+    def _persist_event_id(self, event_id: str) -> None:
+        """Fire-and-forget save of the event id to the persistent store.
+
+        The save task is tracked in ``_save_tasks`` so ``stop()`` can drain
+        any pending writes before exiting.
+        """
+        if self.event_id_store is None:
+            return
+
+        async def _save() -> None:
+            try:
+                await self.event_id_store.save(event_id)
+            except Exception as exc:
+                logger.warning("Failed to persist SSE event id: %s", exc)
+
+        task = asyncio.create_task(_save())
+        self._save_tasks.add(task)
+        task.add_done_callback(self._save_tasks.discard)
