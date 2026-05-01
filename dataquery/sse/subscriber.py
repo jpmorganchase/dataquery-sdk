@@ -1,15 +1,13 @@
 """
 Notification-driven download manager for the DataQuery SDK.
 
-Subscribes to the DataQuery /sse/event/notification SSE endpoint and
-downloads files as notifications arrive. Each SSE event carries
-``file-group-id``, ``file-datetime``, and ``file-action`` in the JSON
-payload. Only events with ``file-action == "CREATED-UPDATED"`` trigger a
-download.
+Subscribes to the DataQuery /events/notification SSE endpoint and
+downloads files as notifications arrive. Each SSE event uses the standard
+SSE format with the event type in the ``event:`` field (e.g., ``file-updated``)
+and the file details in the JSON ``data:`` payload.
 
-The ``event-id`` field from the JSON payload is persisted to disk so that
-cross-process replay via the ``last-event-id`` query parameter works
-correctly on reconnection.
+The SSE ``id:`` field is persisted to disk so that cross-process replay via
+the ``last-event-id`` query parameter works correctly on reconnection.
 """
 
 import asyncio
@@ -107,16 +105,21 @@ class NotificationDownloadManager:
     """
     Downloads files in response to SSE notifications from the DataQuery API.
 
-    Each SSE event from ``/sse/event/notification`` carries::
+    Each SSE event from ``/events/notification`` uses the standard SSE format::
 
-        { "event-id": "unique-event-identifier",
-          "data": { "file-group-id": "...", "file-datetime": "...", "file-action": "..." },
-          "timestamp": "..." }
+        id:714
+        event:file-updated
+        data: {
+          "file-group-id": "JPMAQS_ECONOMIC_SURPRISES_EXPLORER",
+          "file-datetime": "20260414",
+          "group-id": "JPMAQS",
+          "timestamp": "2026-04-30T11:37:30.315105200Z"
+        }
 
     When a notification arrives the manager:
 
-    1. Parses ``event-id`` for replay, and ``file-group-id``, ``file-datetime``, ``file-action`` from the event payload.
-    2. Only proceeds if ``file-action`` equals ``"CREATED-UPDATED"``.
+    1. Parses the SSE ``id:`` field for replay, and ``file-group-id``, ``file-datetime`` from the JSON payload.
+    2. Only proceeds if the event type (``event:``) is ``file-updated``.
     3. Checks if the file is not already local.
     4. Downloads the file.
 
@@ -367,14 +370,19 @@ class NotificationDownloadManager:
     async def _on_sse_event(self, event: SSEEvent) -> None:
         """Parse the SSE event payload and download the referenced file.
 
-        Expected event structure::
+        Expected SSE format::
 
-            { "event-id": "unique-event-identifier",
-              "data": { "file-group-id": "...", "file-datetime": "...", "file-action": "CREATED-UPDATED" },
-              "timestamp": "..." }
+            id:714
+            event:file-updated
+            data: {
+              "file-group-id": "JPMAQS_ECONOMIC_SURPRISES_EXPLORER",
+              "file-datetime": "20260414",
+              "group-id": "JPMAQS",
+              "timestamp": "2026-04-30T11:37:30.315105200Z"
+            }
         
-        Note: Only files with file-action="CREATED-UPDATED" will be downloaded.
-        The event-id field is persisted for cross-process event replay.
+        Note: Only events with event type ``file-updated`` will trigger downloads.
+        The SSE ``id:`` field is persisted for cross-process event replay.
         """
         self.stats["notifications_received"] += 1
         logger.info(
@@ -394,7 +402,18 @@ class NotificationDownloadManager:
 
     async def _on_sse_error(self, exc: Exception) -> None:
         """Called by SSEClient on connection errors."""
-        logger.warning("SSE connection error: %s", exc)
+        # TransferEncodingError and similar are expected when server closes
+        # the connection (idle timeout, scheduled recycle). Log at debug.
+        exc_name = type(exc).__name__
+        is_expected_disconnect = (
+            "TransferEncodingError" in exc_name or
+            "ServerDisconnectedError" in exc_name or
+            "ClientPayloadError" in str(type(exc).__mro__)
+        )
+        if is_expected_disconnect:
+            logger.debug("SSE connection closed: %s", exc)
+        else:
+            logger.warning("SSE connection error: %s", exc)
         await self._dispatch_error(exc)
 
     # ------------------------------------------------------------------
@@ -402,7 +421,22 @@ class NotificationDownloadManager:
     # ------------------------------------------------------------------
 
     async def _handle_notification(self, event: SSEEvent) -> None:
-        """Extract file-group-id/file-datetime/file-action from the event, check availability, download."""
+        """Extract file-group-id/file-datetime from the event and download.
+        
+        Expected SSE format::
+
+            id:714
+            event:file-updated
+            data: {
+              "file-group-id": "JPMAQS_ECONOMIC_SURPRISES_EXPLORER",
+              "file-datetime": "20260414",
+              "group-id": "JPMAQS",
+              "timestamp": "2026-04-30T11:37:30.315105200Z"
+            }
+
+        Note: Only events with event type ``file-updated`` will trigger downloads.
+        The SSE ``id:`` field is persisted for cross-process event replay.
+        """
         if not event.data:
             logger.debug("SSE event has no data payload — skipping")
             return
@@ -414,16 +448,9 @@ class NotificationDownloadManager:
             logger.warning("Could not parse SSE event data as JSON: %s", exc)
             return
 
-        # The file info lives under the "data" key of the payload, but some
-        # event variants nest it directly. Fall back only when "data" is
-        # missing or not a dict — `or` would also fall back on `{}`/`None`,
-        # which is wrong (an empty dict is a real, well-formed value).
-        nested = payload.get("data") if isinstance(payload, dict) else None
-        data = nested if isinstance(nested, dict) else (payload if isinstance(payload, dict) else {})
+        # Use SSE standard id: field for event replay
+        event_id: Optional[str] = str(event.id) if event.id is not None else None
         
-        # Extract event-id from JSON payload for replay support
-        event_id_raw = payload.get("event-id") if isinstance(payload, dict) else None
-        event_id: Optional[str] = str(event_id_raw) if event_id_raw is not None else None
         if event_id:
             # Update the SSE client's last event ID so it's sent on reconnection
             if self._sse_client is not None:
@@ -433,9 +460,15 @@ class NotificationDownloadManager:
                 asyncio.create_task(self._event_id_store.save(event_id))
             logger.debug("Captured event-id: %s", event_id)
         
+        # New schema: fields are at top level in the payload
+        data: Dict[str, Any] = payload if isinstance(payload, dict) else {}
+        
         file_group_id: Optional[str] = data.get("file-group-id")
         file_date_time: Optional[str] = data.get("file-datetime")
-        file_action: Optional[str] = data.get("file-action")
+        group_id: Optional[str] = data.get("group-id")
+        
+        # Event type from SSE event: field (e.g., "file-updated")
+        event_type = event.event
 
         if not file_group_id or not file_date_time:
             logger.warning(
@@ -448,18 +481,19 @@ class NotificationDownloadManager:
         self.stats["checks_triggered"] += 1
 
         logger.debug(
-            "Processing notification: file-group-id=%s, file-datetime=%s, file-action=%s",
+            "Processing notification: file-group-id=%s, file-datetime=%s, group-id=%s, event-type=%s",
             file_group_id,
             file_date_time,
-            file_action or "(none)",
+            group_id or "(none)",
+            event_type,
         )
 
-        # Only download files with CREATED-UPDATED action
-        if file_action != "CREATED-UPDATED":
+        # Only download on "file-updated" event type
+        if event_type != "file-updated":
             logger.debug(
-                "Skipping file %s — file-action '%s' is not 'CREATED-UPDATED'",
+                "Skipping file %s — event-type '%s' is not 'file-updated'",
                 file_key,
-                file_action or "(none)",
+                event_type,
             )
             return
 
@@ -481,8 +515,8 @@ class NotificationDownloadManager:
             "file-group-id": file_group_id,
             "file-datetime": file_date_time,
         }
-        if file_action is not None:
-            filter_data["file-action"] = file_action
+        if group_id is not None:
+            filter_data["group-id"] = group_id
         if self.file_filter and not self.file_filter(filter_data):
             logger.debug("File %s filtered out by user predicate", file_key)
             return

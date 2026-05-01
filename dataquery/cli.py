@@ -199,7 +199,7 @@ async def cmd_download(args: argparse.Namespace) -> int:
 
     async with DataQuery(args.env_file) as dq:
         if args.watch:
-            # SSE-driven: subscribe to /sse/event/notification with group-id
+            # SSE-driven: subscribe to /events/notification with group-id
             # (and optionally file-group-id) as query parameters so the server
             # filters events. An initial availability check covers anything
             # published before the subscription started (only used on the very

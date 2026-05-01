@@ -32,4 +32,4 @@ DOWNLOAD_API_PATH = API_GROUP_FILE_DOWNLOAD
 
 # SSE (appended to the files-API base URL, with a leading slash) -------------
 
-SSE_NOTIFICATION_PATH = "/sse/event/notification"
+SSE_NOTIFICATION_PATH = "/events/notification"

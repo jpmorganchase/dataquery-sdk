@@ -81,7 +81,7 @@ def test_build_notification_url_strips_trailing_slash():
     cfg = _make_config()
     client = SSEClient(config=cfg, auth_manager=_make_auth_manager())
     url = client._build_notification_url()
-    assert url.endswith("/sse/event/notification")
+    assert url.endswith("/events/notification")
     assert "//sse" not in url
 
 

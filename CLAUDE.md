@@ -57,7 +57,7 @@ When `num_parts=1` (the default) a single streaming GET is used. When `num_parts
 
 ### SSE notification-driven download
 
-`sse_client.py` (`SSEClient`) maintains a long-lived connection to the API's `/sse/event/notification` stream. `sse_subscriber.py` (`NotificationDownloadManager`) subscribes via that client and triggers per-file downloads when events arrive. The polling-based `AutoDownloadManager` was removed in favor of this push model — `dq.auto_download_async(group_id, ...)` is the only watch API.
+`sse_client.py` (`SSEClient`) maintains a long-lived connection to the API's `/events/notification` stream. `sse_subscriber.py` (`NotificationDownloadManager`) subscribes via that client and triggers per-file downloads when events arrive. The polling-based `AutoDownloadManager` was removed in favor of this push model — `dq.auto_download_async(group_id, ...)` is the only watch API.
 
 ### Models
 

@@ -203,12 +203,28 @@ class SSEClient:
             except asyncio.CancelledError:
                 break
             except Exception as exc:
-                logger.warning(
-                    "SSE connection error after %.1fs: %s; reconnecting in %.1fs",
-                    self._last_connection_duration,
-                    exc,
-                    delay,
+                # TransferEncodingError and similar are expected when server closes
+                # the connection (idle timeout, scheduled recycle). Log at debug.
+                exc_name = type(exc).__name__
+                is_expected_disconnect = (
+                    "TransferEncodingError" in exc_name or
+                    "ServerDisconnectedError" in exc_name or
+                    "ClientPayloadError" in str(type(exc).__mro__)
                 )
+                if is_expected_disconnect:
+                    logger.debug(
+                        "SSE connection closed after %.1fs: %s; reconnecting in %.1fs",
+                        self._last_connection_duration,
+                        exc,
+                        delay,
+                    )
+                else:
+                    logger.warning(
+                        "SSE connection error after %.1fs: %s; reconnecting in %.1fs",
+                        self._last_connection_duration,
+                        exc,
+                        delay,
+                    )
                 await self._dispatch_error(exc)
 
             # Wait for `delay` seconds or until stop() is called.
