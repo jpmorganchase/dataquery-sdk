@@ -456,18 +456,19 @@ class Link(BaseModel):
     )  # Allow extra fields from API and populate by both alias and name
 
 
-class GroupList(BaseModel):
-    """Response model for listing groups with pagination support."""
+class Paginated(BaseModel):
+    """Mixin for any response carrying a ``links`` array.
 
-    groups: List[Group] = Field(..., description="List of groups")
+    Subclasses inherit ``get_next_link()`` / ``has_next_page()`` so callers
+    don't have to scan ``links`` manually.
+    """
+
     links: Optional[List[Link]] = Field(None, description="Pagination links")
 
-    model_config = ConfigDict(
-        extra="allow", populate_by_name=True
-    )  # Allow extra fields from API and populate by both alias and name
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
 
     def get_next_link(self) -> Optional[str]:
-        """Get the next page link URL."""
+        """Return the next-page URL, or ``None`` if this is the last page."""
         if not self.links:
             return None
         for link in self.links:
@@ -476,8 +477,14 @@ class GroupList(BaseModel):
         return None
 
     def has_next_page(self) -> bool:
-        """Check if there's a next page available."""
+        """``True`` if a next-page link is present."""
         return self.get_next_link() is not None
+
+
+class GroupList(Paginated):
+    """Response model for listing groups with pagination support."""
+
+    groups: List[Group] = Field(..., description="List of groups")
 
 
 class FileInfo(BaseModel):
@@ -864,48 +871,36 @@ class InstrumentResponse(BaseModel):
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
 
-class InstrumentsResponse(BaseModel):
+class InstrumentsResponse(Paginated):
     """Response model for listing instruments."""
 
-    links: Optional[List[Link]] = Field(None, description="Pagination links")
     items: int = Field(..., description="Total number of items")
     page_size: int = Field(..., alias="page-size", description="Number of items per page")
     instruments: List[Instrument] = Field(..., description="List of instruments")
 
-    model_config = ConfigDict(extra="allow", populate_by_name=True)
 
-
-class AttributesResponse(BaseModel):
+class AttributesResponse(Paginated):
     """Response model for listing attributes."""
 
-    links: Optional[List[Link]] = Field(None, description="Pagination links")
     items: int = Field(..., description="Total number of items")
     page_size: int = Field(..., alias="page-size", description="Number of items per page")
     instruments: List[InstrumentWithAttributes] = Field(..., description="List of instruments with attributes")
 
-    model_config = ConfigDict(extra="allow", populate_by_name=True)
 
-
-class FiltersResponse(BaseModel):
+class FiltersResponse(Paginated):
     """Response model for listing filters."""
 
-    links: Optional[List[Link]] = Field(None, description="Pagination links")
     items: int = Field(..., description="Total number of items")
     page_size: int = Field(..., alias="page-size", description="Number of items per page")
     filters: List[Filter] = Field(..., description="List of filters")
 
-    model_config = ConfigDict(extra="allow", populate_by_name=True)
 
-
-class TimeSeriesResponse(BaseModel):
+class TimeSeriesResponse(Paginated):
     """Response model for time series data."""
 
-    links: Optional[List[Link]] = Field(None, description="Pagination links")
     items: int = Field(..., description="Total number of items")
     page_size: int = Field(..., alias="page-size", description="Number of items per page")
     instruments: List[InstrumentWithAttributes] = Field(..., description="List of instruments with time series data")
-
-    model_config = ConfigDict(extra="allow", populate_by_name=True)
 
 
 class GridDataSeries(BaseModel):

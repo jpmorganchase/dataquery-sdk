@@ -183,7 +183,7 @@ async def test_wrapper_methods_delegate_to_client():
         async def list_groups_async(self, limit=None):
             return [Group(provider="Y")]
 
-        async def search_groups_async(self, keywords, limit=None, offset=None):
+        async def search_groups_async(self, keywords, limit=None, offset=None, *, page=None):
             return [Group(provider="Z")]
 
         async def list_files_async(self, group_id, file_group_id=None):

@@ -19,16 +19,29 @@ Mixins fall into two groups:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    AsyncIterator,
+    Awaitable,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    TypeVar,
+    Union,
+)
 
 import aiohttp
 
 from .. import constants as C
+from ..types.exceptions import PaginationError
 from ..types.models import (
     AttributesResponse,
     FiltersResponse,
     GridDataResponse,
     InstrumentsResponse,
+    Paginated,
     TimeSeriesResponse,
 )
 from ..utils import (
@@ -56,8 +69,15 @@ __all__ = [
     "GridMixin",
     "InstrumentsMixin",
     "MetadataMixin",
+    "PAGINATION_DEFAULT_MAX_PAGES",
+    "PaginationMixin",
     "TimeSeriesMixin",
 ]
+
+
+PAGINATION_DEFAULT_MAX_PAGES = 1000
+
+P = TypeVar("P", bound=Paginated)
 
 
 # ---------------------------------------------------------------------------
@@ -88,11 +108,102 @@ class _RequestProto:
 
 
 # ---------------------------------------------------------------------------
+# Shared pagination
+# ---------------------------------------------------------------------------
+
+
+class PaginationMixin(_RequestProto):
+    """Shared async-iterator pagination over any ``Paginated`` response.
+
+    The DataQuery v2 API returns ``links[].next`` cursor URLs on every paged
+    endpoint. ``iter_pages`` walks them until exhausted, with the same loop
+    detection + page cap that ``list_all_groups_async`` already uses, so every
+    paginated method gets the same hardening for free.
+    """
+
+    async def iter_pages(
+        self,
+        fetch_first: Callable[[], Awaitable[P]],
+        *,
+        max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
+        raise_on_cap: bool = True,
+    ) -> AsyncIterator[P]:
+        """Yield each page of a paginated endpoint, following ``links[].next``.
+
+        Args:
+            fetch_first: Zero-arg coroutine returning the first page. Subsequent
+                pages are fetched by GET-ing each ``next`` URL directly.
+            max_pages: Hard cap on pages walked. Guards against pathological
+                servers that loop ``next`` indefinitely.
+            raise_on_cap: When ``True`` (default), raise :class:`PaginationError`
+                if ``max_pages`` is reached. Set ``False`` to silently truncate.
+
+        Yields:
+            Each page response in order.
+
+        Raises:
+            PaginationError: If ``raise_on_cap`` is ``True`` and ``max_pages``
+                is reached, or if the server returns a previously-seen ``next``
+                URL (loop detected).
+        """
+        page = await fetch_first()
+        page_count = 1
+        items_so_far = _page_item_count(page)
+        yield page
+
+        visited: set = set()
+        next_url = page.get_next_link()
+
+        while next_url:
+            if next_url in visited:
+                raise PaginationError(
+                    "Pagination loop detected — server returned a previously seen next link",
+                    pages_fetched=page_count,
+                    items_collected=items_so_far,
+                    url=next_url,
+                )
+            visited.add(next_url)
+
+            if page_count >= max_pages:
+                if raise_on_cap:
+                    raise PaginationError(
+                        f"Pagination cap hit after {max_pages} pages",
+                        pages_fetched=page_count,
+                        items_collected=items_so_far,
+                        cap=max_pages,
+                    )
+                return
+
+            absolute = next_url
+            if not absolute.startswith(("http://", "https://")):
+                absolute = self._build_api_url(absolute.lstrip("/"))
+
+            async with await self._enter_request_cm("GET", absolute) as response:
+                await self._handle_response(response)
+                payload = await response.json()
+                page = type(page)(**payload)
+
+            page_count += 1
+            items_so_far += _page_item_count(page)
+            yield page
+            next_url = page.get_next_link()
+
+
+def _page_item_count(page: Paginated) -> int:
+    """Best-effort count of records in a page across all known response shapes."""
+    for attr in ("groups", "instruments", "filters"):
+        value = getattr(page, attr, None)
+        if isinstance(value, list):
+            return len(value)
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # Read-only query mixins
 # ---------------------------------------------------------------------------
 
 
-class InstrumentsMixin(_RequestProto):
+class InstrumentsMixin(PaginationMixin):
     """Instrument discovery and keyword search."""
 
     async def list_instruments_async(
@@ -114,6 +225,21 @@ class InstrumentsMixin(_RequestProto):
             data = await response.json()
             return InstrumentsResponse(**data)
 
+    async def iter_instruments_async(
+        self,
+        group_id: str,
+        instrument_id: Optional[str] = None,
+        *,
+        max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
+    ) -> AsyncIterator[Any]:
+        """Yield every instrument across all pages, lazily."""
+        async def _first() -> InstrumentsResponse:
+            return await self.list_instruments_async(group_id, instrument_id)
+
+        async for page in self.iter_pages(_first, max_pages=max_pages):
+            for inst in page.instruments:
+                yield inst
+
     async def search_instruments_async(
         self,
         group_id: str,
@@ -131,8 +257,23 @@ class InstrumentsMixin(_RequestProto):
             data = await response.json()
             return InstrumentsResponse(**data)
 
+    async def iter_search_instruments_async(
+        self,
+        group_id: str,
+        keywords: str,
+        *,
+        max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
+    ) -> AsyncIterator[Any]:
+        """Yield every instrument matching ``keywords`` across all pages."""
+        async def _first() -> InstrumentsResponse:
+            return await self.search_instruments_async(group_id, keywords)
 
-class MetadataMixin(_RequestProto):
+        async for page in self.iter_pages(_first, max_pages=max_pages):
+            for inst in page.instruments:
+                yield inst
+
+
+class MetadataMixin(PaginationMixin):
     """Group filters and attributes (metadata describing a dataset)."""
 
     async def get_group_filters_async(self, group_id: str, page: Optional[str] = None) -> "FiltersResponse":
@@ -146,6 +287,20 @@ class MetadataMixin(_RequestProto):
             await self._handle_response(response)
             payload = await response.json()
             return FiltersResponse(**payload)
+
+    async def iter_group_filters_async(
+        self,
+        group_id: str,
+        *,
+        max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
+    ) -> AsyncIterator[Any]:
+        """Yield every filter dimension across all pages."""
+        async def _first() -> FiltersResponse:
+            return await self.get_group_filters_async(group_id)
+
+        async for page in self.iter_pages(_first, max_pages=max_pages):
+            for f in page.filters:
+                yield f
 
     async def get_group_attributes_async(
         self,
@@ -166,8 +321,23 @@ class MetadataMixin(_RequestProto):
             payload = await response.json()
             return AttributesResponse(**payload)
 
+    async def iter_group_attributes_async(
+        self,
+        group_id: str,
+        instrument_id: Optional[str] = None,
+        *,
+        max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
+    ) -> AsyncIterator[Any]:
+        """Yield every instrument-with-attributes across all pages."""
+        async def _first() -> AttributesResponse:
+            return await self.get_group_attributes_async(group_id, instrument_id)
 
-class TimeSeriesMixin(_RequestProto):
+        async for page in self.iter_pages(_first, max_pages=max_pages):
+            for inst in page.instruments:
+                yield inst
+
+
+class TimeSeriesMixin(PaginationMixin):
     """Time-series retrieval by instrument, expression, or group."""
 
     async def get_instrument_time_series_async(
@@ -307,6 +477,108 @@ class TimeSeriesMixin(_RequestProto):
             await self._handle_response(response)
             payload = await response.json()
             return TimeSeriesResponse(**payload)
+
+    async def iter_instrument_time_series_async(
+        self,
+        instruments: List[str],
+        attributes: List[str],
+        *,
+        data: str = "ALL",
+        format: str = "JSON",
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        calendar: str = "CAL_USBANK",
+        frequency: str = "FREQ_DAY",
+        conversion: str = "CONV_LASTBUS_ABS",
+        nan_treatment: str = "NA_NOTHING",
+        max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
+    ) -> AsyncIterator[Any]:
+        """Yield every instrument-with-time-series across all pages."""
+        async def _first() -> TimeSeriesResponse:
+            return await self.get_instrument_time_series_async(
+                instruments=instruments,
+                attributes=attributes,
+                data=data,
+                format=format,
+                start_date=start_date,
+                end_date=end_date,
+                calendar=calendar,
+                frequency=frequency,
+                conversion=conversion,
+                nan_treatment=nan_treatment,
+            )
+
+        async for page in self.iter_pages(_first, max_pages=max_pages):
+            for inst in page.instruments:
+                yield inst
+
+    async def iter_expressions_time_series_async(
+        self,
+        expressions: List[str],
+        *,
+        format: str = "JSON",
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        calendar: str = "CAL_USBANK",
+        frequency: str = "FREQ_DAY",
+        conversion: str = "CONV_LASTBUS_ABS",
+        nan_treatment: str = "NA_NOTHING",
+        data: str = "ALL",
+        max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
+    ) -> AsyncIterator[Any]:
+        """Yield every instrument-with-time-series across all pages of an expression query."""
+        async def _first() -> TimeSeriesResponse:
+            return await self.get_expressions_time_series_async(
+                expressions=expressions,
+                format=format,
+                start_date=start_date,
+                end_date=end_date,
+                calendar=calendar,
+                frequency=frequency,
+                conversion=conversion,
+                nan_treatment=nan_treatment,
+                data=data,
+            )
+
+        async for page in self.iter_pages(_first, max_pages=max_pages):
+            for inst in page.instruments:
+                yield inst
+
+    async def iter_group_time_series_async(
+        self,
+        group_id: str,
+        attributes: List[str],
+        *,
+        filter: Optional[str] = None,
+        data: str = "ALL",
+        format: str = "JSON",
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        calendar: str = "CAL_USBANK",
+        frequency: str = "FREQ_DAY",
+        conversion: str = "CONV_LASTBUS_ABS",
+        nan_treatment: str = "NA_NOTHING",
+        max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
+    ) -> AsyncIterator[Any]:
+        """Yield every instrument-with-time-series across all pages of a group query."""
+        async def _first() -> TimeSeriesResponse:
+            return await self.get_group_time_series_async(
+                group_id=group_id,
+                attributes=attributes,
+                filter=filter,
+                data=data,
+                format=format,
+                start_date=start_date,
+                end_date=end_date,
+                calendar=calendar,
+                frequency=frequency,
+                conversion=conversion,
+                nan_treatment=nan_treatment,
+            )
+
+        async for page in self.iter_pages(_first, max_pages=max_pages):
+            for inst in page.instruments:
+                yield inst
 
 
 class GridMixin(_RequestProto):

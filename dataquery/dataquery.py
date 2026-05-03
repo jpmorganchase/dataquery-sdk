@@ -317,22 +317,61 @@ class DataQuery:
             return await client.list_groups_async(limit=limit)
 
     async def search_groups_async(
-        self, keywords: str, limit: Optional[int] = 100, offset: Optional[int] = None
+        self,
+        keywords: str,
+        limit: Optional[int] = 100,
+        offset: Optional[int] = None,
+        *,
+        page: Optional[str] = None,
     ) -> List[Group]:
         """
-        Search groups by keywords.
+        Search groups by keywords (single page).
 
         Args:
             keywords: Search keywords
-            limit: Maximum number of results to return (default: 100)
-            offset: Number of results to skip
+            limit: Maximum number of results per page (default: 100)
+            offset: Number of results to skip — kept for backwards compatibility.
+                Prefer ``page`` (cursor) or :meth:`search_all_groups_async`
+                / :meth:`iter_search_groups_async` for full-result iteration.
+            page: Optional ``next``-link cursor returned by a prior page's
+                ``links[].next``.
 
         Returns:
-            List of matching groups
+            List of matching groups for the requested page.
         """
         await self.connect_async()
         client = self._ensure_client()
-        return await client.search_groups_async(keywords, limit, offset)
+        return await client.search_groups_async(keywords, limit, offset, page=page)
+
+    async def search_all_groups_async(
+        self,
+        keywords: str,
+        *,
+        limit: Optional[int] = None,
+        max_pages: int = 1000,
+        raise_on_cap: bool = True,
+    ) -> List[Group]:
+        """Walk every page of a keyword search via cursor pagination."""
+        await self.connect_async()
+        client = self._ensure_client()
+        return await client.search_all_groups_async(
+            keywords, limit=limit, max_pages=max_pages, raise_on_cap=raise_on_cap
+        )
+
+    async def iter_search_groups_async(
+        self,
+        keywords: str,
+        *,
+        limit: Optional[int] = None,
+        max_pages: int = 1000,
+    ):
+        """Yield every :class:`Group` matching ``keywords`` across all pages."""
+        await self.connect_async()
+        client = self._ensure_client()
+        async for g in client.iter_search_groups_async(
+            keywords, limit=limit, max_pages=max_pages
+        ):
+            yield g
 
     async def list_files_async(self, group_id: str, file_group_id: Optional[str] = None) -> List[FileInfo]:
         """
@@ -1753,9 +1792,31 @@ class DataQuery:
         """Synchronous wrapper for list_groups."""
         return self._run_sync(self.list_groups_async(limit))
 
-    def search_groups(self, keywords: str, limit: Optional[int] = 100, offset: Optional[int] = None) -> List[Group]:
-        """Synchronous wrapper for search_groups."""
-        return self._run_sync(self.search_groups_async(keywords, limit, offset))
+    def search_groups(
+        self,
+        keywords: str,
+        limit: Optional[int] = 100,
+        offset: Optional[int] = None,
+        *,
+        page: Optional[str] = None,
+    ) -> List[Group]:
+        """Synchronous wrapper for search_groups (single page)."""
+        return self._run_sync(self.search_groups_async(keywords, limit, offset, page=page))
+
+    def search_all_groups(
+        self,
+        keywords: str,
+        *,
+        limit: Optional[int] = None,
+        max_pages: int = 1000,
+        raise_on_cap: bool = True,
+    ) -> List[Group]:
+        """Synchronous wrapper for search_all_groups_async (cursor pagination)."""
+        return self._run_sync(
+            self.search_all_groups_async(
+                keywords, limit=limit, max_pages=max_pages, raise_on_cap=raise_on_cap
+            )
+        )
 
     def list_files(self, group_id: str, file_group_id: Optional[str] = None) -> List[FileInfo]:
         """Synchronous wrapper for list_files."""

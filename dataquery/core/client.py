@@ -8,7 +8,7 @@ import time
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Dict, List, Optional, Tuple, Union
 
 if TYPE_CHECKING:
     from ..sse.subscriber import NotificationDownloadManager
@@ -63,6 +63,7 @@ from ..utils import (
     validate_instruments_list,
 )
 from ._mixins import (
+    PAGINATION_DEFAULT_MAX_PAGES,
     DataFrameMixin,
     GridMixin,
     InstrumentsMixin,
@@ -563,9 +564,21 @@ class DataQueryClient(
             self.logger.error("Failed to list groups", error=str(e))
             raise
 
-    async def list_all_groups_async(self) -> List[Group]:
+    async def list_all_groups_async(
+        self,
+        *,
+        max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
+        raise_on_cap: bool = True,
+    ) -> List[Group]:
         """
         List all available data groups using pagination.
+
+        Args:
+            max_pages: Hard cap on pages walked (defends against pathological
+                servers that loop the ``next`` link or paginate without bound).
+            raise_on_cap: If ``True`` (default), raise :class:`PaginationError`
+                when ``max_pages`` is reached. Set ``False`` to silently
+                truncate.
 
         Returns:
             List of all group information
@@ -573,93 +586,97 @@ class DataQueryClient(
         await self._ensure_connected()
 
         all_groups: List[Group] = []
-        next_url: Optional[str] = self._build_api_url(C.API_GROUPS)
         page_count = 0
-        # Guard against pathological servers that loop the next-link or that
-        # paginate without bound. 1000 pages is far above any realistic
-        # catalog size; visited set catches the simpler echo case earlier.
-        max_pages = 1000
-        visited: set = set()
 
         try:
-            while next_url:
-                if next_url in visited:
-                    self.logger.warning(
-                        "Pagination loop detected — server returned a previously seen next link",
-                        url=next_url,
-                        page=page_count,
-                    )
-                    break
-                visited.add(next_url)
+            async for page in self.iter_groups_pages_async(
+                max_pages=max_pages, raise_on_cap=raise_on_cap
+            ):
                 page_count += 1
-                if page_count > max_pages:
-                    self.logger.warning(
-                        "Pagination cap hit — stopping after max_pages",
-                        max_pages=max_pages,
-                        total_groups=len(all_groups),
-                    )
-                    break
-
-                async with await self._make_authenticated_request("GET", next_url) as response:
-                    await self._handle_response(response)
-                    data = await response.json()
-
-                    group_list = GroupList(**data)
-                    all_groups.extend(group_list.groups)
-
-                    # One page-level log instead of two; the redundant
-                    # "fetching/fetched" pair doubled log volume on big catalogs.
-                    self.logger.info(
-                        "Groups page fetched",
-                        page=page_count,
-                        groups_in_page=len(group_list.groups),
-                        total_groups=len(all_groups),
-                    )
-
-                    # Check for next page
-                    next_url = group_list.get_next_link()
-                    if next_url:
-                        # If next_url is relative, make it absolute
-                        if not next_url.startswith(("http://", "https://")):
-                            next_url = self._build_api_url(next_url.lstrip("/"))
+                all_groups.extend(page.groups)
+                self.logger.info(
+                    "Groups page fetched",
+                    page=page_count,
+                    groups_in_page=len(page.groups),
+                    total_groups=len(all_groups),
+                )
 
             self.logger.info(
                 "All groups fetched",
                 total_groups=len(all_groups),
                 total_pages=page_count,
             )
-
-            # Log performance metric
             self.logging_manager.log_metric("groups_listed", len(all_groups), "count")
             self.logging_manager.log_metric("groups_pages_fetched", page_count, "count")
-
             return all_groups
 
         except Exception as e:
             self.logger.error("Failed to list all groups", error=str(e))
             raise
 
+    async def iter_groups_pages_async(
+        self,
+        *,
+        max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
+        raise_on_cap: bool = True,
+    ) -> "AsyncIterator[GroupList]":
+        """Yield each :class:`GroupList` page; uses the shared ``iter_pages`` walker."""
+        await self._ensure_connected()
+
+        async def _first() -> GroupList:
+            url = self._build_api_url(C.API_GROUPS)
+            async with await self._make_authenticated_request("GET", url) as response:
+                await self._handle_response(response)
+                data = await response.json()
+                return GroupList(**data)
+
+        async for page in self.iter_pages(
+            _first, max_pages=max_pages, raise_on_cap=raise_on_cap
+        ):
+            yield page
+
+    async def iter_groups_async(
+        self,
+        *,
+        max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
+    ) -> "AsyncIterator[Group]":
+        """Yield every group across all pages, lazily."""
+        async for page in self.iter_groups_pages_async(max_pages=max_pages):
+            for g in page.groups:
+                yield g
+
     async def search_groups_async(
-        self, keywords: str, limit: Optional[int] = None, offset: Optional[int] = None
+        self,
+        keywords: str,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+        *,
+        page: Optional[str] = None,
     ) -> List[Group]:
         """
-        Search groups by keywords.
+        Search groups by keywords (single page).
 
         Args:
             keywords: Search keywords
-            limit: Maximum number of results to return
-            offset: Number of results to skip
+            limit: Maximum number of results per page (server-side cap)
+            offset: Number of results to skip — kept for backwards compatibility.
+                Prefer ``page`` (cursor) or :meth:`iter_search_groups_async`
+                / :meth:`search_all_groups_async` for full-result iteration.
+            page: Optional ``next``-link cursor returned by a prior page's
+                ``links[].next``.
 
         Returns:
-            List of matching groups
+            List of matching groups for the requested page.
         """
         await self._ensure_connected()
 
-        params = {"keywords": keywords}
+        params: Dict[str, str] = {"keywords": keywords}
         if limit is not None:
             params["limit"] = str(limit)
         if offset is not None:
             params["offset"] = str(offset)
+        if page is not None:
+            params["page"] = page
 
         url = self._build_api_url(C.API_GROUPS_SEARCH)
 
@@ -668,7 +685,6 @@ class DataQueryClient(
                 await self._handle_response(response)
                 data = await response.json()
 
-                # Assuming the search endpoint returns the same structure as list_groups
                 group_list = GroupList(**data)
                 self.logger.info("Groups searched", keywords=keywords, count=len(group_list.groups))
 
@@ -676,6 +692,111 @@ class DataQueryClient(
 
         except Exception as e:
             self.logger.error("Failed to search groups", keywords=keywords, error=str(e))
+            raise
+
+    async def search_groups_page_async(
+        self,
+        keywords: str,
+        limit: Optional[int] = None,
+        *,
+        page: Optional[str] = None,
+    ) -> GroupList:
+        """Single-page cursor search returning the full :class:`GroupList`.
+
+        Use this (or :meth:`iter_search_groups_async`) instead of the raw
+        ``search_groups_async`` when you need access to ``links[].next`` for
+        cursor-based pagination.
+        """
+        await self._ensure_connected()
+
+        params: Dict[str, str] = {"keywords": keywords}
+        if limit is not None:
+            params["limit"] = str(limit)
+        if page is not None:
+            params["page"] = page
+
+        url = self._build_api_url(C.API_GROUPS_SEARCH)
+        async with await self._make_authenticated_request("GET", url, params=params) as response:
+            await self._handle_response(response)
+            data = await response.json()
+            return GroupList(**data)
+
+    async def iter_search_groups_pages_async(
+        self,
+        keywords: str,
+        *,
+        limit: Optional[int] = None,
+        max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
+        raise_on_cap: bool = True,
+    ) -> "AsyncIterator[GroupList]":
+        """Yield each :class:`GroupList` page of a keyword search via cursor pagination."""
+
+        async def _first() -> GroupList:
+            return await self.search_groups_page_async(keywords, limit=limit)
+
+        async for page in self.iter_pages(
+            _first, max_pages=max_pages, raise_on_cap=raise_on_cap
+        ):
+            yield page
+
+    async def iter_search_groups_async(
+        self,
+        keywords: str,
+        *,
+        limit: Optional[int] = None,
+        max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
+    ) -> "AsyncIterator[Group]":
+        """Yield every :class:`Group` matching ``keywords`` across all pages."""
+        async for page in self.iter_search_groups_pages_async(
+            keywords, limit=limit, max_pages=max_pages
+        ):
+            for g in page.groups:
+                yield g
+
+    async def search_all_groups_async(
+        self,
+        keywords: str,
+        *,
+        limit: Optional[int] = None,
+        max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
+        raise_on_cap: bool = True,
+    ) -> List[Group]:
+        """Materialize every page of a keyword search using cursor pagination.
+
+        Mirrors :meth:`list_all_groups_async` for the search endpoint.
+        """
+        all_groups: List[Group] = []
+        page_count = 0
+        try:
+            async for page in self.iter_search_groups_pages_async(
+                keywords,
+                limit=limit,
+                max_pages=max_pages,
+                raise_on_cap=raise_on_cap,
+            ):
+                page_count += 1
+                all_groups.extend(page.groups)
+                self.logger.info(
+                    "Search-groups page fetched",
+                    page=page_count,
+                    keywords=keywords,
+                    groups_in_page=len(page.groups),
+                    total_groups=len(all_groups),
+                )
+
+            self.logger.info(
+                "All matching groups fetched",
+                keywords=keywords,
+                total_groups=len(all_groups),
+                total_pages=page_count,
+            )
+            self.logging_manager.log_metric("groups_searched", len(all_groups), "count")
+            self.logging_manager.log_metric("groups_search_pages_fetched", page_count, "count")
+            return all_groups
+        except Exception as e:
+            self.logger.error(
+                "Failed to walk all matching groups", keywords=keywords, error=str(e)
+            )
             raise
 
     async def list_files_async(self, group_id: str, file_group_id: Optional[str] = None) -> FileList:

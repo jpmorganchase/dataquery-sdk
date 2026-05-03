@@ -378,8 +378,7 @@ class TestDataQueryAsyncMethods:
                 result = await dataquery.search_groups_async("test", limit=5, offset=0)
 
                 assert result == mock_groups
-                # Fix: The actual method calls with positional arguments, not keyword arguments
-                mock_client.search_groups_async.assert_called_once_with("test", 5, 0)
+                mock_client.search_groups_async.assert_called_once_with("test", 5, 0, page=None)
 
     @pytest.mark.asyncio
     async def test_list_files_async(self):
