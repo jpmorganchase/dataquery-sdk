@@ -61,6 +61,10 @@ async def main():
                 destination_dir=destination,
                 file_group_id=file_group_id,
                 initial_check=False,  # Rely on SSE notifications only
+                enable_event_replay=True,  # Replay missed events on reconnect
+                heartbeat_timeout=90.0,  # Force reconnect if no event/keepalive in 90s
+                max_tracked_files=10_000,  # Bounded de-dup memory for 24/7 runs
+                max_tracked_errors=1_000,  # Bounded retry-error memory
             )
 
             try:

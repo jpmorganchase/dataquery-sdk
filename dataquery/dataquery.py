@@ -104,6 +104,42 @@ class ProgressTracker:
         return progress_callback
 
 
+class _SyncProxy:
+    """Synchronous facade over a :class:`DataQuery` instance.
+
+    Exposes every ``*_async`` method on the parent without the suffix, e.g.::
+
+        dq = DataQuery()
+        groups = dq.sync.list_groups()           # blocks
+        result = dq.sync.download_file(...)      # blocks
+
+    Each call wraps the coroutine in :meth:`DataQuery._run_sync`. Lookups are
+    dynamic, so methods added to ``DataQuery`` after this class is defined are
+    automatically available on ``dq.sync`` without further changes.
+    """
+
+    __slots__ = ("_dq",)
+
+    def __init__(self, dq: "DataQuery") -> None:
+        self._dq = dq
+
+    def __getattr__(self, name: str) -> Callable[..., Any]:
+        async_name = f"{name}_async"
+        target = getattr(self._dq, async_name, None)
+        if target is None or not callable(target):
+            raise AttributeError(f"DataQuery has no async method '{async_name}'")
+
+        def _sync_call(*args: Any, **kwargs: Any) -> Any:
+            return self._dq._run_sync(target(*args, **kwargs))
+
+        _sync_call.__name__ = name
+        _sync_call.__doc__ = f"Synchronous wrapper for DataQuery.{async_name}."
+        return _sync_call
+
+    def __dir__(self) -> List[str]:
+        return [n[: -len("_async")] for n in dir(self._dq) if n.endswith("_async") and not n.startswith("_")]
+
+
 class DataQuery:
     """
     Main DataQuery class for all API interactions.
@@ -112,6 +148,11 @@ class DataQuery:
     encapsulating the client and providing high-level operations for
     listing, searching, downloading, and managing data files.
     Supports both async and sync operations with proper event loop management.
+
+    Sync namespace:
+        Prefer ``dq.sync.<method>(...)`` over the legacy ``dq.<method>()``
+        wrappers — the namespace makes it explicit you're calling into a
+        blocking adapter rather than an async coroutine.
     """
 
     def __init__(
@@ -177,6 +218,21 @@ class DataQuery:
             raise ConfigurationError(f"Configuration validation failed: {e}")
 
         self._client: Optional[DataQueryClient] = None
+        self._sync_proxy: Optional[_SyncProxy] = None
+
+    @property
+    def sync(self) -> "_SyncProxy":
+        """Synchronous facade — call any ``*_async`` method without the suffix.
+
+        Example::
+
+            dq = DataQuery()
+            with dq:
+                groups = dq.sync.list_groups(limit=10)
+        """
+        if self._sync_proxy is None:
+            self._sync_proxy = _SyncProxy(self)
+        return self._sync_proxy
 
     async def __aenter__(self):
         """Async context manager entry."""
@@ -330,6 +386,10 @@ class DataQuery:
             options: Download options
             num_parts: Number of parallel parts to split the file into (default 1,
                 single-stream). Set >1 to enable parallel HTTP range requests.
+                Note: files smaller than 10 MB always download as a single
+                stream regardless of ``num_parts`` — the byte-range overhead
+                outweighs any speedup at that size. The same fallback applies
+                when the server doesn't honor HTTP range requests.
             progress_callback: Optional progress callback function
 
         Returns:
@@ -978,64 +1038,7 @@ class DataQuery:
                 files=len(filtered_files),
             )
 
-            # Create all download tasks with parallel concurrency and staggered delays
-            async def download_file_concurrent(file_info, delay_seconds: float = 0.0):
-                file_group_id = file_info.get("file-group-id", file_info.get("file_group_id"))
-                file_datetime = file_info.get("file-datetime", file_info.get("file_datetime"))
-
-                if not file_group_id:
-                    logger.error("File info missing file-group-id", file_info=file_info)
-                    return None
-
-                # Apply delay before starting download
-                if delay_seconds > 0:
-                    logger.debug(
-                        "Applying delay before download",
-                        file_group_id=file_group_id,
-                        delay_seconds=delay_seconds,
-                    )
-                    await asyncio.sleep(delay_seconds)
-
-                destination_path = dest_dir
-
-                try:
-                    # Delegate to the shared parallel range helper so the global
-                    # semaphore covers every in-flight HTTP range across every
-                    # file in this batch.
-                    from .download.parallel import download_file_parallel
-
-                    result = await download_file_parallel(
-                        client=self._ensure_client(),
-                        file_group_id=file_group_id,
-                        file_datetime=file_datetime,
-                        destination_path=destination_path,
-                        num_parts=num_parts,
-                        global_semaphore=global_semaphore,
-                        progress_callback=progress_callback,
-                    )
-                    logger.info(
-                        "Downloaded file (parallel ranges)",
-                        file_group_id=file_group_id,
-                        file_datetime=file_datetime,
-                        status=result.status.value if result else "failed",
-                    )
-                    return result
-                except Exception as e:
-                    logger.error(
-                        "Flattened parallel download failed",
-                        file_group_id=file_group_id,
-                        file_datetime=file_datetime,
-                        error=str(e),
-                    )
-                    return None
-
-            # Execute all downloads concurrently with intelligent delay-based rate limiting
-            download_tasks = []
-            for i, file_info in enumerate(filtered_files):
-                # Calculate intelligent delay: combines base delay with rate limit protection
-                delay_seconds = i * intelligent_delay
-                task = download_file_concurrent(file_info, delay_seconds)
-                download_tasks.append(task)
+            from .download.parallel import download_files_with_retry
 
             logger.info(
                 "Starting downloads with intelligent delay-based rate limiting",
@@ -1046,78 +1049,17 @@ class DataQuery:
                 rate_limit_protection="enabled",
             )
 
-            download_results = await asyncio.gather(*download_tasks, return_exceptions=True)
-
-            # Process results
-            successful = []
-            failed = []
-
-            for file_info, result in zip(filtered_files, download_results):
-                if isinstance(result, BaseException):
-                    failed.append(file_info)
-                elif (
-                    result
-                    and hasattr(result, "status")
-                    and hasattr(result, "file_group_id")
-                    and result.status.value in ("completed", "already_exists")
-                ):
-                    successful.append(result)
-                else:
-                    failed.append(file_info)
-
-            # Retry failed downloads
-            retry_count = 0
-            while failed and retry_count < max_retries:
-                retry_count += 1
-                logger.info(
-                    f"Retrying failed downloads (attempt {retry_count}/{max_retries})",
-                    failed_count=len(failed),
-                )
-
-                # Wait before retry with exponential backoff
-                retry_delay = delay_between_downloads * (2 ** (retry_count - 1))
-                await asyncio.sleep(retry_delay)
-
-                # Create retry tasks for failed files
-                retry_tasks = []
-                for i, file_info in enumerate(failed):
-                    delay_seconds = i * intelligent_delay
-                    task = download_file_concurrent(file_info, delay_seconds)
-                    retry_tasks.append(task)
-
-                retry_results = await asyncio.gather(*retry_tasks, return_exceptions=True)
-
-                # Process retry results
-                still_failed = []
-                for file_info, result in zip(failed, retry_results):
-                    if isinstance(result, BaseException):
-                        still_failed.append(file_info)
-                    elif (
-                        result
-                        and hasattr(result, "status")
-                        and hasattr(result, "file_group_id")
-                        and result.status.value in ("completed", "already_exists")
-                    ):
-                        successful.append(result)
-                        logger.info(
-                            "Retry succeeded for file",
-                            file_group_id=file_info.get("file-group-id", file_info.get("file_group_id")),
-                            attempt=retry_count,
-                        )
-                    else:
-                        still_failed.append(file_info)
-
-                failed = still_failed
-
-                if not failed:
-                    logger.info("All failed downloads recovered after retries")
-                    break
-
-            if failed:
-                logger.warning(
-                    f"Some downloads failed after {max_retries} retries",
-                    failed_count=len(failed),
-                )
+            successful, failed, retry_count = await download_files_with_retry(
+                client=self._ensure_client(),
+                files=filtered_files,
+                destination_dir=dest_dir,
+                num_parts=num_parts,
+                global_semaphore=global_semaphore,
+                intelligent_delay=intelligent_delay,
+                base_retry_delay=delay_between_downloads,
+                max_retries=max_retries,
+                progress_callback=progress_callback,
+            )
 
             # Calculate total operation time
             operation_end_time = time.time()
@@ -1128,7 +1070,7 @@ class DataQuery:
             recommendations = self._get_rate_limit_recommendations(total_concurrent_requests)
 
             # Calculate per-file timing statistics
-            file_times = []
+            file_times: List[Dict[str, Any]] = []
             total_download_time = 0.0
             for result in successful:
                 if result.download_time:
@@ -1144,8 +1086,9 @@ class DataQuery:
 
             # Calculate timing statistics
             avg_file_time = total_download_time / len(successful) if successful else 0.0
-            min_file_time = min([ft["download_time_seconds"] for ft in file_times]) if file_times else 0.0
-            max_file_time = max([ft["download_time_seconds"] for ft in file_times]) if file_times else 0.0
+            file_time_values: List[float] = [float(ft["download_time_seconds"]) for ft in file_times]
+            min_file_time = min(file_time_values) if file_time_values else 0.0
+            max_file_time = max(file_time_values) if file_time_values else 0.0
 
             total_files = len(filtered_files)
             success_rate = (len(successful) / total_files * 100) if total_files else 0.0
@@ -1842,7 +1785,11 @@ class DataQuery:
                              from the Content-Disposition header in the response. If not provided,
                              uses the default download directory from configuration.
             options: Download options
-            num_parts: Number of parallel parts for download (default: 5)
+            num_parts: Number of parallel parts to split the file into (default 1,
+                single-stream). Set >1 to enable parallel HTTP range requests.
+                Note: files smaller than 10 MB always download as a single
+                stream regardless of ``num_parts``, and the same fallback
+                applies when the server doesn't honor HTTP range requests.
             progress_callback: Optional progress callback function
 
         Returns:

@@ -550,3 +550,152 @@ async def download_file_parallel(
 
         logger.error("Flattened parallel download failed", file_group_id=file_group_id, error=str(e))
         return None
+
+
+# ---------------------------------------------------------------------------
+# Bulk orchestration with stagger + retry
+# ---------------------------------------------------------------------------
+
+
+def _file_id(file_info: dict) -> Optional[str]:
+    return file_info.get("file-group-id", file_info.get("file_group_id"))
+
+
+def _file_dt(file_info: dict) -> Optional[str]:
+    return file_info.get("file-datetime", file_info.get("file_datetime"))
+
+
+async def _download_one_with_stagger(
+    client: "DataQueryClient",
+    file_info: dict,
+    destination_dir: Path,
+    num_parts: int,
+    global_semaphore: asyncio.Semaphore,
+    delay_seconds: float,
+    progress_callback: Optional[Callable],
+) -> Optional[DownloadResult]:
+    file_group_id = _file_id(file_info)
+    file_datetime = _file_dt(file_info)
+    if not file_group_id:
+        logger.error("File info missing file-group-id", file_info=file_info)
+        return None
+    if delay_seconds > 0:
+        await asyncio.sleep(delay_seconds)
+    try:
+        result = await download_file_parallel(
+            client=client,
+            file_group_id=file_group_id,
+            file_datetime=file_datetime,
+            destination_path=destination_dir,
+            num_parts=num_parts,
+            global_semaphore=global_semaphore,
+            progress_callback=progress_callback,
+        )
+        logger.info(
+            "Downloaded file (parallel ranges)",
+            file_group_id=file_group_id,
+            file_datetime=file_datetime,
+            status=result.status.value if result else "failed",
+        )
+        return result
+    except Exception as e:
+        logger.error(
+            "Flattened parallel download failed",
+            file_group_id=file_group_id,
+            file_datetime=file_datetime,
+            error=str(e),
+        )
+        return None
+
+
+def _classify(
+    files: list[dict],
+    results: list,
+) -> tuple[list[DownloadResult], list[dict]]:
+    succeeded: list[DownloadResult] = []
+    failed: list[dict] = []
+    for file_info, result in zip(files, results):
+        if isinstance(result, BaseException):
+            failed.append(file_info)
+        elif (
+            result
+            and hasattr(result, "status")
+            and hasattr(result, "file_group_id")
+            and result.status.value in ("completed", "already_exists")
+        ):
+            succeeded.append(result)
+        else:
+            failed.append(file_info)
+    return succeeded, failed
+
+
+async def download_files_with_retry(
+    client: "DataQueryClient",
+    files: list[dict],
+    destination_dir: Path,
+    num_parts: int,
+    global_semaphore: asyncio.Semaphore,
+    intelligent_delay: float,
+    base_retry_delay: float,
+    max_retries: int,
+    progress_callback: Optional[Callable] = None,
+) -> tuple[list[DownloadResult], list[dict], int]:
+    """Run a staggered, retrying batch of parallel-range downloads.
+
+    Each file dispatches to :func:`download_file_parallel` under a shared
+    ``global_semaphore`` so total in-flight HTTP requests stay capped across
+    the batch. Files are launched ``intelligent_delay`` seconds apart to
+    spread the burst against the API rate limiter. Failures are retried up
+    to ``max_retries`` times with exponential backoff (``base_retry_delay``).
+
+    Returns ``(successful, failed, retry_count)``.
+    """
+
+    async def _launch(batch: list[dict]) -> list:
+        tasks = [
+            _download_one_with_stagger(
+                client=client,
+                file_info=fi,
+                destination_dir=destination_dir,
+                num_parts=num_parts,
+                global_semaphore=global_semaphore,
+                delay_seconds=i * intelligent_delay,
+                progress_callback=progress_callback,
+            )
+            for i, fi in enumerate(batch)
+        ]
+        return await asyncio.gather(*tasks, return_exceptions=True)
+
+    initial_results = await _launch(files)
+    successful, failed = _classify(files, initial_results)
+
+    retry_count = 0
+    while failed and retry_count < max_retries:
+        retry_count += 1
+        logger.info(
+            f"Retrying failed downloads (attempt {retry_count}/{max_retries})",
+            failed_count=len(failed),
+        )
+        await asyncio.sleep(base_retry_delay * (2 ** (retry_count - 1)))
+
+        retry_results = await _launch(failed)
+        more_succeeded, still_failed = _classify(failed, retry_results)
+        for r in more_succeeded:
+            logger.info(
+                "Retry succeeded for file",
+                file_group_id=r.file_group_id,
+                attempt=retry_count,
+            )
+        successful.extend(more_succeeded)
+        failed = still_failed
+        if not failed:
+            logger.info("All failed downloads recovered after retries")
+            break
+
+    if failed:
+        logger.warning(
+            f"Some downloads failed after {max_retries} retries",
+            failed_count=len(failed),
+        )
+
+    return successful, failed, retry_count
