@@ -1745,7 +1745,7 @@ class DataQueryClient(
         self,
         instruments: List[str],
         attributes: List[str],
-        data: str = "REFERENCE_DATA",
+        data: str = "ALL",
         format: str = "JSON",
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
@@ -1782,7 +1782,7 @@ class DataQueryClient(
         frequency: str = "FREQ_DAY",
         conversion: str = "CONV_LASTBUS_ABS",
         nan_treatment: str = "NA_NOTHING",
-        data: str = "REFERENCE_DATA",
+        data: str = "ALL",
         page: Optional[str] = None,
     ) -> "TimeSeriesResponse":
         """Synchronous wrapper using an event-loop aware runner."""
@@ -1820,7 +1820,7 @@ class DataQueryClient(
         group_id: str,
         attributes: List[str],
         filter: Optional[str] = None,
-        data: str = "REFERENCE_DATA",
+        data: str = "ALL",
         format: str = "JSON",
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
