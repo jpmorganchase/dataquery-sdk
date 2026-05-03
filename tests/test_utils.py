@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, mock_open, patch
 
 import pytest
 
-from dataquery.models import ClientConfig
+from dataquery.types.models import ClientConfig
 from dataquery.utils import (
     create_env_template,
     ensure_directory,

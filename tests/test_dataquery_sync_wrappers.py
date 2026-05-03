@@ -1,7 +1,7 @@
 from unittest.mock import AsyncMock, patch
 
 from dataquery.dataquery import DataQuery
-from dataquery.models import ClientConfig
+from dataquery.types.models import ClientConfig
 
 
 def test_sync_wrapper_calls_run_async(monkeypatch):

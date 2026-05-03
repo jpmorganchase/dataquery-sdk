@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from dataquery.dataquery import DataQuery
-from dataquery.models import ClientConfig
+from dataquery.types.models import ClientConfig
 
 
 @pytest.mark.asyncio

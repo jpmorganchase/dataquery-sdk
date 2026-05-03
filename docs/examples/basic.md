@@ -26,7 +26,7 @@ asyncio.run(download_file())
 ### Download with Progress
 
 ```python
-from dataquery.models import DownloadProgress
+from dataquery.types.models import DownloadProgress
 
 def progress_callback(progress: DownloadProgress):
     pct = f"{progress.percentage:.1f}%" if progress.total_bytes else "..."
@@ -48,7 +48,7 @@ asyncio.run(download_with_progress())
 ### Download with Custom Options
 
 ```python
-from dataquery.models import DownloadOptions
+from dataquery.types.models import DownloadOptions
 
 async def download_with_options():
     options = DownloadOptions(
@@ -140,7 +140,7 @@ asyncio.run(download_group_with_progress())
 ### Basic Error Handling
 
 ```python
-from dataquery.exceptions import DataQueryError, DownloadError
+from dataquery.types.exceptions import DataQueryError, DownloadError
 
 async def download_with_error_handling():
     try:
@@ -170,7 +170,7 @@ asyncio.run(download_with_error_handling())
 
 ```python
 import asyncio
-from dataquery.exceptions import DownloadError
+from dataquery.types.exceptions import DownloadError
 
 async def download_with_retry(max_retries=3):
     for attempt in range(max_retries):
@@ -227,7 +227,7 @@ asyncio.run(download_with_env_config())
 
 ```python
 from dataquery import DataQuery
-from dataquery.models import ClientConfig
+from dataquery.types.models import ClientConfig
 
 async def download_with_config():
     # Minimal configuration - only credentials required!

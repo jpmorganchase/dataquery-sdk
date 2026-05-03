@@ -52,7 +52,7 @@ Let's download a file step by step:
 ```python
 import asyncio
 from dataquery import DataQuery
-from dataquery.models import DownloadOptions
+from dataquery.types.models import DownloadOptions
 from pathlib import Path
 
 async def download_example():
@@ -131,7 +131,7 @@ python -m dataquery.cli download-group \
 Monitor download progress:
 
 ```python
-from dataquery.models import DownloadProgress
+from dataquery.types.models import DownloadProgress
 
 def progress_callback(progress: DownloadProgress):
     pct = f"{progress.percentage:.1f}%" if progress.total_bytes else "..."

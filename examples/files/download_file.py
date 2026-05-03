@@ -18,7 +18,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from dataquery import DataQuery  # noqa: E402
-from dataquery.models import DownloadOptions, DownloadProgress  # noqa: E402
+from dataquery.types.models import DownloadOptions, DownloadProgress  # noqa: E402
 
 
 def simple_progress_callback(progress: DownloadProgress):
