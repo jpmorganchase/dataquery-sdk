@@ -589,9 +589,7 @@ class DataQueryClient(
         page_count = 0
 
         try:
-            async for page in self.iter_groups_pages_async(
-                max_pages=max_pages, raise_on_cap=raise_on_cap
-            ):
+            async for page in self.iter_groups_pages_async(max_pages=max_pages, raise_on_cap=raise_on_cap):
                 page_count += 1
                 all_groups.extend(page.groups)
                 self.logger.info(
@@ -630,9 +628,7 @@ class DataQueryClient(
                 data = await response.json()
                 return GroupList(**data)
 
-        async for page in self.iter_pages(
-            _first, max_pages=max_pages, raise_on_cap=raise_on_cap
-        ):
+        async for page in self.iter_pages(_first, max_pages=max_pages, raise_on_cap=raise_on_cap):
             yield page
 
     async def iter_groups_async(
@@ -734,9 +730,7 @@ class DataQueryClient(
         async def _first() -> GroupList:
             return await self.search_groups_page_async(keywords, limit=limit)
 
-        async for page in self.iter_pages(
-            _first, max_pages=max_pages, raise_on_cap=raise_on_cap
-        ):
+        async for page in self.iter_pages(_first, max_pages=max_pages, raise_on_cap=raise_on_cap):
             yield page
 
     async def iter_search_groups_async(
@@ -747,9 +741,7 @@ class DataQueryClient(
         max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
     ) -> "AsyncIterator[Group]":
         """Yield every :class:`Group` matching ``keywords`` across all pages."""
-        async for page in self.iter_search_groups_pages_async(
-            keywords, limit=limit, max_pages=max_pages
-        ):
+        async for page in self.iter_search_groups_pages_async(keywords, limit=limit, max_pages=max_pages):
             for g in page.groups:
                 yield g
 
@@ -794,9 +786,7 @@ class DataQueryClient(
             self.logging_manager.log_metric("groups_search_pages_fetched", page_count, "count")
             return all_groups
         except Exception as e:
-            self.logger.error(
-                "Failed to walk all matching groups", keywords=keywords, error=str(e)
-            )
+            self.logger.error("Failed to walk all matching groups", keywords=keywords, error=str(e))
             raise
 
     async def list_files_async(self, group_id: str, file_group_id: Optional[str] = None) -> FileList:

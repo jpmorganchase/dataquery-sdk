@@ -233,6 +233,7 @@ class InstrumentsMixin(PaginationMixin):
         max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
     ) -> AsyncIterator[Any]:
         """Yield every instrument across all pages, lazily."""
+
         async def _first() -> InstrumentsResponse:
             return await self.list_instruments_async(group_id, instrument_id)
 
@@ -265,6 +266,7 @@ class InstrumentsMixin(PaginationMixin):
         max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
     ) -> AsyncIterator[Any]:
         """Yield every instrument matching ``keywords`` across all pages."""
+
         async def _first() -> InstrumentsResponse:
             return await self.search_instruments_async(group_id, keywords)
 
@@ -295,6 +297,7 @@ class MetadataMixin(PaginationMixin):
         max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
     ) -> AsyncIterator[Any]:
         """Yield every filter dimension across all pages."""
+
         async def _first() -> FiltersResponse:
             return await self.get_group_filters_async(group_id)
 
@@ -329,6 +332,7 @@ class MetadataMixin(PaginationMixin):
         max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
     ) -> AsyncIterator[Any]:
         """Yield every instrument-with-attributes across all pages."""
+
         async def _first() -> AttributesResponse:
             return await self.get_group_attributes_async(group_id, instrument_id)
 
@@ -494,6 +498,7 @@ class TimeSeriesMixin(PaginationMixin):
         max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
     ) -> AsyncIterator[Any]:
         """Yield every instrument-with-time-series across all pages."""
+
         async def _first() -> TimeSeriesResponse:
             return await self.get_instrument_time_series_async(
                 instruments=instruments,
@@ -527,6 +532,7 @@ class TimeSeriesMixin(PaginationMixin):
         max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
     ) -> AsyncIterator[Any]:
         """Yield every instrument-with-time-series across all pages of an expression query."""
+
         async def _first() -> TimeSeriesResponse:
             return await self.get_expressions_time_series_async(
                 expressions=expressions,
@@ -561,6 +567,7 @@ class TimeSeriesMixin(PaginationMixin):
         max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
     ) -> AsyncIterator[Any]:
         """Yield every instrument-with-time-series across all pages of a group query."""
+
         async def _first() -> TimeSeriesResponse:
             return await self.get_group_time_series_async(
                 group_id=group_id,

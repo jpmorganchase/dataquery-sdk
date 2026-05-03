@@ -368,9 +368,7 @@ class DataQuery:
         """Yield every :class:`Group` matching ``keywords`` across all pages."""
         await self.connect_async()
         client = self._ensure_client()
-        async for g in client.iter_search_groups_async(
-            keywords, limit=limit, max_pages=max_pages
-        ):
+        async for g in client.iter_search_groups_async(keywords, limit=limit, max_pages=max_pages):
             yield g
 
     async def list_files_async(self, group_id: str, file_group_id: Optional[str] = None) -> List[FileInfo]:
@@ -1813,9 +1811,7 @@ class DataQuery:
     ) -> List[Group]:
         """Synchronous wrapper for search_all_groups_async (cursor pagination)."""
         return self._run_sync(
-            self.search_all_groups_async(
-                keywords, limit=limit, max_pages=max_pages, raise_on_cap=raise_on_cap
-            )
+            self.search_all_groups_async(keywords, limit=limit, max_pages=max_pages, raise_on_cap=raise_on_cap)
         )
 
     def list_files(self, group_id: str, file_group_id: Optional[str] = None) -> List[FileInfo]:
