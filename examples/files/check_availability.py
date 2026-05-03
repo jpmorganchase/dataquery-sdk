@@ -10,11 +10,15 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # noqa: E402
 
+from dotenv import load_dotenv  # noqa: E402
+
 from dataquery import DataQuery  # noqa: E402
 from dataquery.types.exceptions import (  # noqa: E402, NotFoundError
     AuthenticationError,
     NotFoundError,
 )
+
+load_dotenv()
 
 
 async def main():
