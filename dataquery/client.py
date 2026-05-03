@@ -51,6 +51,7 @@ from .models import (
     DownloadProgress,
     DownloadResult,
     DownloadStatus,
+    ErrorResponse,
     FileInfo,
     FileList,
     FiltersResponse,
@@ -1360,6 +1361,53 @@ class DataQueryClient(
         if self.session is None or (hasattr(self.session, "closed") and self.session.closed):
             await self.connect()
 
+    @staticmethod
+    def _parse_v2_error(body: Optional[str]) -> Optional[ErrorResponse]:
+        """Parse a DataQuery v2 error envelope into an ``ErrorResponse``.
+
+        Accepts the canonical flat shape::
+
+            {"code": <number>, "description": "<text>"}
+
+        and the common wrapped variants used across DataQuery deployments::
+
+            {"info":   {"code": ..., "description": ...}}
+            {"error":  {"code": ..., "description": ...}}
+            {"errors": [{"code": ..., "description": ...}, ...]}
+
+        Returns ``None`` when the body is empty, not JSON, or doesn't carry
+        a recognisable error object.
+        """
+        if not body:
+            return None
+        import json as _json
+
+        try:
+            data = _json.loads(body)
+        except (ValueError, TypeError):
+            return None
+        if not isinstance(data, dict):
+            return None
+
+        candidate: Optional[Dict[str, Any]] = None
+        if "code" in data and "description" in data:
+            candidate = data
+        elif isinstance(data.get("info"), dict):
+            candidate = data["info"]
+        elif isinstance(data.get("error"), dict):
+            candidate = data["error"]
+        elif isinstance(data.get("errors"), list) and data["errors"]:
+            first = data["errors"][0]
+            if isinstance(first, dict):
+                candidate = first
+
+        if not candidate:
+            return None
+        try:
+            return ErrorResponse.model_validate(candidate)
+        except Exception:  # pragma: no cover - defensive
+            return None
+
     async def _handle_response(self, response: aiohttp.ClientResponse):
         """Handle HTTP response and raise appropriate exceptions."""
         # Extract and log interaction ID for traceability
@@ -1372,45 +1420,71 @@ class DataQueryClient(
                 status=response.status,
             )
 
-        # For non-2xx responses, log the error payload (best-effort)
+        # For non-2xx responses, read the body once and try to parse the
+        # DataQuery v2 error envelope so the resulting exception carries the
+        # server-supplied code/description rather than a bare HTTP status.
+        api_error: Optional[ErrorResponse] = None
+        error_body: Optional[str] = None
         if response.status >= 400:
-            error_body = None
             try:
-                # Try to read response body safely for logging
                 text = await response.text()
-                # Avoid logging very large payloads
                 error_body = text[:1000] if text else None
             except Exception:
                 error_body = None
-            # Log a structured error record
+            api_error = self._parse_v2_error(error_body)
             self.logger.error(
                 "HTTP error response",
                 status=response.status,
                 url=str(getattr(response, "url", "unknown")),
                 interaction_id=interaction_id,
                 body=error_body,
+                api_error_code=getattr(api_error, "code", None),
+                api_error_description=getattr(api_error, "description", None),
             )
 
+        details: Dict[str, Any] = {"interaction_id": interaction_id, "status_code": response.status}
+        if api_error is not None:
+            details["code"] = api_error.code
+            details["description"] = api_error.description
+            extra = api_error.model_dump(exclude={"code", "description", "interaction_id"})
+            if extra:
+                details["extra"] = extra
+
+        def _msg(default: str) -> str:
+            if api_error and api_error.description:
+                return f"{default}: [{api_error.code}] {api_error.description}"
+            return default
+
         if response.status == 401:
-            raise AuthenticationError("Authentication failed", details={"interaction_id": interaction_id})
+            raise AuthenticationError(_msg("Authentication failed"), details=details)
         elif response.status == 403:
             raise AuthenticationError(
-                "Access denied - insufficient permissions",
-                details={"interaction_id": interaction_id},
+                _msg("Access denied - insufficient permissions"),
+                details=details,
             )
         elif response.status == 404:
-            raise NotFoundError("Resource", "unknown")
+            resource_id = str(api_error.code) if api_error and api_error.code is not None else "unknown"
+            err = NotFoundError("Resource", resource_id, message=_msg("Resource not found"))
+            err.details.update(details)
+            raise err
         # Handle rate limit response
         if response.status == 429:
             self.rate_limiter.handle_rate_limit_response(dict(response.headers))
-            raise RateLimitError(
-                f"Rate limit exceeded: {response.status}",
+            rate_err = RateLimitError(
+                _msg(f"Rate limit exceeded: {response.status}"),
                 retry_after=int(response.headers.get("Retry-After", 0)),
             )
+            rate_err.details.update(details)
+            raise rate_err
         elif response.status >= 500:
-            raise NetworkError(f"Server error: {response.status}", status_code=response.status)
+            net_err = NetworkError(
+                _msg(f"Server error: {response.status}"),
+                status_code=response.status,
+            )
+            net_err.details.update(details)
+            raise net_err
         elif response.status >= 400:
-            raise ValidationError(f"Client error: {response.status}")
+            raise ValidationError(_msg(f"Client error: {response.status}"), details=details)
 
         # Mark successful request for adaptive backoff reset
         if response.status < 400:

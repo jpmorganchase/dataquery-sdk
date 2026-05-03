@@ -91,7 +91,7 @@ async def test_get_headers_sets_sse_fields_and_last_event_id():
     client._last_event_id = "evt-42"
     headers = await client._get_headers()
     assert headers["Accept"] == "text/event-stream"
-    assert headers["Cache-Control"] == "no-cache"
+    assert "Cache-Control" not in headers
     assert headers["Last-Event-ID"] == "evt-42"
     assert headers["Authorization"] == "Bearer T"
 
