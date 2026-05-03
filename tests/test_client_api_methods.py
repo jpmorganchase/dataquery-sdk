@@ -3,9 +3,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from dataquery.client import DataQueryClient
-from dataquery.exceptions import AuthenticationError, FileNotFoundInGroupError, ValidationError
-from dataquery.models import ClientConfig
+from dataquery.core.client import DataQueryClient
+from dataquery.types.exceptions import (
+    AuthenticationError,
+    FileNotFoundInGroupError,
+    PaginationError,
+    ValidationError,
+)
+from dataquery.types.models import ClientConfig
 
 
 class DummyLogger:
@@ -494,6 +499,196 @@ async def test_grid_api(monkeypatch):
     monkeypatch.setattr(client, "_make_authenticated_request", cm_grid)
     gr = await client.get_grid_data_async(expr="DBGRID(X)")
     assert isinstance(gr.series, list)
+
+
+# ---------------------------------------------------------------------------
+# Validation symmetry — non-file query endpoints
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_expressions_time_series_rejects_empty_list(monkeypatch):
+    client = make_client(monkeypatch)
+    with pytest.raises(ValueError):
+        await client.get_expressions_time_series_async([])
+
+
+@pytest.mark.asyncio
+async def test_expressions_time_series_rejects_blank_entry(monkeypatch):
+    client = make_client(monkeypatch)
+    with pytest.raises(ValueError):
+        await client.get_expressions_time_series_async(["DB(X)", "  "])
+
+
+@pytest.mark.asyncio
+async def test_expressions_time_series_rejects_bad_date(monkeypatch):
+    client = make_client(monkeypatch)
+    with pytest.raises(ValidationError):
+        await client.get_expressions_time_series_async(["DB(X)"], start_date="not-a-date")
+
+
+@pytest.mark.asyncio
+async def test_group_time_series_rejects_empty_attributes(monkeypatch):
+    client = make_client(monkeypatch)
+    with pytest.raises(ValidationError):
+        await client.get_group_time_series_async("G", [])
+
+
+@pytest.mark.asyncio
+async def test_group_time_series_rejects_bad_date(monkeypatch):
+    client = make_client(monkeypatch)
+    with pytest.raises(ValidationError):
+        await client.get_group_time_series_async("G", ["A"], end_date="bogus")
+
+
+@pytest.mark.asyncio
+async def test_grid_data_rejects_bad_date(monkeypatch):
+    client = make_client(monkeypatch)
+    with pytest.raises(ValidationError):
+        await client.get_grid_data_async(expr="X", date="2026/01/01")
+
+
+# ---------------------------------------------------------------------------
+# list_all_groups_async — pagination loop guard
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_all_groups_breaks_on_repeated_next_link(monkeypatch):
+    """Pathological server returning the same next link forever must not hang."""
+    client = make_client(monkeypatch)
+    calls = {"n": 0}
+
+    async def looping_pager(method, url, **kwargs):
+        calls["n"] += 1
+        # Always advertise the same next link → would loop without the guard.
+        data = {
+            "groups": [],
+            "links": [{"self": "/groups", "next": "groups?page=looping"}],
+        }
+        resp = DummyResponse()
+
+        async def json():
+            return data
+
+        resp.json = json
+        return resp
+
+    monkeypatch.setattr(client, "_make_authenticated_request", looping_pager)
+    with pytest.raises(PaginationError) as ei:
+        await client.list_all_groups_async()
+    # First call fetches the seed URL, second sees the loop and raises.
+    assert calls["n"] == 2
+    assert ei.value.details["pages_fetched"] == 2
+    assert "looping" in ei.value.details["url"]
+
+
+@pytest.mark.asyncio
+async def test_list_all_groups_max_pages_raises(monkeypatch):
+    """Hitting the max_pages cap raises PaginationError by default."""
+    client = make_client(monkeypatch)
+    counter = {"n": 0}
+
+    async def unbounded_pager(method, url, **kwargs):
+        counter["n"] += 1
+        # Each page advertises a different next link → no loop, just unbounded.
+        data = {
+            "groups": [{"group-id": f"G{counter['n']}"}],
+            "links": [{"self": "/groups", "next": f"groups?page={counter['n']}"}],
+        }
+        resp = DummyResponse()
+
+        async def json():
+            return data
+
+        resp.json = json
+        return resp
+
+    monkeypatch.setattr(client, "_make_authenticated_request", unbounded_pager)
+    with pytest.raises(PaginationError) as ei:
+        await client.list_all_groups_async(max_pages=3)
+    assert ei.value.details["max_pages"] == 3
+    assert ei.value.details["pages_fetched"] == 3
+
+
+@pytest.mark.asyncio
+async def test_list_all_groups_max_pages_silent(monkeypatch):
+    """raise_on_cap=False truncates silently instead of raising."""
+    client = make_client(monkeypatch)
+    counter = {"n": 0}
+
+    async def unbounded_pager(method, url, **kwargs):
+        counter["n"] += 1
+        data = {
+            "groups": [{"group-id": f"G{counter['n']}"}],
+            "links": [{"self": "/groups", "next": f"groups?page={counter['n']}"}],
+        }
+        resp = DummyResponse()
+
+        async def json():
+            return data
+
+        resp.json = json
+        return resp
+
+    monkeypatch.setattr(client, "_make_authenticated_request", unbounded_pager)
+    result = await client.list_all_groups_async(max_pages=2, raise_on_cap=False)
+    assert len(result) == 2
+
+
+@pytest.mark.asyncio
+async def test_search_all_groups_walks_cursor_pagination(monkeypatch):
+    """search_all_groups_async follows links[].next across pages and aggregates."""
+    client = make_client(monkeypatch)
+    pages = [
+        {"groups": [{"group-id": "M1"}], "links": [{"next": "groups/search?p=2"}]},
+        {"groups": [{"group-id": "M2"}, {"group-id": "M3"}], "links": [{"next": None}]},
+    ]
+    idx = {"i": 0}
+
+    async def search_pager(method, url, **kwargs):
+        data = pages[idx["i"]]
+        idx["i"] += 1
+        resp = DummyResponse()
+
+        async def json():
+            return data
+
+        resp.json = json
+        return resp
+
+    monkeypatch.setattr(client, "_make_authenticated_request", search_pager)
+    result = await client.search_all_groups_async("macro")
+    assert [g.group_id for g in result] == ["M1", "M2", "M3"]
+    assert idx["i"] == 2
+
+
+@pytest.mark.asyncio
+async def test_iter_groups_async_yields_lazily(monkeypatch):
+    """iter_groups_async yields each Group across pages."""
+    client = make_client(monkeypatch)
+    pages = [
+        {"groups": [{"group-id": "A"}, {"group-id": "B"}], "links": [{"next": "groups?p=2"}]},
+        {"groups": [{"group-id": "C"}], "links": [{"next": None}]},
+    ]
+    idx = {"i": 0}
+
+    async def pager(method, url, **kwargs):
+        data = pages[idx["i"]]
+        idx["i"] += 1
+        resp = DummyResponse()
+
+        async def json():
+            return data
+
+        resp.json = json
+        return resp
+
+    monkeypatch.setattr(client, "_make_authenticated_request", pager)
+    seen = []
+    async for g in client.iter_groups_async():
+        seen.append(g.group_id)
+    assert seen == ["A", "B", "C"]
 
 
 @pytest.mark.asyncio

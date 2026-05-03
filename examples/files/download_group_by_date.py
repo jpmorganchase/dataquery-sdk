@@ -28,7 +28,11 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
+from dotenv import load_dotenv  # noqa: E402
+
 from dataquery import DataQuery  # noqa: E402
+
+load_dotenv()
 
 
 async def main():
@@ -120,9 +124,9 @@ Examples:
             )
 
         elapsed = time.time() - start_time
-        total = report.get("total_files", 0)
-        success = report.get("successful_downloads", 0)
-        failed = report.get("failed_downloads", 0)
+        total = report.counts.get("total_files", 0)
+        success = report.counts.get("successful_downloads", 0)
+        failed = report.counts.get("failed_downloads", 0)
 
         print(f"\n{'=' * 60}")
         print("DOWNLOAD SUMMARY")

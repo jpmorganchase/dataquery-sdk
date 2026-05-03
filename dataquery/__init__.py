@@ -21,10 +21,12 @@ __license__ = "MIT"
 __url__ = "https://github.com/jpmorganchase/dataquery-sdk"
 
 # Core
-from .client import DataQueryClient
 from .config import EnvConfig
+from .core import DataQueryClient
 from .dataquery import DataQuery
-from .exceptions import (
+from .sse.client import SSEClient, SSEEvent
+from .sse.subscriber import NotificationDownloadManager
+from .types.exceptions import (
     AuthenticationError,
     AvailabilityError,
     ConfigurationError,
@@ -40,7 +42,7 @@ from .exceptions import (
     ValidationError,
     WorkflowError,
 )
-from .models import (
+from .types.models import (
     AvailabilityInfo,
     AvailableFilesResponse,
     ClientConfig,
@@ -54,8 +56,6 @@ from .models import (
     Group,
     GroupList,
 )
-from .sse_client import SSEClient, SSEEvent
-from .sse_subscriber import NotificationDownloadManager
 
 # Type aliases for convenience
 __all__ = [
@@ -110,5 +110,5 @@ __package_info__ = {
     "license": __license__,
     "url": __url__,
     "description": "Python SDK for DATAQUERY Data API - Query, download, and check availability of economic data files",
-    "python_requires": ">=3.10",
+    "python_requires": ">=3.11",
 }

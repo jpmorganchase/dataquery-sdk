@@ -2,7 +2,7 @@
 
 Python SDK for the J.P. Morgan DataQuery API — authenticated file downloads, time-series queries, and real-time notification-driven downloads with OAuth 2.0, rate limiting, and automatic retries built in.
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Linting: Ruff](https://img.shields.io/badge/linting-ruff-261230.svg)](https://github.com/astral-sh/ruff)
 
@@ -32,7 +32,7 @@ pip install "dataquery-sdk[pandas]"
 pip install "dataquery-sdk[dev]"
 ```
 
-Python 3.10+ is required.
+Python 3.11+ is required.
 
 ## Configure credentials
 
@@ -283,7 +283,7 @@ All errors inherit from `DataQueryError`:
 
 ```python
 from dataquery import DataQuery
-from dataquery.exceptions import (
+from dataquery.types.exceptions import (
     DataQueryError,
     AuthenticationError,
     NotFoundError,
@@ -323,7 +323,7 @@ start_date="TODAY-1Y"
 
 ## Performance tuning
 
-`run_group_download_async` uses a flattened concurrency model — total concurrent
+`run_group_download_async` parallelizes at the range level — total concurrent
 HTTP requests = `max_concurrent × num_parts`.
 
 With `num_parts=1` (the default) each file downloads as a single streaming GET.
@@ -419,7 +419,7 @@ Pytest markers: `slow`, `integration`, `unit`, `asyncio`.
 
 ## Requirements
 
-- Python 3.10+
+- Python 3.11+
 - `aiohttp>=3.8,<4`, `pydantic>=2,<3`, `structlog>=23`, `python-dotenv>=1`
 - Optional: `pandas>=2` (for `to_dataframe`)
 

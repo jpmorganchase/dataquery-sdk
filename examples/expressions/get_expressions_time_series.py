@@ -11,7 +11,7 @@ Usage:
   python examples/expressions/get_expressions_time_series.py \
     [--expressions GDP_US_REAL,CPI_US_CORE] [--start YYYYMMDD] [--end YYYYMMDD] \
     [--frequency FREQ_DAY] [--calendar CAL_USBANK] [--conversion CONV_LASTBUS_ABS] \
-    [--nan NA_NOTHING] [--data REFERENCE_DATA] [--show 3]
+    [--nan NA_NOTHING] [--data ALL] [--show 3]
 """
 
 import argparse
@@ -23,8 +23,12 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # noqa: E402
 
+from dotenv import load_dotenv  # noqa: E402
+
 from dataquery import DataQuery  # noqa: E402
-from dataquery.exceptions import DataQueryError  # noqa: E402
+from dataquery.types.exceptions import DataQueryError  # noqa: E402
+
+load_dotenv()
 
 
 async def main() -> None:
@@ -49,7 +53,7 @@ async def main() -> None:
         default="NA_NOTHING",
         help="NaN treatment (default: NA_NOTHING)",
     )
-    parser.add_argument("--data", default="REFERENCE_DATA", help="Data flag (default: REFERENCE_DATA)")
+    parser.add_argument("--data", default="ALL", help="Data flag (default: ALL)")
     parser.add_argument("--show", type=int, default=3, help="How many series to print (default: 3)")
     args = parser.parse_args()
 

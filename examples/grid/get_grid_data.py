@@ -21,7 +21,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from dataquery import DataQuery  # noqa: E402
-from dataquery.exceptions import AuthenticationError, NotFoundError  # noqa: E402
+from dataquery.types.exceptions import AuthenticationError, NotFoundError  # noqa: E402
 
 
 def parse_args():
@@ -134,7 +134,7 @@ def comparison_example():
                 resp = dq.get_grid_data(
                     expr=case["expr"],
                     grid_id=case["grid_id"],
-                    data="REFERENCE_DATA",
+                    data="ALL",
                     format="JSON",
                     end_date="20240131",
                     calendar="CAL_USBANK",

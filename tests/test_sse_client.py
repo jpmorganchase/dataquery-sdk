@@ -14,8 +14,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from dataquery.models import ClientConfig
-from dataquery.sse_client import SSEClient, SSEEvent
+from dataquery.sse.client import SSEClient, SSEEvent
+from dataquery.types.models import ClientConfig
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -81,7 +81,7 @@ def test_build_notification_url_strips_trailing_slash():
     cfg = _make_config()
     client = SSEClient(config=cfg, auth_manager=_make_auth_manager())
     url = client._build_notification_url()
-    assert url.endswith("/sse/event/notification")
+    assert url.endswith("/events/notification")
     assert "//sse" not in url
 
 
@@ -91,7 +91,7 @@ async def test_get_headers_sets_sse_fields_and_last_event_id():
     client._last_event_id = "evt-42"
     headers = await client._get_headers()
     assert headers["Accept"] == "text/event-stream"
-    assert headers["Cache-Control"] == "no-cache"
+    assert "Cache-Control" not in headers
     assert headers["Last-Event-ID"] == "evt-42"
     assert headers["Authorization"] == "Bearer T"
 
@@ -388,7 +388,7 @@ async def test_run_loop_reconnects_with_exponential_backoff_then_stops():
 
     client._stop_event = asyncio.Event()
     # Patch asyncio.wait_for only within the sse_client module.
-    import dataquery.sse_client as sse_mod
+    import dataquery.sse.client as sse_mod
 
     sse_mod.asyncio.wait_for = capturing_wait_for  # type: ignore[assignment]
     try:
@@ -401,3 +401,238 @@ async def test_run_loop_reconnects_with_exponential_backoff_then_stops():
     # Delays should grow: 1.0, 2.0 ... (capped at 8.0).
     assert delays[0] == pytest.approx(1.0)
     assert delays[1] == pytest.approx(2.0)
+
+
+# ---------------------------------------------------------------------------
+# Event-id store integration (cross-process replay)
+# ---------------------------------------------------------------------------
+
+
+def test_constructor_seeds_last_event_id_from_store(tmp_path):
+    from dataquery.sse.event_store import SSEEventIdStore
+
+    store_path = tmp_path / "state.json"
+    store_path.write_text('{"last_event_id": "evt-99"}')
+    store = SSEEventIdStore(store_path)
+
+    client = SSEClient(config=_make_config(), auth_manager=_make_auth_manager(), event_id_store=store)
+    assert client._last_event_id == "evt-99"
+
+
+def test_constructor_handles_empty_store(tmp_path):
+    from dataquery.sse.event_store import SSEEventIdStore
+
+    store = SSEEventIdStore(tmp_path / "missing.json")
+    client = SSEClient(config=_make_config(), auth_manager=_make_auth_manager(), event_id_store=store)
+    assert client._last_event_id is None
+
+
+def test_build_request_params_injects_last_event_id():
+    client = SSEClient(
+        config=_make_config(),
+        auth_manager=_make_auth_manager(),
+        params={"group-id": "G", "file-group-id": "FG"},
+    )
+    client._last_event_id = "evt-7"
+    params = client._build_request_params()
+    assert params == {"group-id": "G", "file-group-id": "FG", "last-event-id": "evt-7"}
+
+
+def test_build_request_params_omits_last_event_id_when_unset():
+    client = SSEClient(
+        config=_make_config(),
+        auth_manager=_make_auth_manager(),
+        params={"group-id": "G"},
+    )
+    params = client._build_request_params()
+    assert params == {"group-id": "G"}
+
+
+def test_build_request_params_returns_none_when_nothing_to_send():
+    client = SSEClient(config=_make_config(), auth_manager=_make_auth_manager())
+    assert client._build_request_params() is None
+
+
+@pytest.mark.asyncio
+async def test_parse_sse_stream_persists_event_id_to_store(tmp_path):
+    from dataquery.sse.event_store import SSEEventIdStore
+
+    store = SSEEventIdStore(tmp_path / "state.json")
+    client = SSEClient(
+        config=_make_config(),
+        auth_manager=_make_auth_manager(),
+        event_id_store=store,
+    )
+    client._running = True
+
+    content = _FakeContent(
+        [
+            b"data: hello\n",
+            b"id: evt-100\n",
+            b"\n",
+        ]
+    )
+    await client._parse_sse_stream(_FakeResponse(content))
+
+    # The save is fire-and-forget — drain any pending tasks.
+    if client._save_tasks:
+        await asyncio.gather(*client._save_tasks, return_exceptions=True)
+
+    assert store.load() == "evt-100"
+    assert client._last_event_id == "evt-100"
+
+
+@pytest.mark.asyncio
+async def test_stop_drains_pending_save_tasks(tmp_path):
+    """After stop(), any in-flight event-id saves must be flushed so the
+    next process invocation sees the latest id."""
+    from dataquery.sse.event_store import SSEEventIdStore
+
+    store = SSEEventIdStore(tmp_path / "state.json")
+    client = SSEClient(
+        config=_make_config(),
+        auth_manager=_make_auth_manager(),
+        event_id_store=store,
+    )
+    client._connect_and_listen = AsyncMock(return_value=None)  # type: ignore[assignment]
+
+    await client.start()
+    # Simulate a save scheduled while running.
+    client._persist_event_id("evt-final")
+    assert client._save_tasks  # at least one pending
+    await client.stop()
+    assert not client._save_tasks
+    assert store.load() == "evt-final"
+
+
+# ---------------------------------------------------------------------------
+# Backoff reset after a healthy connection
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_backoff_resets_after_healthy_connection_then_disconnect():
+    """A long-lived connection (>= _HEALTHY_CONNECTION_SECONDS) must reset
+    the backoff so the next reconnect uses ``reconnect_delay`` again, not the
+    inflated value from the previous failure loop."""
+    import dataquery.sse.client as sse_mod
+
+    client = SSEClient(
+        config=_make_config(),
+        auth_manager=_make_auth_manager(),
+        reconnect_delay=1.0,
+        max_reconnect_delay=8.0,
+    )
+
+    calls = {"n": 0}
+    durations = [0.5, 60.0, 0.5]  # short, healthy, short
+
+    async def fake_connect() -> float:
+        i = calls["n"]
+        calls["n"] += 1
+        client._last_connection_duration = durations[i]
+        return durations[i]
+
+    client._connect_and_listen = fake_connect  # type: ignore[assignment]
+
+    delays: list[float] = []
+    orig_wait_for = asyncio.wait_for
+
+    async def capturing_wait_for(coro: Any, timeout: float) -> Any:
+        delays.append(timeout)
+        # After 3 waits, signal stop so the loop exits cleanly.
+        if len(delays) >= 3:
+            client._stop_event.set()
+        return await orig_wait_for(coro, timeout=0.001)
+
+    sse_mod.asyncio.wait_for = capturing_wait_for  # type: ignore[assignment]
+    try:
+        client._running = True
+        await client._run_loop()
+    finally:
+        sse_mod.asyncio.wait_for = orig_wait_for  # type: ignore[assignment]
+
+    # Sequence:
+    #   1) connect → 0.5s   → wait reconnect_delay (1.0s), then double next time
+    #   2) connect → 60s    → wait current delay (2.0s), then RESET to 1.0s
+    #   3) connect → 0.5s   → wait 1.0s (proves the reset happened) then exit
+    assert delays[0] == pytest.approx(1.0)
+    assert delays[1] == pytest.approx(2.0)
+    assert delays[2] == pytest.approx(1.0)
+
+
+# ---------------------------------------------------------------------------
+# Heartbeat watchdog
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_watchdog_raises_when_stream_is_silent():
+    """Watchdog forces a reconnect (ConnectionError) when no bytes arrive."""
+    client = SSEClient(
+        config=_make_config(),
+        auth_manager=_make_auth_manager(),
+        heartbeat_timeout=0.05,
+    )
+    client._running = True
+
+    class _SilentContent:
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self) -> bytes:
+            await asyncio.sleep(10.0)  # never returns within the watchdog
+            raise StopAsyncIteration
+
+    with pytest.raises(ConnectionError, match="heartbeat watchdog"):
+        await client._parse_sse_stream(_FakeResponse(_SilentContent()))
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_disabled_by_default_does_not_time_out():
+    """heartbeat_timeout=0 must not wrap reads in wait_for."""
+    received: list[SSEEvent] = []
+    client = SSEClient(
+        config=_make_config(),
+        auth_manager=_make_auth_manager(),
+        on_event=lambda e: received.append(e),
+    )
+    client._running = True
+
+    content = _FakeContent([b"data: alive\n", b"\n"])
+    await client._parse_sse_stream(_FakeResponse(content))
+    assert received and received[0].data == "alive"
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_treats_comment_lines_as_activity():
+    """A comment line (``:keepalive``) resets the watchdog window."""
+    received: list[SSEEvent] = []
+    client = SSEClient(
+        config=_make_config(),
+        auth_manager=_make_auth_manager(),
+        on_event=lambda e: received.append(e),
+        heartbeat_timeout=0.1,
+    )
+    client._running = True
+
+    async def gen():
+        yield b": keepalive\n"
+        await asyncio.sleep(0.03)
+        yield b": keepalive\n"
+        await asyncio.sleep(0.03)
+        yield b"data: ok\n"
+        yield b"\n"
+
+    class _AsyncIter:
+        def __init__(self, agen):
+            self._agen = agen
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            return await self._agen.__anext__()
+
+    await client._parse_sse_stream(_FakeResponse(_AsyncIter(gen())))
+    assert received and received[0].data == "ok"

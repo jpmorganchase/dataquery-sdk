@@ -67,6 +67,21 @@ def create_parser() -> argparse.ArgumentParser:
     p_dl.add_argument("--json", action="store_true")
     p_dl.add_argument("--num-parts", type=int, default=5, help="Number of parallel parts (single-file mode)")
     p_dl.add_argument("--chunk-size", type=int, default=None, help="Chunk size in bytes (single-file mode)")
+    p_dl.add_argument(
+        "--no-event-replay",
+        action="store_true",
+        help=(
+            "Watch mode: disable cross-process SSE event replay. The legacy "
+            "behaviour (bulk availability check on every startup) is restored."
+        ),
+    )
+    p_dl.add_argument(
+        "--reset-event-id",
+        action="store_true",
+        help=(
+            "Watch mode: delete the persisted SSE last-event-id before subscribing, so the next session starts fresh."
+        ),
+    )
 
     # download-group
     p_dlg = subparsers.add_parser(
@@ -184,14 +199,29 @@ async def cmd_download(args: argparse.Namespace) -> int:
 
     async with DataQuery(args.env_file) as dq:
         if args.watch:
-            # SSE-driven: subscribe to /sse/event/notification with group-id
+            # SSE-driven: subscribe to /events/notification with group-id
             # (and optionally file-group-id) as query parameters so the server
             # filters events. An initial availability check covers anything
-            # published before the subscription started.
+            # published before the subscription started (only used on the very
+            # first run; subsequent runs replay missed events via last-event-id).
+            destination_dir = args.destination or "./downloads"
+            if getattr(args, "reset_event_id", False):
+                # Resolve the store directly so we can clear it before any
+                # connection is made.
+                from .sse.event_store import Subscription, build_event_id_store
+
+                client = dq._ensure_client()
+                store = build_event_id_store(
+                    client.config,
+                    Subscription.from_user(args.group_id, file_group_id),
+                )
+                if store is not None:
+                    store.clear()
             mgr = await dq.auto_download_async(
                 group_id=args.group_id,
-                destination_dir=(args.destination or "./downloads"),
+                destination_dir=destination_dir,
                 file_group_id=file_group_id,
+                enable_event_replay=not getattr(args, "no_event_replay", False),
             )
             try:
                 # Stay connected until interrupted. Sleeping in short slices
@@ -203,8 +233,8 @@ async def cmd_download(args: argparse.Namespace) -> int:
             finally:
                 try:
                     await mgr.stop()
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"Failed to stop notification manager: {e}", file=sys.stderr)
             stats: dict = getattr(mgr, "get_stats", lambda: {})()
             print(json.dumps(stats))
             return 0
@@ -212,7 +242,7 @@ async def cmd_download(args: argparse.Namespace) -> int:
         # Single-file download path.
         dest_path = Path(args.destination) if args.destination else None
 
-        from dataquery.models import DownloadOptions
+        from dataquery.types.models import DownloadOptions
 
         options = DownloadOptions(
             destination_path=dest_path,
@@ -245,11 +275,13 @@ async def cmd_download_group(args: argparse.Namespace) -> int:
         )
 
         if args.json:
-            print(json.dumps(results, indent=2))
+            print(results.model_dump_json(indent=2))
         else:
-            print(f"Downloaded {results.get('successful', 0)} files to {args.destination}")
-            if results.get("failed", 0) > 0:
-                print(f"Failed: {results.get('failed', 0)}")
+            successful = results.counts.get("successful_downloads", 0)
+            failed = results.counts.get("failed_downloads", 0)
+            print(f"Downloaded {successful} files to {args.destination}")
+            if failed > 0:
+                print(f"Failed: {failed}")
     return 0
 
 

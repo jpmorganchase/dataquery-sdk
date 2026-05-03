@@ -1,4 +1,4 @@
-# Contributing to DataQuery SDK
+ # Contributing to DataQuery SDK
 
 Thank you for your interest in contributing to the DataQuery SDK! This document provides guidelines and information for contributors.
 
@@ -6,7 +6,7 @@ Thank you for your interest in contributing to the DataQuery SDK! This document 
 
 ### Prerequisites
 
-- Python 3.10 or higher
+- Python 3.11 or higher
 - [uv](https://github.com/astral-sh/uv) package manager
 - Git
 

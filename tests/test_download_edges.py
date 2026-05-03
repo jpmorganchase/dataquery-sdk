@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from dataquery.client import DataQueryClient
-from dataquery.models import ClientConfig, DownloadOptions, DownloadStatus
+from dataquery.core.client import DataQueryClient
+from dataquery.types.models import ClientConfig, DownloadOptions, DownloadStatus
 
 
 class DummyLogger:

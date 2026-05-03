@@ -13,7 +13,11 @@ import asyncio
 from datetime import datetime
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 from dataquery import DataQuery
+
+load_dotenv()
 
 TODAY = datetime.now().strftime("%Y%m%d")
 DESTINATION = Path("./downloads")

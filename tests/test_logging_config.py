@@ -6,7 +6,7 @@ from unittest.mock import Mock, mock_open, patch
 
 import pytest
 
-from dataquery.logging_config import (
+from dataquery.config.logging import (
     LogFormat,
     LoggingConfig,
     LoggingManager,
@@ -434,7 +434,7 @@ class TestCreateLoggingManager:
         """Test creating logging manager."""
         config = LoggingConfig()
 
-        with patch("dataquery.logging_config.LoggingManager") as mock_manager_class:
+        with patch("dataquery.config.logging.LoggingManager") as mock_manager_class:
             mock_manager = Mock()
             mock_manager_class.return_value = mock_manager
 

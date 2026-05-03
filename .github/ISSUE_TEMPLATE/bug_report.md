@@ -27,7 +27,7 @@ A clear and concise description of what you expected to happen.
 
 **Environment (please complete the following information):**
  - OS: [e.g. Ubuntu 20.04, macOS 12.0, Windows 10]
- - Python version: [e.g. 3.9, 3.10, 3.11]
+ - Python version: [e.g. 3.11, 3.12, 3.13]
  - DataQuery SDK version: [e.g. 0.1.0]
 
 **Additional context**
