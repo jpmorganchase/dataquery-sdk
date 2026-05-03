@@ -1095,7 +1095,7 @@ class Format(str, Enum):
 class TimeSeriesParameters(BaseModel):
     """Parameters for time series requests."""
 
-    data: DataType = Field(DataType.REFERENCE_DATA, description="Data type to retrieve")
+    data: DataType = Field(DataType.ALL, description="Data type to retrieve")
     format: Format = Field(Format.JSON, description="Response format")
     start_date: Optional[str] = Field("TODAY-1D", alias="start-date", description="Start date")
     end_date: Optional[str] = Field("TODAY", alias="end-date", description="End date")

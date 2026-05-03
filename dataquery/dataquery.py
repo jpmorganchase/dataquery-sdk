@@ -10,7 +10,7 @@ import time
 from calendar import monthrange
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
 
 import structlog
 from dotenv import load_dotenv
@@ -437,7 +437,7 @@ class DataQuery:
         self,
         instruments: List[str],
         attributes: List[str],
-        data: str = "REFERENCE_DATA",
+        data: str = "ALL",
         format: str = "JSON",
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
@@ -453,7 +453,7 @@ class DataQuery:
         Args:
             instruments: List of instrument identifiers
             attributes: List of attribute identifiers
-            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL)
+            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL); default ALL
             format: Response format (JSON)
             start_date: Start date in YYYYMMDD or TODAY-Nx format
             end_date: End date in YYYYMMDD or TODAY-Nx format
@@ -492,7 +492,7 @@ class DataQuery:
         frequency: str = "FREQ_DAY",
         conversion: str = "CONV_LASTBUS_ABS",
         nan_treatment: str = "NA_NOTHING",
-        data: str = "REFERENCE_DATA",
+        data: str = "ALL",
         page: Optional[str] = None,
     ) -> "TimeSeriesResponse":
         """
@@ -507,7 +507,7 @@ class DataQuery:
             frequency: Frequency convention
             conversion: Conversion convention
             nan_treatment: Missing data treatment
-            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL)
+            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL); default ALL
             page: Optional page token for pagination
 
         Returns:
@@ -570,7 +570,7 @@ class DataQuery:
         group_id: str,
         attributes: List[str],
         filter: Optional[str] = None,
-        data: str = "REFERENCE_DATA",
+        data: str = "ALL",
         format: str = "JSON",
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
@@ -587,7 +587,7 @@ class DataQuery:
             group_id: Catalog data group identifier
             attributes: List of attribute identifiers
             filter: Optional filter string (e.g., "currency(USD)")
-            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL)
+            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL); default ALL
             format: Response format (JSON)
             start_date: Start date in YYYYMMDD or TODAY-Nx format
             end_date: End date in YYYYMMDD or TODAY-Nx format
@@ -1149,6 +1149,7 @@ class DataQuery:
 
             total_files = len(filtered_files)
             success_rate = (len(successful) / total_files * 100) if total_files else 0.0
+            status: Literal["success", "error", "partial"]
             if len(failed) == 0:
                 status = "success"
             elif len(successful) == 0:
@@ -1372,6 +1373,7 @@ class DataQuery:
         total_minutes = total_elapsed / 60.0
 
         chunks_with_errors = [f"{c['start_date']}-{c['end_date']}" for c in chunk_results if "error" in c]
+        status: Literal["success", "error", "partial"]
         if total_failed == 0 and not chunks_with_errors:
             status = "success"
         elif total_success == 0:
@@ -1909,7 +1911,7 @@ class DataQuery:
         self,
         instruments: List[str],
         attributes: List[str],
-        data: str = "REFERENCE_DATA",
+        data: str = "ALL",
         format: str = "JSON",
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
@@ -1925,7 +1927,7 @@ class DataQuery:
         Args:
             instruments: List of instrument identifiers
             attributes: List of attribute identifiers
-            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL)
+            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL); default ALL
             format: Response format (JSON)
             start_date: Start date in YYYYMMDD or TODAY-Nx format
             end_date: End date in YYYYMMDD or TODAY-Nx format
@@ -1964,7 +1966,7 @@ class DataQuery:
         frequency: str = "FREQ_DAY",
         conversion: str = "CONV_LASTBUS_ABS",
         nan_treatment: str = "NA_NOTHING",
-        data: str = "REFERENCE_DATA",
+        data: str = "ALL",
         page: Optional[str] = None,
     ) -> "TimeSeriesResponse":
         """
@@ -1979,7 +1981,7 @@ class DataQuery:
             frequency: Frequency convention
             conversion: Conversion convention
             nan_treatment: Missing data treatment
-            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL)
+            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL); default ALL
             page: Optional page token for pagination
 
         Returns:
@@ -2038,7 +2040,7 @@ class DataQuery:
         group_id: str,
         attributes: List[str],
         filter: Optional[str] = None,
-        data: str = "REFERENCE_DATA",
+        data: str = "ALL",
         format: str = "JSON",
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
@@ -2055,7 +2057,7 @@ class DataQuery:
             group_id: Catalog data group identifier
             attributes: List of attribute identifiers
             filter: Optional filter string (e.g., "currency(USD)")
-            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL)
+            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL); default ALL
             format: Response format (JSON)
             start_date: Start date in YYYYMMDD or TODAY-Nx format
             end_date: End date in YYYYMMDD or TODAY-Nx format
@@ -2236,6 +2238,47 @@ class DataQuery:
             heartbeat_timeout=heartbeat_timeout,
             max_tracked_files=max_tracked_files,
             max_tracked_errors=max_tracked_errors,
+        )
+
+    def auto_download(
+        self,
+        group_id: str,
+        destination_dir: str = "./downloads",
+        file_filter: Optional[Callable] = None,
+        progress_callback: Optional[Callable] = None,
+        error_callback: Optional[Callable] = None,
+        max_retries: int = 3,
+        max_concurrent_downloads: int = 5,
+        initial_check: bool = True,
+        reconnect_delay: float = 5.0,
+        max_reconnect_delay: float = 60.0,
+        file_group_id: Optional[Union[str, List[str]]] = None,
+        show_progress: bool = True,
+        enable_event_replay: bool = True,
+        heartbeat_timeout: float = 0.0,
+        max_tracked_files: int = 10_000,
+        max_tracked_errors: int = 1_000,
+    ):
+        """Synchronous proxy to client's auto_download_async."""
+        return self._run_sync(
+            self.auto_download_async(
+                group_id,
+                destination_dir,
+                file_filter,
+                progress_callback,
+                error_callback,
+                max_retries,
+                max_concurrent_downloads,
+                initial_check,
+                reconnect_delay,
+                max_reconnect_delay,
+                file_group_id=file_group_id,
+                show_progress=show_progress,
+                enable_event_replay=enable_event_replay,
+                heartbeat_timeout=heartbeat_timeout,
+                max_tracked_files=max_tracked_files,
+                max_tracked_errors=max_tracked_errors,
+            )
         )
 
     # DataFrame conversion proxies

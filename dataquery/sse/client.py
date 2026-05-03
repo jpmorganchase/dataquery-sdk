@@ -60,7 +60,7 @@ class SSEClient:
         on_error: Optional[Callable[[Exception], Union[None, Awaitable[None]]]] = None,
         reconnect_delay: float = 5.0,
         max_reconnect_delay: float = 60.0,
-        sse_timeout: float = 0,  # 0 = no timeout on the streaming read
+        sse_timeout: float = 90.0,  # 0 = no timeout on the streaming read
         params: Optional[dict] = None,
         event_id_store: Optional[SSEEventIdStore] = None,
         heartbeat_timeout: float = 0.0,
@@ -78,8 +78,10 @@ class SSEClient:
             reconnect_delay: Initial delay in seconds before the first
                              reconnection attempt.
             max_reconnect_delay: Maximum delay between reconnection attempts.
-            sse_timeout: Total seconds to wait while reading from the stream
-                         before treating the connection as stale (0 = unlimited).
+            sse_timeout: Per-read socket timeout in seconds. If no bytes
+                         (data or comment heartbeats) arrive within this
+                         window the connection is treated as stale and
+                         reconnected. Defaults to 90s; set to 0 to disable.
             params: Optional query string parameters appended to the notification
                     URL. Used to subscribe to a filtered notification stream —
                     e.g. ``{"group-id": "G", "file-group-id": "FG"}`` tells the
@@ -112,7 +114,7 @@ class SSEClient:
 
         self._running = False
         self._task: Optional[asyncio.Task] = None
-        self._stop_event = asyncio.Event()
+        self._stop_event: Optional[asyncio.Event] = None
         self._last_event_id: Optional[str] = None
         if event_id_store is not None:
             stored = event_id_store.load()
@@ -131,7 +133,10 @@ class SSEClient:
         if self._running:
             raise RuntimeError("SSEClient is already running")
         self._running = True
-        self._stop_event.clear()
+        if self._stop_event is None:
+            self._stop_event = asyncio.Event()
+        else:
+            self._stop_event.clear()
         self._task = asyncio.create_task(self._run_loop(), name="sse-client")
         return self
 
@@ -140,7 +145,8 @@ class SSEClient:
         if not self._running:
             return
         self._running = False
-        self._stop_event.set()
+        if self._stop_event is not None:
+            self._stop_event.set()
         if self._task:
             try:
                 await asyncio.wait_for(self._task, timeout=10.0)
@@ -172,7 +178,6 @@ class SSEClient:
     async def _get_headers(self) -> dict:
         headers = await self.auth_manager.get_headers()
         headers["Accept"] = "text/event-stream"
-        headers["Cache-Control"] = "no-cache"
         if self._last_event_id is not None:
             headers["Last-Event-ID"] = self._last_event_id
         return headers
@@ -186,6 +191,9 @@ class SSEClient:
         5-minute idle timeout — doesn't grow the reconnect delay across cycles.
         """
         delay = self.reconnect_delay
+        if self._stop_event is None:
+            self._stop_event = asyncio.Event()
+        stop_event = self._stop_event
         while self._running:
             self._last_connection_duration = 0.0
             try:
@@ -207,9 +215,9 @@ class SSEClient:
                 # the connection (idle timeout, scheduled recycle). Log at debug.
                 exc_name = type(exc).__name__
                 is_expected_disconnect = (
-                    "TransferEncodingError" in exc_name or
-                    "ServerDisconnectedError" in exc_name or
-                    "ClientPayloadError" in str(type(exc).__mro__)
+                    "TransferEncodingError" in exc_name
+                    or "ServerDisconnectedError" in exc_name
+                    or "ClientPayloadError" in str(type(exc).__mro__)
                 )
                 if is_expected_disconnect:
                     logger.debug(
@@ -226,11 +234,22 @@ class SSEClient:
                         delay,
                     )
                 await self._dispatch_error(exc)
+                # Exponential backoff only on failure, capped at max_reconnect_delay.
+                next_delay = min(delay * 2, self.max_reconnect_delay)
 
-            # Wait for `delay` seconds or until stop() is called.
+                # Wait for `delay` seconds or until stop() is called.
+                try:
+                    await asyncio.wait_for(stop_event.wait(), timeout=delay)
+                    break  # stop() was called during the wait
+                except asyncio.TimeoutError:
+                    pass
+                delay = next_delay
+                continue
+
+            # Successful-session path: short pause before reconnecting.
             try:
-                await asyncio.wait_for(self._stop_event.wait(), timeout=delay)
-                break  # stop() was called during the wait
+                await asyncio.wait_for(stop_event.wait(), timeout=delay)
+                break
             except asyncio.TimeoutError:
                 pass
 
@@ -404,12 +423,13 @@ class SSEClient:
         The save task is tracked in ``_save_tasks`` so ``stop()`` can drain
         any pending writes before exiting.
         """
-        if self.event_id_store is None:
+        store = self.event_id_store
+        if store is None:
             return
 
         async def _save() -> None:
             try:
-                await self.event_id_store.save(event_id)
+                await store.save(event_id)
             except Exception as exc:
                 logger.warning("Failed to persist SSE event id: %s", exc)
 

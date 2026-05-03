@@ -174,7 +174,7 @@ class TimeSeriesMixin(_RequestProto):
         self,
         instruments: List[str],
         attributes: List[str],
-        data: str = "REFERENCE_DATA",
+        data: str = "ALL",
         format: str = "JSON",
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
@@ -225,7 +225,7 @@ class TimeSeriesMixin(_RequestProto):
         frequency: str = "FREQ_DAY",
         conversion: str = "CONV_LASTBUS_ABS",
         nan_treatment: str = "NA_NOTHING",
-        data: str = "REFERENCE_DATA",
+        data: str = "ALL",
         page: Optional[str] = None,
     ) -> "TimeSeriesResponse":
         """Time series for a list of traditional DataQuery expressions."""
@@ -266,7 +266,7 @@ class TimeSeriesMixin(_RequestProto):
         group_id: str,
         attributes: List[str],
         filter: Optional[str] = None,
-        data: str = "REFERENCE_DATA",
+        data: str = "ALL",
         format: str = "JSON",
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
