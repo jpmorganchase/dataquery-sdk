@@ -21,7 +21,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Union
 
 from ..download.utils import download_and_track, file_exists_locally
 from ..types.models import DownloadOptions, DownloadProgress
-from .client import SSEClient, SSEEvent
+from .client import SSEClient, SSEEvent, is_expected_disconnect
 from .event_store import SSEEventIdStore, Subscription, build_event_id_store
 
 logger = logging.getLogger(__name__)
@@ -206,6 +206,13 @@ class NotificationDownloadManager:
                            Eviction is LRU — keys still seeing traffic stay hot.
                            Default 10,000 ≈ a few MB, sufficient for years of
                            realistic SSE volume.
+                           Edge case: a file that exhausted ``max_retries`` and
+                           is then evicted (because ``max_tracked_files`` cooler
+                           keys arrived in the meantime) will retry from zero
+                           if it reappears. In practice this is desirable —
+                           the original failure is likely long-stale by then —
+                           but it does mean ``max_retries`` is not a hard
+                           lifetime cap.
             max_tracked_errors: Maximum number of recent errors retained in
                            ``stats["errors"]``. Implemented as a ring buffer.
                            Default 1,000.
@@ -300,6 +307,9 @@ class NotificationDownloadManager:
                 await self._check_and_download()
             except Exception as exc:
                 logger.warning("Initial availability check failed: %s", exc)
+                # Surface through the same path as SSE/download errors so
+                # callers with an error_callback see startup failures too.
+                await self._dispatch_error(exc)
 
         # Start the SSE client.
         self._sse_client = SSEClient(
@@ -346,7 +356,7 @@ class NotificationDownloadManager:
             runtime = (datetime.now() - start).total_seconds()
         last_event_id = None
         if self._sse_client is not None:
-            last_event_id = self._sse_client._last_event_id
+            last_event_id = self._sse_client.last_event_id
         snapshot = {
             **self.stats,
             "runtime_seconds": runtime,
@@ -423,13 +433,7 @@ class NotificationDownloadManager:
         """Called by SSEClient on connection errors."""
         # TransferEncodingError and similar are expected when server closes
         # the connection (idle timeout, scheduled recycle). Log at debug.
-        exc_name = type(exc).__name__
-        is_expected_disconnect = (
-            "TransferEncodingError" in exc_name
-            or "ServerDisconnectedError" in exc_name
-            or "ClientPayloadError" in str(type(exc).__mro__)
-        )
-        if is_expected_disconnect:
+        if is_expected_disconnect(exc):
             logger.debug("SSE connection closed: %s", exc)
         else:
             logger.warning("SSE connection error: %s", exc)

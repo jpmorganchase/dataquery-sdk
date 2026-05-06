@@ -22,6 +22,18 @@ from .event_store import SSEEventIdStore
 logger = logging.getLogger(__name__)
 
 
+def is_expected_disconnect(exc: BaseException) -> bool:
+    """True for connection-close exceptions raised during normal server recycles.
+
+    Centralised so :class:`SSEClient` and :class:`NotificationDownloadManager`
+    classify disconnects consistently. ``TransferEncodingError`` lives in
+    :mod:`aiohttp.http_exceptions` and is a subclass of ``ClientPayloadError``,
+    so the two ``isinstance`` checks below cover all three cases the SDK saw
+    in practice (idle timeout, scheduled recycle, peer-side close).
+    """
+    return isinstance(exc, (aiohttp.ClientPayloadError, aiohttp.ServerDisconnectedError))
+
+
 @dataclass
 class SSEEvent:
     """A parsed Server-Sent Event."""
@@ -167,6 +179,14 @@ class SSEClient:
     def is_running(self) -> bool:
         return self._running
 
+    @property
+    def last_event_id(self) -> Optional[str]:
+        """The most recent SSE event id seen on the wire, or ``None``.
+
+        Reflects the value sent as ``Last-Event-ID`` on the next reconnect.
+        """
+        return self._last_event_id
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -213,13 +233,7 @@ class SSEClient:
             except Exception as exc:
                 # TransferEncodingError and similar are expected when server closes
                 # the connection (idle timeout, scheduled recycle). Log at debug.
-                exc_name = type(exc).__name__
-                is_expected_disconnect = (
-                    "TransferEncodingError" in exc_name
-                    or "ServerDisconnectedError" in exc_name
-                    or "ClientPayloadError" in str(type(exc).__mro__)
-                )
-                if is_expected_disconnect:
+                if is_expected_disconnect(exc):
                     logger.debug(
                         "SSE connection closed after %.1fs: %s; reconnecting in %.1fs",
                         self._last_connection_duration,
@@ -284,7 +298,13 @@ class SSEClient:
         headers = await self._get_headers()
         request_params = self._build_request_params()
 
-        # Use a fresh session per connection to avoid header/state bleed.
+        # Use a fresh session per connection rather than a shared/long-lived
+        # one. SSE connections are single-stream long-poll: there's nothing to
+        # pool (only one in-flight request at a time, no keep-alive reuse
+        # benefit), and a per-connection session ensures stale auth headers,
+        # half-closed sockets, and any aiohttp-internal state from the prior
+        # disconnect are dropped on every reconnect. The cost is one TCP+TLS
+        # handshake per reconnect, which is negligible at our reconnect rates.
         timeout = aiohttp.ClientTimeout(total=None, connect=30.0, sock_read=self.sse_timeout or None)
 
         proxy_kwargs = self.config.get_proxy_kwargs()
@@ -374,7 +394,10 @@ class SSEClient:
 
             if ":" in line:
                 field_name, _, field_value = line.partition(":")
-                field_value = field_value.lstrip(" ")
+                # Per the SSE spec, strip *one* leading space — preserves
+                # any intentional whitespace inside the value.
+                if field_value.startswith(" "):
+                    field_value = field_value[1:]
             else:
                 field_name = line
                 field_value = ""
@@ -397,6 +420,12 @@ class SSEClient:
                     retry_ms = int(field_value)
                 except ValueError:
                     pass
+                else:
+                    # Per the SSE spec, ``retry`` updates the client's
+                    # reconnection time. Clamp to ``max_reconnect_delay`` so a
+                    # misbehaving server can't push the SDK into multi-hour
+                    # waits between reconnects.
+                    self.reconnect_delay = min(retry_ms / 1000.0, self.max_reconnect_delay)
 
     async def _dispatch_event(self, event: SSEEvent) -> None:
         if not self.on_event:
@@ -406,8 +435,11 @@ class SSEClient:
                 await self.on_event(event)
             else:
                 self.on_event(event)
-        except Exception as exc:
-            logger.error("Error in SSE on_event callback: %s", exc)
+        except Exception:
+            # Use logger.exception so the full traceback is captured —
+            # callback bugs are otherwise invisible because the read loop
+            # deliberately keeps running.
+            logger.exception("Error in SSE on_event callback (event=%s id=%s)", event.event, event.id)
 
     async def _dispatch_error(self, exc: Exception) -> None:
         if not self.on_error:
@@ -417,8 +449,8 @@ class SSEClient:
                 await self.on_error(exc)
             else:
                 self.on_error(exc)
-        except Exception as cb_exc:
-            logger.error("Error in SSE on_error callback: %s", cb_exc)
+        except Exception:
+            logger.exception("Error in SSE on_error callback")
 
     def _persist_event_id(self, event_id: str) -> None:
         """Fire-and-forget save of the event id to the persistent store.
