@@ -124,7 +124,7 @@ DataQuery SDK provides several model classes for configuration and data handling
 
 !!! example "Basic Configuration"
     ```python
-    from dataquery.models import DownloadOptions
+    from dataquery.types.models import DownloadOptions
     from pathlib import Path
 
     # Basic options with defaults
@@ -153,7 +153,7 @@ DataQuery SDK provides several model classes for configuration and data handling
 
 !!! example "Processing Results"
     ```python
-    from dataquery.models import DownloadResult, DownloadStatus
+    from dataquery.types.models import DownloadResult, DownloadStatus
 
     def process_result(result: DownloadResult):
         print(f"File ID: {result.file_group_id}")
@@ -175,7 +175,7 @@ DataQuery SDK provides several model classes for configuration and data handling
 
 !!! example "Real-time Progress"
     ```python
-    from dataquery.models import DownloadProgress
+    from dataquery.types.models import DownloadProgress
 
     def progress_callback(progress: DownloadProgress):
         pct = f"{progress.percentage:.1f}%" if progress.total_bytes else "..."
@@ -195,7 +195,7 @@ DataQuery SDK provides several model classes for configuration and data handling
 
 !!! example "Minimal Configuration"
     ```python
-    from dataquery.models import ClientConfig
+    from dataquery.types.models import ClientConfig
 
     # Only credentials required - everything else uses smart defaults!
     config = ClientConfig(

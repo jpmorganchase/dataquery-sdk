@@ -6,13 +6,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from dataquery.client import format_duration, format_file_size
 from dataquery.dataquery import (
     ConfigManager,
     DataQuery,
     ProgressTracker,
 )
-from dataquery.models import (
+from dataquery.types.models import (
     Attribute,
     AttributesResponse,
     AvailabilityInfo,
@@ -36,24 +35,6 @@ from dataquery.utils import ensure_directory, get_download_paths
 
 class TestUtilityFunctions:
     """Test utility functions in dataquery module."""
-
-    def test_format_file_size(self):
-        """Test format_file_size function."""
-        assert format_file_size(0) == "0 B"
-        assert format_file_size(1024) == "1.00 KB"
-        assert format_file_size(1024 * 1024) == "1.00 MB"
-        assert format_file_size(1024 * 1024 * 1024) == "1.00 GB"
-        assert format_file_size(1024 * 1024 * 1024 * 1024) == "1.00 TB"
-        assert format_file_size(1500) == "1.46 KB"
-        assert format_file_size(500) == "500.00 B"
-
-    def test_format_duration(self):
-        """Test format_duration function."""
-        assert format_duration(30.5) == "30.5s"
-        assert format_duration(90.0) == "1.5m"
-        assert format_duration(7200.0) == "2.0h"
-        assert format_duration(0.5) == "0.5s"
-        assert format_duration(3600.0) == "1.0h"
 
     def test_ensure_directory(self):
         """Test ensure_directory function."""
@@ -397,8 +378,7 @@ class TestDataQueryAsyncMethods:
                 result = await dataquery.search_groups_async("test", limit=5, offset=0)
 
                 assert result == mock_groups
-                # Fix: The actual method calls with positional arguments, not keyword arguments
-                mock_client.search_groups_async.assert_called_once_with("test", 5, 0)
+                mock_client.search_groups_async.assert_called_once_with("test", 5, 0, page=None)
 
     @pytest.mark.asyncio
     async def test_list_files_async(self):
@@ -1507,11 +1487,10 @@ class TestDataQueryWorkflowMethods:
                 mock_client.list_groups_async.assert_called_once_with(limit=100)
 
                 # Check the result structure
-                assert result["total_groups"] == 2
-                assert result["total_files"] == 8  # 5 + 3
-                assert len(result["groups"]) == 2
-                assert "file_types" in result
-                assert "providers" in result
+                assert result.counts["total_groups"] == 2
+                assert result.counts["total_files"] == 8  # 5 + 3
+                assert len(result.data) == 2
+                assert "providers" in result.details
 
     @pytest.mark.asyncio
     async def test_run_group_files_async(self):
@@ -1541,13 +1520,10 @@ class TestDataQueryWorkflowMethods:
 
                 result = await dataquery.run_group_files_async("group1", max_concurrent=2)
 
-                # Fix: Check for the actual keys returned by the method
-                assert "group_id" in result
-                assert "total_files" in result
-                assert "file_types" in result
-                assert "date_range" in result
-                assert "files" in result
-                assert result["total_files"] == 2
+                assert result.subject["group_id"] == "group1"
+                assert result.counts["total_files"] == 2
+                assert "file_types" in result.details
+                assert isinstance(result.data, list)
 
     @pytest.mark.asyncio
     async def test_run_availability_async(self):
@@ -1572,12 +1548,9 @@ class TestDataQueryWorkflowMethods:
 
                 result = await dataquery.run_availability_async("file1", "20200101")
 
-                # Adjusted keys for single AvailabilityInfo
-                assert "file_group_id" in result
-                assert "file_datetime" in result
-                assert "is_available" in result
-                assert result["file_group_id"] == "file1"
-                assert result["file_datetime"] == "20200101"
+                assert result.subject["file_group_id"] == "file1"
+                assert result.subject["file_datetime"] == "20200101"
+                assert "is_available" in result.details
 
     @pytest.mark.asyncio
     async def test_run_download_async(self):
@@ -1610,17 +1583,13 @@ class TestDataQueryWorkflowMethods:
 
                 result = await dataquery.run_download_async("file1", "20200101")
 
-                # Fix: Check for the actual keys returned by the method
-                assert "file_group_id" in result
-                assert "file_datetime" in result
-                assert "download_successful" in result
-                assert "local_path" in result
-                assert "file_size" in result
-                assert "download_time" in result
-                assert "speed_mbps" in result
-                assert "error_message" in result
-                assert result["file_group_id"] == "file1"
-                assert result["file_datetime"] == "20200101"
+                assert result.subject["file_group_id"] == "file1"
+                assert result.subject["file_datetime"] == "20200101"
+                assert result.details["download_successful"] is True
+                assert "local_path" in result.details
+                assert "file_size" in result.details
+                assert "download_time" in result.timing
+                assert "speed_mbps" in result.timing
 
     @pytest.mark.asyncio
     @pytest.mark.asyncio
@@ -1676,20 +1645,15 @@ class TestDataQueryWorkflowMethods:
                 )
 
                 # Check the result structure
-                assert "group_id" in result
-                assert "start_date" in result
-                assert "end_date" in result
-                assert "total_files" in result
-                assert "successful_downloads" in result
-                assert "failed_downloads" in result
-                assert "success_rate" in result
-                assert "downloaded_files" in result
-                assert "failed_files" in result
-
-                assert result["group_id"] == "group1"
-                assert result["start_date"] == "20240101"
-                assert result["end_date"] == "20240131"
-                assert result["total_files"] == 2
+                assert result.subject["group_id"] == "group1"
+                assert result.subject["start_date"] == "20240101"
+                assert result.subject["end_date"] == "20240131"
+                assert result.counts["total_files"] == 2
+                assert "successful_downloads" in result.counts
+                assert "failed_downloads" in result.counts
+                assert "success_rate" in result.details
+                assert "downloaded_files" in result.details
+                assert "failed_files" in result.details
 
     @pytest.mark.asyncio
     async def test_run_group_download_async_complex(self):
@@ -1763,13 +1727,12 @@ class TestDataQueryWorkflowMethods:
                     num_parts=4,
                 )
 
-                assert "group_id" in result
-                assert "start_date" in result
-                assert "end_date" in result
-                assert "total_files" in result
-                assert "successful_downloads" in result
-                assert "failed_downloads" in result
-                assert result["total_files"] == 2
+                assert result.subject["group_id"] == "group1"
+                assert result.subject["start_date"] == "20240101"
+                assert result.subject["end_date"] == "20240131"
+                assert result.counts["total_files"] == 2
+                assert "successful_downloads" in result.counts
+                assert "failed_downloads" in result.counts
                 # Ensure the client download method was used
                 assert mock_client.download_file_async.await_count >= 1
 

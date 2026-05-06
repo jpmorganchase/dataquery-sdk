@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from dataquery.rate_limiter import (
+from dataquery.transport.rate_limiter import (
     EnhancedTokenBucketRateLimiter,
     QueuedRequest,
     QueuePriority,

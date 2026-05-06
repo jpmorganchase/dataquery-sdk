@@ -14,9 +14,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from aiohttp import BasicAuth
 
-from dataquery.auth import TokenManager
-from dataquery.models import ClientConfig, OAuthToken, TokenResponse
-from dataquery.sse_client import SSEClient
+from dataquery.sse.client import SSEClient
+from dataquery.transport.auth import TokenManager
+from dataquery.types.models import ClientConfig, OAuthToken, TokenResponse
 
 # ---------------------------------------------------------------------------
 # ClientConfig.get_proxy_kwargs — the single source of truth
@@ -133,7 +133,9 @@ async def test_get_new_token_applies_proxy_without_auth():
     cfg = _proxy_cfg(with_auth=False)
     recorder: dict = {}
 
-    with patch("dataquery.auth.aiohttp.ClientSession", return_value=_StubSessionCtx(recorder, _FAKE_TOKEN_PAYLOAD)):
+    with patch(
+        "dataquery.transport.auth.aiohttp.ClientSession", return_value=_StubSessionCtx(recorder, _FAKE_TOKEN_PAYLOAD)
+    ):
         mgr = TokenManager(cfg)
         token = await mgr._get_new_token()
 
@@ -148,7 +150,9 @@ async def test_get_new_token_applies_proxy_with_basic_auth():
     cfg = _proxy_cfg(with_auth=True)
     recorder: dict = {}
 
-    with patch("dataquery.auth.aiohttp.ClientSession", return_value=_StubSessionCtx(recorder, _FAKE_TOKEN_PAYLOAD)):
+    with patch(
+        "dataquery.transport.auth.aiohttp.ClientSession", return_value=_StubSessionCtx(recorder, _FAKE_TOKEN_PAYLOAD)
+    ):
         mgr = TokenManager(cfg)
         await mgr._get_new_token()
 
@@ -170,7 +174,9 @@ async def test_get_new_token_omits_proxy_kwargs_when_disabled():
     )
     recorder: dict = {}
 
-    with patch("dataquery.auth.aiohttp.ClientSession", return_value=_StubSessionCtx(recorder, _FAKE_TOKEN_PAYLOAD)):
+    with patch(
+        "dataquery.transport.auth.aiohttp.ClientSession", return_value=_StubSessionCtx(recorder, _FAKE_TOKEN_PAYLOAD)
+    ):
         mgr = TokenManager(cfg)
         await mgr._get_new_token()
 
@@ -191,7 +197,9 @@ async def test_refresh_token_applies_proxy():
         refresh_token="r123",
     )
 
-    with patch("dataquery.auth.aiohttp.ClientSession", return_value=_StubSessionCtx(recorder, _FAKE_TOKEN_PAYLOAD)):
+    with patch(
+        "dataquery.transport.auth.aiohttp.ClientSession", return_value=_StubSessionCtx(recorder, _FAKE_TOKEN_PAYLOAD)
+    ):
         await mgr._refresh_token()
 
     assert recorder["proxy"] == "http://proxy:8080"
@@ -272,7 +280,7 @@ async def test_sse_connect_includes_proxy_and_auth():
     client = SSEClient(config=cfg, auth_manager=_sse_auth_manager())
     client._running = True
 
-    with patch("dataquery.sse_client.aiohttp.ClientSession", return_value=_StubSSESessionCtx(recorder)):
+    with patch("dataquery.sse.client.aiohttp.ClientSession", return_value=_StubSSESessionCtx(recorder)):
         await client._connect_and_listen()
 
     assert recorder["proxy"] == "http://proxy:8080"

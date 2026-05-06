@@ -11,8 +11,8 @@ from typing import Any, List, Optional
 import aiohttp
 import structlog
 
-from .exceptions import ValidationError
-from .models import ClientConfig
+from .types.exceptions import ValidationError
+from .types.models import ClientConfig
 
 # Note: load_dotenv is imported where used to avoid unused import in environments
 
@@ -620,10 +620,7 @@ def get_filename_from_response(
         filename += ".bin"
 
     # Final sanitize fallback
-    try:
-        filename = Path(filename).name
-    except Exception:
-        pass
+    filename = Path(filename).name
     return filename
 
 

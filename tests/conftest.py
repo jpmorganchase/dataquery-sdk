@@ -11,8 +11,8 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from dataquery.client import DataQueryClient
-from dataquery.models import ClientConfig
+from dataquery.core.client import DataQueryClient
+from dataquery.types.models import ClientConfig
 
 # Fallback async test runner if pytest-asyncio plugin is unavailable
 try:

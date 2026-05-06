@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 from dataquery import DataQuery  # noqa: E402
-from dataquery.logging_config import (
+from dataquery.config.logging import (
     LogFormat,
     LogLevel,
     create_logging_config,
