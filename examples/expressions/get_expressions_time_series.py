@@ -1,107 +1,27 @@
 #!/usr/bin/env python3
-"""
-Lean example: get expressions time series using core API with simple CLI args.
+"""Get a time series for one or more DataQuery expressions."""
 
-Defaults:
-- Expressions: GDP_US_REAL
-- Date range: last 30 days
-- Output format: JSON
-
-Usage:
-  python examples/expressions/get_expressions_time_series.py \
-    [--expressions GDP_US_REAL,CPI_US_CORE] [--start YYYYMMDD] [--end YYYYMMDD] \
-    [--frequency FREQ_DAY] [--calendar CAL_USBANK] [--conversion CONV_LASTBUS_ABS] \
-    [--nan NA_NOTHING] [--data ALL] [--show 3]
-"""
-
-import argparse
 import asyncio
 import sys
-from datetime import datetime, timedelta
 from pathlib import Path
 
-# Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # noqa: E402
 
-from dotenv import load_dotenv  # noqa: E402
-
 from dataquery import DataQuery  # noqa: E402
-from dataquery.types.exceptions import DataQueryError  # noqa: E402
 
-load_dotenv()
+EXPRESSIONS = ["DB(MTE,IRISH EUR 1.100 15-May-2029 LON,,IE00BH3SQ895,MIDPRC)"]
+START_DATE = "20240101"
+END_DATE = "20240131"
 
 
-async def main() -> None:
-    parser = argparse.ArgumentParser(description="Get expressions time series (lean)")
-    parser.add_argument(
-        "--expressions",
-        default="GDP_US_REAL",
-        help="Comma-separated expressions (default: GDP_US_REAL)",
-    )
-    parser.add_argument("--start", help="Start date YYYYMMDD (default: 30 days ago)")
-    parser.add_argument("--end", help="End date YYYYMMDD (default: today)")
-    parser.add_argument("--frequency", default="FREQ_DAY", help="Frequency (default: FREQ_DAY)")
-    parser.add_argument("--calendar", default="CAL_USBANK", help="Calendar (default: CAL_USBANK)")
-    parser.add_argument(
-        "--conversion",
-        default="CONV_LASTBUS_ABS",
-        help="Conversion (default: CONV_LASTBUS_ABS)",
-    )
-    parser.add_argument(
-        "--nan",
-        dest="nan_treatment",
-        default="NA_NOTHING",
-        help="NaN treatment (default: NA_NOTHING)",
-    )
-    parser.add_argument("--data", default="ALL", help="Data flag (default: ALL)")
-    parser.add_argument("--show", type=int, default=3, help="How many series to print (default: 3)")
-    args = parser.parse_args()
-
-    # Dates
-    if args.start and args.end:
-        start_date = args.start
-        end_date = args.end
-    else:
-        end_dt = datetime.now()
-        start_dt = end_dt - timedelta(days=30)
-        start_date = start_dt.strftime("%Y%m%d")
-        end_date = end_dt.strftime("%Y%m%d")
-
-    expressions_list = [e.strip() for e in args.expressions.split(",") if e.strip()]
-
-    try:
-        async with DataQuery() as dq:
-            resp = await dq.get_expressions_time_series_async(
-                expressions=expressions_list,
-                data=args.data,
-                format="JSON",
-                start_date=start_date,
-                end_date=end_date,
-                calendar=args.calendar,
-                frequency=args.frequency,
-                conversion=args.conversion,
-                nan_treatment=args.nan_treatment,
-                page=None,
-            )
-
-            # Extract time series from instruments -> attributes -> time_series
-            print(f"Total Instruments: {len(resp.instruments)}")
-            series_count = 0
-            for instrument in resp.instruments[: args.show]:
-                if instrument.attributes:
-                    for attr in instrument.attributes:
-                        series_count += 1
-                        expr = attr.expression or attr.attribute_name or "N/A"
-                        time_series = attr.time_series or []
-                        print(f"{series_count}. {expr} (data points: {len(time_series)})")
-                        # Show first few data points as sample
-                        if time_series:
-                            print(f"   Sample data (first 5): {time_series[:5]}")
-
-    except DataQueryError as e:
-        print(f"Error: {e}")
-    except Exception as e:
-        print(f"Unexpected error: {e}")
+async def main():
+    async with DataQuery() as dq:
+        response = await dq.get_expressions_time_series_async(
+            expressions=EXPRESSIONS,
+            start_date=START_DATE,
+            end_date=END_DATE,
+        )
+        print(response)
 
 
 if __name__ == "__main__":

@@ -1,23 +1,14 @@
 #!/usr/bin/env python3
-"""
-Example: Download catalog files for all groups.
-
-Lists all groups via the /groups API, checks available files for each group,
-and downloads any CATALOG file that is available for today's date.
-
-Usage:
-    python download_all_catalogs.py
-"""
+"""Download today's CATALOG file for every group that has one."""
 
 import asyncio
+import sys
 from datetime import datetime
 from pathlib import Path
 
-from dotenv import load_dotenv
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # noqa: E402
 
-from dataquery import DataQuery
-
-load_dotenv()
+from dataquery import DataQuery  # noqa: E402
 
 TODAY = datetime.now().strftime("%Y%m%d")
 DESTINATION = Path("./downloads")
@@ -25,53 +16,22 @@ DESTINATION = Path("./downloads")
 
 async def main():
     async with DataQuery() as dq:
-        groups = await dq.list_groups_async(limit=700)
-        print(f"Found {len(groups)} groups. Checking catalogs for {TODAY}...\n")
-
-        downloaded = 0
-        skipped = 0
-
-        for g in groups:
-            group_id = g.group_id
-            try:
-                files = await dq.list_available_files_async(
-                    group_id=group_id,
-                    start_date=TODAY,
-                    end_date=TODAY,
-                )
-            except Exception as e:
-                print(f"  {group_id}: could not list files ({e})")
-                continue
-
-            catalogs = [
-                f
-                for f in files
-                if "CATALOG" in (f.get("file-group-id") or "").upper() and f.get("is-available") is True
-            ]
-
-            if not catalogs:
-                skipped += 1
-                continue
-
-            for cat in catalogs:
-                fgid = cat["file-group-id"]
-                print(f"  {fgid} ... ", end="", flush=True)
-                try:
-                    result = await dq.download_file_async(
+        groups = await dq.list_groups_async()
+        for group in groups:
+            files = await dq.list_available_files_async(
+                group_id=group.group_id,
+                start_date=TODAY,
+                end_date=TODAY,
+            )
+            for entry in files:
+                fgid = entry.get("file-group-id") or ""
+                if "CATALOG" in fgid.upper() and entry.get("is-available"):
+                    await dq.download_file_async(
                         file_group_id=fgid,
                         file_datetime=TODAY,
                         destination_path=DESTINATION,
-                        num_parts=1,
                     )
-                    if result and result.status == "completed":
-                        print(f"OK ({result.file_size:,} bytes)")
-                        downloaded += 1
-                    else:
-                        print(f"FAILED: {getattr(result, 'error_message', 'unknown')}")
-                except Exception as e:
-                    print(f"ERROR: {e}")
-
-    print(f"\nDone. Downloaded: {downloaded}, Skipped (no catalog available): {skipped}")
+                    print(fgid)
 
 
 if __name__ == "__main__":
