@@ -8,7 +8,7 @@ import time
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Dict, List, Optional, Tuple, Union
 
 if TYPE_CHECKING:
     from ..sse.subscriber import NotificationDownloadManager
@@ -44,6 +44,7 @@ from ..types.models import (
     DownloadProgress,
     DownloadResult,
     DownloadStatus,
+    ErrorResponse,
     FileInfo,
     FileList,
     FiltersResponse,
@@ -62,6 +63,7 @@ from ..utils import (
     validate_instruments_list,
 )
 from ._mixins import (
+    PAGINATION_DEFAULT_MAX_PAGES,
     DataFrameMixin,
     GridMixin,
     InstrumentsMixin,
@@ -562,9 +564,21 @@ class DataQueryClient(
             self.logger.error("Failed to list groups", error=str(e))
             raise
 
-    async def list_all_groups_async(self) -> List[Group]:
+    async def list_all_groups_async(
+        self,
+        *,
+        max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
+        raise_on_cap: bool = True,
+    ) -> List[Group]:
         """
         List all available data groups using pagination.
+
+        Args:
+            max_pages: Hard cap on pages walked (defends against pathological
+                servers that loop the ``next`` link or paginate without bound).
+            raise_on_cap: If ``True`` (default), raise :class:`PaginationError`
+                when ``max_pages`` is reached. Set ``False`` to silently
+                truncate.
 
         Returns:
             List of all group information
@@ -572,93 +586,93 @@ class DataQueryClient(
         await self._ensure_connected()
 
         all_groups: List[Group] = []
-        next_url: Optional[str] = self._build_api_url(C.API_GROUPS)
         page_count = 0
-        # Guard against pathological servers that loop the next-link or that
-        # paginate without bound. 1000 pages is far above any realistic
-        # catalog size; visited set catches the simpler echo case earlier.
-        max_pages = 1000
-        visited: set = set()
 
         try:
-            while next_url:
-                if next_url in visited:
-                    self.logger.warning(
-                        "Pagination loop detected — server returned a previously seen next link",
-                        url=next_url,
-                        page=page_count,
-                    )
-                    break
-                visited.add(next_url)
+            async for page in self.iter_groups_pages_async(max_pages=max_pages, raise_on_cap=raise_on_cap):
                 page_count += 1
-                if page_count > max_pages:
-                    self.logger.warning(
-                        "Pagination cap hit — stopping after max_pages",
-                        max_pages=max_pages,
-                        total_groups=len(all_groups),
-                    )
-                    break
-
-                async with await self._make_authenticated_request("GET", next_url) as response:
-                    await self._handle_response(response)
-                    data = await response.json()
-
-                    group_list = GroupList(**data)
-                    all_groups.extend(group_list.groups)
-
-                    # One page-level log instead of two; the redundant
-                    # "fetching/fetched" pair doubled log volume on big catalogs.
-                    self.logger.info(
-                        "Groups page fetched",
-                        page=page_count,
-                        groups_in_page=len(group_list.groups),
-                        total_groups=len(all_groups),
-                    )
-
-                    # Check for next page
-                    next_url = group_list.get_next_link()
-                    if next_url:
-                        # If next_url is relative, make it absolute
-                        if not next_url.startswith(("http://", "https://")):
-                            next_url = self._build_api_url(next_url.lstrip("/"))
+                all_groups.extend(page.groups)
+                self.logger.info(
+                    "Groups page fetched",
+                    page=page_count,
+                    groups_in_page=len(page.groups),
+                    total_groups=len(all_groups),
+                )
 
             self.logger.info(
                 "All groups fetched",
                 total_groups=len(all_groups),
                 total_pages=page_count,
             )
-
-            # Log performance metric
             self.logging_manager.log_metric("groups_listed", len(all_groups), "count")
             self.logging_manager.log_metric("groups_pages_fetched", page_count, "count")
-
             return all_groups
 
         except Exception as e:
             self.logger.error("Failed to list all groups", error=str(e))
             raise
 
+    async def iter_groups_pages_async(
+        self,
+        *,
+        max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
+        raise_on_cap: bool = True,
+    ) -> "AsyncIterator[GroupList]":
+        """Yield each :class:`GroupList` page; uses the shared ``iter_pages`` walker."""
+        await self._ensure_connected()
+
+        async def _first() -> GroupList:
+            url = self._build_api_url(C.API_GROUPS)
+            async with await self._make_authenticated_request("GET", url) as response:
+                await self._handle_response(response)
+                data = await response.json()
+                return GroupList(**data)
+
+        async for page in self.iter_pages(_first, max_pages=max_pages, raise_on_cap=raise_on_cap):
+            yield page
+
+    async def iter_groups_async(
+        self,
+        *,
+        max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
+    ) -> "AsyncIterator[Group]":
+        """Yield every group across all pages, lazily."""
+        async for page in self.iter_groups_pages_async(max_pages=max_pages):
+            for g in page.groups:
+                yield g
+
     async def search_groups_async(
-        self, keywords: str, limit: Optional[int] = None, offset: Optional[int] = None
+        self,
+        keywords: str,
+        limit: Optional[int] = None,
+        offset: Optional[int] = None,
+        *,
+        page: Optional[str] = None,
     ) -> List[Group]:
         """
-        Search groups by keywords.
+        Search groups by keywords (single page).
 
         Args:
             keywords: Search keywords
-            limit: Maximum number of results to return
-            offset: Number of results to skip
+            limit: Maximum number of results per page (server-side cap)
+            offset: Number of results to skip — kept for backwards compatibility.
+                Prefer ``page`` (cursor) or :meth:`iter_search_groups_async`
+                / :meth:`search_all_groups_async` for full-result iteration.
+            page: Optional ``next``-link cursor returned by a prior page's
+                ``links[].next``.
 
         Returns:
-            List of matching groups
+            List of matching groups for the requested page.
         """
         await self._ensure_connected()
 
-        params = {"keywords": keywords}
+        params: Dict[str, str] = {"keywords": keywords}
         if limit is not None:
             params["limit"] = str(limit)
         if offset is not None:
             params["offset"] = str(offset)
+        if page is not None:
+            params["page"] = page
 
         url = self._build_api_url(C.API_GROUPS_SEARCH)
 
@@ -667,7 +681,6 @@ class DataQueryClient(
                 await self._handle_response(response)
                 data = await response.json()
 
-                # Assuming the search endpoint returns the same structure as list_groups
                 group_list = GroupList(**data)
                 self.logger.info("Groups searched", keywords=keywords, count=len(group_list.groups))
 
@@ -675,6 +688,105 @@ class DataQueryClient(
 
         except Exception as e:
             self.logger.error("Failed to search groups", keywords=keywords, error=str(e))
+            raise
+
+    async def search_groups_page_async(
+        self,
+        keywords: str,
+        limit: Optional[int] = None,
+        *,
+        page: Optional[str] = None,
+    ) -> GroupList:
+        """Single-page cursor search returning the full :class:`GroupList`.
+
+        Use this (or :meth:`iter_search_groups_async`) instead of the raw
+        ``search_groups_async`` when you need access to ``links[].next`` for
+        cursor-based pagination.
+        """
+        await self._ensure_connected()
+
+        params: Dict[str, str] = {"keywords": keywords}
+        if limit is not None:
+            params["limit"] = str(limit)
+        if page is not None:
+            params["page"] = page
+
+        url = self._build_api_url(C.API_GROUPS_SEARCH)
+        async with await self._make_authenticated_request("GET", url, params=params) as response:
+            await self._handle_response(response)
+            data = await response.json()
+            return GroupList(**data)
+
+    async def iter_search_groups_pages_async(
+        self,
+        keywords: str,
+        *,
+        limit: Optional[int] = None,
+        max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
+        raise_on_cap: bool = True,
+    ) -> "AsyncIterator[GroupList]":
+        """Yield each :class:`GroupList` page of a keyword search via cursor pagination."""
+
+        async def _first() -> GroupList:
+            return await self.search_groups_page_async(keywords, limit=limit)
+
+        async for page in self.iter_pages(_first, max_pages=max_pages, raise_on_cap=raise_on_cap):
+            yield page
+
+    async def iter_search_groups_async(
+        self,
+        keywords: str,
+        *,
+        limit: Optional[int] = None,
+        max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
+    ) -> "AsyncIterator[Group]":
+        """Yield every :class:`Group` matching ``keywords`` across all pages."""
+        async for page in self.iter_search_groups_pages_async(keywords, limit=limit, max_pages=max_pages):
+            for g in page.groups:
+                yield g
+
+    async def search_all_groups_async(
+        self,
+        keywords: str,
+        *,
+        limit: Optional[int] = None,
+        max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
+        raise_on_cap: bool = True,
+    ) -> List[Group]:
+        """Materialize every page of a keyword search using cursor pagination.
+
+        Mirrors :meth:`list_all_groups_async` for the search endpoint.
+        """
+        all_groups: List[Group] = []
+        page_count = 0
+        try:
+            async for page in self.iter_search_groups_pages_async(
+                keywords,
+                limit=limit,
+                max_pages=max_pages,
+                raise_on_cap=raise_on_cap,
+            ):
+                page_count += 1
+                all_groups.extend(page.groups)
+                self.logger.info(
+                    "Search-groups page fetched",
+                    page=page_count,
+                    keywords=keywords,
+                    groups_in_page=len(page.groups),
+                    total_groups=len(all_groups),
+                )
+
+            self.logger.info(
+                "All matching groups fetched",
+                keywords=keywords,
+                total_groups=len(all_groups),
+                total_pages=page_count,
+            )
+            self.logging_manager.log_metric("groups_searched", len(all_groups), "count")
+            self.logging_manager.log_metric("groups_search_pages_fetched", page_count, "count")
+            return all_groups
+        except Exception as e:
+            self.logger.error("Failed to walk all matching groups", keywords=keywords, error=str(e))
             raise
 
     async def list_files_async(self, group_id: str, file_group_id: Optional[str] = None) -> FileList:
@@ -1145,6 +1257,53 @@ class DataQueryClient(
         if self.session is None or (hasattr(self.session, "closed") and self.session.closed):
             await self.connect()
 
+    @staticmethod
+    def _parse_v2_error(body: Optional[str]) -> Optional[ErrorResponse]:
+        """Parse a DataQuery v2 error envelope into an ``ErrorResponse``.
+
+        Accepts the canonical flat shape::
+
+            {"code": <number>, "description": "<text>"}
+
+        and the common wrapped variants used across DataQuery deployments::
+
+            {"info":   {"code": ..., "description": ...}}
+            {"error":  {"code": ..., "description": ...}}
+            {"errors": [{"code": ..., "description": ...}, ...]}
+
+        Returns ``None`` when the body is empty, not JSON, or doesn't carry
+        a recognisable error object.
+        """
+        if not body:
+            return None
+        import json as _json
+
+        try:
+            data = _json.loads(body)
+        except (ValueError, TypeError):
+            return None
+        if not isinstance(data, dict):
+            return None
+
+        candidate: Optional[Dict[str, Any]] = None
+        if "code" in data and "description" in data:
+            candidate = data
+        elif isinstance(data.get("info"), dict):
+            candidate = data["info"]
+        elif isinstance(data.get("error"), dict):
+            candidate = data["error"]
+        elif isinstance(data.get("errors"), list) and data["errors"]:
+            first = data["errors"][0]
+            if isinstance(first, dict):
+                candidate = first
+
+        if not candidate:
+            return None
+        try:
+            return ErrorResponse.model_validate(candidate)
+        except Exception:  # pragma: no cover - defensive
+            return None
+
     async def _handle_response(self, response: aiohttp.ClientResponse):
         """Handle HTTP response and raise appropriate exceptions."""
         # Extract and log interaction ID for traceability
@@ -1157,45 +1316,71 @@ class DataQueryClient(
                 status=response.status,
             )
 
-        # For non-2xx responses, log the error payload (best-effort)
+        # For non-2xx responses, read the body once and try to parse the
+        # DataQuery v2 error envelope so the resulting exception carries the
+        # server-supplied code/description rather than a bare HTTP status.
+        api_error: Optional[ErrorResponse] = None
+        error_body: Optional[str] = None
         if response.status >= 400:
-            error_body = None
             try:
-                # Try to read response body safely for logging
                 text = await response.text()
-                # Avoid logging very large payloads
                 error_body = text[:1000] if text else None
             except Exception:
                 error_body = None
-            # Log a structured error record
+            api_error = self._parse_v2_error(error_body)
             self.logger.error(
                 "HTTP error response",
                 status=response.status,
                 url=str(getattr(response, "url", "unknown")),
                 interaction_id=interaction_id,
                 body=error_body,
+                api_error_code=getattr(api_error, "code", None),
+                api_error_description=getattr(api_error, "description", None),
             )
 
+        details: Dict[str, Any] = {"interaction_id": interaction_id, "status_code": response.status}
+        if api_error is not None:
+            details["code"] = api_error.code
+            details["description"] = api_error.description
+            extra = api_error.model_dump(exclude={"code", "description", "interaction_id"})
+            if extra:
+                details["extra"] = extra
+
+        def _msg(default: str) -> str:
+            if api_error and api_error.description:
+                return f"{default}: [{api_error.code}] {api_error.description}"
+            return default
+
         if response.status == 401:
-            raise AuthenticationError("Authentication failed", details={"interaction_id": interaction_id})
+            raise AuthenticationError(_msg("Authentication failed"), details=details)
         elif response.status == 403:
             raise AuthenticationError(
-                "Access denied - insufficient permissions",
-                details={"interaction_id": interaction_id},
+                _msg("Access denied - insufficient permissions"),
+                details=details,
             )
         elif response.status == 404:
-            raise NotFoundError("Resource", "unknown")
+            resource_id = str(api_error.code) if api_error and api_error.code is not None else "unknown"
+            err = NotFoundError("Resource", resource_id, message=_msg("Resource not found"))
+            err.details.update(details)
+            raise err
         # Handle rate limit response
         if response.status == 429:
             self.rate_limiter.handle_rate_limit_response(dict(response.headers))
-            raise RateLimitError(
-                f"Rate limit exceeded: {response.status}",
+            rate_err = RateLimitError(
+                _msg(f"Rate limit exceeded: {response.status}"),
                 retry_after=int(response.headers.get("Retry-After", 0)),
             )
+            rate_err.details.update(details)
+            raise rate_err
         elif response.status >= 500:
-            raise NetworkError(f"Server error: {response.status}", status_code=response.status)
+            net_err = NetworkError(
+                _msg(f"Server error: {response.status}"),
+                status_code=response.status,
+            )
+            net_err.details.update(details)
+            raise net_err
         elif response.status >= 400:
-            raise ValidationError(f"Client error: {response.status}")
+            raise ValidationError(_msg(f"Client error: {response.status}"), details=details)
 
         # Mark successful request for adaptive backoff reset
         if response.status < 400:
@@ -1359,6 +1544,47 @@ class DataQueryClient(
         await manager.start()
         return manager
 
+    def auto_download(
+        self,
+        group_id: str,
+        destination_dir: str = "./downloads",
+        file_filter: Optional[Callable] = None,
+        progress_callback: Optional[Callable] = None,
+        error_callback: Optional[Callable] = None,
+        max_retries: int = 3,
+        max_concurrent_downloads: int = 5,
+        initial_check: bool = False,
+        reconnect_delay: float = 5.0,
+        max_reconnect_delay: float = 60.0,
+        file_group_id: Optional[Union[str, List[str]]] = None,
+        show_progress: bool = True,
+        enable_event_replay: bool = True,
+        heartbeat_timeout: float = 0.0,
+        max_tracked_files: int = 10_000,
+        max_tracked_errors: int = 1_000,
+    ) -> "NotificationDownloadManager":
+        """Synchronous wrapper for :meth:`auto_download_async`."""
+        return asyncio.run(
+            self.auto_download_async(
+                group_id,
+                destination_dir,
+                file_filter,
+                progress_callback,
+                error_callback,
+                max_retries,
+                max_concurrent_downloads,
+                initial_check,
+                reconnect_delay,
+                max_reconnect_delay,
+                file_group_id=file_group_id,
+                show_progress=show_progress,
+                enable_event_replay=enable_event_replay,
+                heartbeat_timeout=heartbeat_timeout,
+                max_tracked_files=max_tracked_files,
+                max_tracked_errors=max_tracked_errors,
+            )
+        )
+
     # DataFrame conversion methods (to_dataframe, groups_to_dataframe, etc.)
     # live in DataFrameMixin — see _dataframe_mixin.py.
 
@@ -1448,7 +1674,7 @@ class DataQueryClient(
         self,
         instruments: List[str],
         attributes: List[str],
-        data: str = "REFERENCE_DATA",
+        data: str = "ALL",
         format: str = "JSON",
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
@@ -1485,7 +1711,7 @@ class DataQueryClient(
         frequency: str = "FREQ_DAY",
         conversion: str = "CONV_LASTBUS_ABS",
         nan_treatment: str = "NA_NOTHING",
-        data: str = "REFERENCE_DATA",
+        data: str = "ALL",
         page: Optional[str] = None,
     ) -> "TimeSeriesResponse":
         """Synchronous wrapper using an event-loop aware runner."""
@@ -1523,7 +1749,7 @@ class DataQueryClient(
         group_id: str,
         attributes: List[str],
         filter: Optional[str] = None,
-        data: str = "REFERENCE_DATA",
+        data: str = "ALL",
         format: str = "JSON",
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,

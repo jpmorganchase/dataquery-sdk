@@ -134,7 +134,7 @@ def comparison_example():
                 resp = dq.get_grid_data(
                     expr=case["expr"],
                     grid_id=case["grid_id"],
-                    data="REFERENCE_DATA",
+                    data="ALL",
                     format="JSON",
                     end_date="20240131",
                     calendar="CAL_USBANK",

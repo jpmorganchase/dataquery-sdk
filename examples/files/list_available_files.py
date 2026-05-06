@@ -19,8 +19,12 @@ from pathlib import Path
 # Add parent directory to path to import dataquery
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
+from dotenv import load_dotenv  # noqa: E402
+
 from dataquery import DataQuery  # noqa: E402
 from dataquery.types.exceptions import AuthenticationError  # noqa: E402
+
+load_dotenv()
 
 
 def parse_args():

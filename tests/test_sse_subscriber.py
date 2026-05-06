@@ -7,6 +7,7 @@ client is a fake that returns whatever the test expects.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,6 +19,13 @@ import pytest
 from dataquery.sse.client import SSEEvent
 from dataquery.sse.subscriber import NotificationDownloadManager
 from dataquery.types.models import DownloadResult, DownloadStatus
+
+
+async def _drain(mgr: NotificationDownloadManager) -> None:
+    """Wait for any background download tasks scheduled via _on_sse_event."""
+    if mgr._inflight:
+        await asyncio.gather(*list(mgr._inflight), return_exceptions=True)
+
 
 # ---------------------------------------------------------------------------
 # Fakes
@@ -109,6 +117,7 @@ async def test_notification_triggers_download_and_updates_stats(tmp_path):
     mgr._running = True
 
     await mgr._on_sse_event(_event())
+    await _drain(mgr)
 
     assert mgr.stats["notifications_received"] == 1
     assert mgr.stats["files_discovered"] == 1
@@ -128,6 +137,7 @@ async def test_notification_with_file_updated_event_type(tmp_path):
     mgr = NotificationDownloadManager(client=client, group_id="G", destination_dir=str(tmp_path), initial_check=False)
     mgr._running = True
     await mgr._on_sse_event(_event(event_type="file-updated"))
+    await _drain(mgr)
 
     assert mgr.stats["files_discovered"] == 1
     client.download_file_async.assert_awaited_once()
@@ -141,6 +151,7 @@ async def test_notification_skips_non_update_event_types(tmp_path):
     mgr = NotificationDownloadManager(client=client, group_id="G", destination_dir=str(tmp_path), initial_check=False)
     mgr._running = True
     await mgr._on_sse_event(_event(event_type="heartbeat"))
+    await _drain(mgr)
 
     assert mgr.stats["files_discovered"] == 0
     client.download_file_async.assert_not_called()
@@ -154,7 +165,9 @@ async def test_duplicate_notification_is_deduped(tmp_path):
     mgr = NotificationDownloadManager(client=client, group_id="G", destination_dir=str(tmp_path), initial_check=False)
     mgr._running = True
     await mgr._on_sse_event(_event())
+    await _drain(mgr)
     await mgr._on_sse_event(_event(event_id="e2"))
+    await _drain(mgr)
 
     assert client.download_file_async.await_count == 1
     assert mgr.stats["notifications_received"] == 2
@@ -215,6 +228,7 @@ async def test_download_error_goes_to_error_callback(tmp_path):
     )
     mgr._running = True
     await mgr._on_sse_event(_event())
+    await _drain(mgr)
 
     assert len(seen) == 1
     assert mgr.stats["errors"] and "no network" in mgr.stats["errors"][0]["error"]
@@ -237,6 +251,7 @@ async def test_failed_download_marks_file_and_bumps_counter(tmp_path):
     mgr = NotificationDownloadManager(client=client, group_id="G", destination_dir=str(tmp_path), initial_check=False)
     mgr._running = True
     await mgr._on_sse_event(_event())
+    await _drain(mgr)
 
     assert mgr.stats["download_failures"] == 1
     assert mgr._failed_files.get("FG_20240101", 0) == 1
@@ -251,6 +266,7 @@ async def test_already_exists_counts_as_skip(tmp_path):
     mgr = NotificationDownloadManager(client=client, group_id="G", destination_dir=str(tmp_path), initial_check=False)
     mgr._running = True
     await mgr._on_sse_event(_event())
+    await _drain(mgr)
 
     assert mgr.stats["files_skipped"] == 1
     assert mgr.stats["files_downloaded"] == 0

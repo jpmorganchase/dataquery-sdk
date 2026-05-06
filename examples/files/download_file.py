@@ -17,8 +17,12 @@ from pathlib import Path
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
+from dotenv import load_dotenv  # noqa: E402
+
 from dataquery import DataQuery  # noqa: E402
 from dataquery.types.models import DownloadOptions, DownloadProgress  # noqa: E402
+
+load_dotenv()
 
 
 def simple_progress_callback(progress: DownloadProgress):

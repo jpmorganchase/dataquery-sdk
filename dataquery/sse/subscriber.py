@@ -15,9 +15,9 @@ import inspect
 import json
 import logging
 from collections import OrderedDict, deque
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Set, Union
 
 from ..download.utils import download_and_track, file_exists_locally
 from ..types.models import DownloadOptions, DownloadProgress
@@ -238,10 +238,8 @@ class NotificationDownloadManager:
         self._running = False
         self._downloaded_files: _BoundedKeySet = _BoundedKeySet(max_tracked_files)
         self._failed_files: _BoundedRetryMap = _BoundedRetryMap(max_tracked_files)
-        # Lazy-init: ``asyncio.Lock()`` on Python 3.9 eagerly binds to the
-        # running loop, which breaks construction from sync code. Mirrors
-        # the same pattern used in :class:`SSEEventIdStore`.
-        self._download_lock: Optional[asyncio.Lock] = None
+        self._download_semaphore: Optional[asyncio.Semaphore] = None
+        self._inflight: Set[asyncio.Task] = set()
 
         # Statistics — ``errors`` is a ring buffer for the same reason.
         self.stats: Dict[str, Any] = {
@@ -274,6 +272,7 @@ class NotificationDownloadManager:
 
         self._running = True
         self.stats["start_time"] = datetime.now()
+        self._download_semaphore = asyncio.Semaphore(max(1, self.max_concurrent_downloads))
 
         logger.info(
             "Starting NotificationDownloadManager for group '%s' -> %s",
@@ -326,6 +325,13 @@ class NotificationDownloadManager:
         if self._sse_client:
             await self._sse_client.stop()
             self._sse_client = None
+        if self._inflight:
+            logger.info(
+                "Waiting for %d in-flight download task(s) to finish",
+                len(self._inflight),
+            )
+            await asyncio.gather(*self._inflight, return_exceptions=True)
+            self._inflight.clear()
         logger.info("NotificationDownloadManager stopped")
 
     @property
@@ -368,7 +374,11 @@ class NotificationDownloadManager:
     # ------------------------------------------------------------------
 
     async def _on_sse_event(self, event: SSEEvent) -> None:
-        """Parse the SSE event payload and download the referenced file.
+        """Schedule the download triggered by an SSE event.
+
+        Returns immediately so the SSEClient's read loop can keep ingesting
+        notifications while downloads run in background tasks bounded by
+        ``max_concurrent_downloads``.
 
         Expected SSE format::
 
@@ -394,11 +404,20 @@ class NotificationDownloadManager:
         if not self._running:
             return
 
-        try:
-            await self._handle_notification(event)
-        except Exception as exc:
-            logger.error("Error handling notification: %s", exc)
-            await self._dispatch_error(exc)
+        task = asyncio.create_task(self._run_handler(event), name="sse-download")
+        self._inflight.add(task)
+        task.add_done_callback(self._inflight.discard)
+
+    async def _run_handler(self, event: SSEEvent) -> None:
+        """Wrapper that bounds concurrency and isolates handler errors."""
+        if self._download_semaphore is None:
+            self._download_semaphore = asyncio.Semaphore(max(1, self.max_concurrent_downloads))
+        async with self._download_semaphore:
+            try:
+                await self._handle_notification(event)
+            except Exception as exc:
+                logger.error("Error handling notification: %s", exc)
+                await self._dispatch_error(exc)
 
     async def _on_sse_error(self, exc: Exception) -> None:
         """Called by SSEClient on connection errors."""
@@ -406,9 +425,9 @@ class NotificationDownloadManager:
         # the connection (idle timeout, scheduled recycle). Log at debug.
         exc_name = type(exc).__name__
         is_expected_disconnect = (
-            "TransferEncodingError" in exc_name or
-            "ServerDisconnectedError" in exc_name or
-            "ClientPayloadError" in str(type(exc).__mro__)
+            "TransferEncodingError" in exc_name
+            or "ServerDisconnectedError" in exc_name
+            or "ClientPayloadError" in str(type(exc).__mro__)
         )
         if is_expected_disconnect:
             logger.debug("SSE connection closed: %s", exc)
@@ -533,7 +552,7 @@ class NotificationDownloadManager:
         the SSE connection was established are not missed.
         """
         self.stats["checks_triggered"] += 1
-        today = datetime.now().strftime("%Y%m%d")
+        today = datetime.now(timezone.utc).strftime("%Y%m%d")
 
         available = await self.client.list_available_files_async(
             group_id=self.group_id,

@@ -10,7 +10,7 @@ import time
 from calendar import monthrange
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
 
 import structlog
 from dotenv import load_dotenv
@@ -104,6 +104,42 @@ class ProgressTracker:
         return progress_callback
 
 
+class _SyncProxy:
+    """Synchronous facade over a :class:`DataQuery` instance.
+
+    Exposes every ``*_async`` method on the parent without the suffix, e.g.::
+
+        dq = DataQuery()
+        groups = dq.sync.list_groups()           # blocks
+        result = dq.sync.download_file(...)      # blocks
+
+    Each call wraps the coroutine in :meth:`DataQuery._run_sync`. Lookups are
+    dynamic, so methods added to ``DataQuery`` after this class is defined are
+    automatically available on ``dq.sync`` without further changes.
+    """
+
+    __slots__ = ("_dq",)
+
+    def __init__(self, dq: "DataQuery") -> None:
+        self._dq = dq
+
+    def __getattr__(self, name: str) -> Callable[..., Any]:
+        async_name = f"{name}_async"
+        target = getattr(self._dq, async_name, None)
+        if target is None or not callable(target):
+            raise AttributeError(f"DataQuery has no async method '{async_name}'")
+
+        def _sync_call(*args: Any, **kwargs: Any) -> Any:
+            return self._dq._run_sync(target(*args, **kwargs))
+
+        _sync_call.__name__ = name
+        _sync_call.__doc__ = f"Synchronous wrapper for DataQuery.{async_name}."
+        return _sync_call
+
+    def __dir__(self) -> List[str]:
+        return [n[: -len("_async")] for n in dir(self._dq) if n.endswith("_async") and not n.startswith("_")]
+
+
 class DataQuery:
     """
     Main DataQuery class for all API interactions.
@@ -112,6 +148,11 @@ class DataQuery:
     encapsulating the client and providing high-level operations for
     listing, searching, downloading, and managing data files.
     Supports both async and sync operations with proper event loop management.
+
+    Sync namespace:
+        Prefer ``dq.sync.<method>(...)`` over the legacy ``dq.<method>()``
+        wrappers — the namespace makes it explicit you're calling into a
+        blocking adapter rather than an async coroutine.
     """
 
     def __init__(
@@ -177,6 +218,21 @@ class DataQuery:
             raise ConfigurationError(f"Configuration validation failed: {e}")
 
         self._client: Optional[DataQueryClient] = None
+        self._sync_proxy: Optional[_SyncProxy] = None
+
+    @property
+    def sync(self) -> "_SyncProxy":
+        """Synchronous facade — call any ``*_async`` method without the suffix.
+
+        Example::
+
+            dq = DataQuery()
+            with dq:
+                groups = dq.sync.list_groups(limit=10)
+        """
+        if self._sync_proxy is None:
+            self._sync_proxy = _SyncProxy(self)
+        return self._sync_proxy
 
     async def __aenter__(self):
         """Async context manager entry."""
@@ -261,22 +317,59 @@ class DataQuery:
             return await client.list_groups_async(limit=limit)
 
     async def search_groups_async(
-        self, keywords: str, limit: Optional[int] = 100, offset: Optional[int] = None
+        self,
+        keywords: str,
+        limit: Optional[int] = 100,
+        offset: Optional[int] = None,
+        *,
+        page: Optional[str] = None,
     ) -> List[Group]:
         """
-        Search groups by keywords.
+        Search groups by keywords (single page).
 
         Args:
             keywords: Search keywords
-            limit: Maximum number of results to return (default: 100)
-            offset: Number of results to skip
+            limit: Maximum number of results per page (default: 100)
+            offset: Number of results to skip — kept for backwards compatibility.
+                Prefer ``page`` (cursor) or :meth:`search_all_groups_async`
+                / :meth:`iter_search_groups_async` for full-result iteration.
+            page: Optional ``next``-link cursor returned by a prior page's
+                ``links[].next``.
 
         Returns:
-            List of matching groups
+            List of matching groups for the requested page.
         """
         await self.connect_async()
         client = self._ensure_client()
-        return await client.search_groups_async(keywords, limit, offset)
+        return await client.search_groups_async(keywords, limit, offset, page=page)
+
+    async def search_all_groups_async(
+        self,
+        keywords: str,
+        *,
+        limit: Optional[int] = None,
+        max_pages: int = 1000,
+        raise_on_cap: bool = True,
+    ) -> List[Group]:
+        """Walk every page of a keyword search via cursor pagination."""
+        await self.connect_async()
+        client = self._ensure_client()
+        return await client.search_all_groups_async(
+            keywords, limit=limit, max_pages=max_pages, raise_on_cap=raise_on_cap
+        )
+
+    async def iter_search_groups_async(
+        self,
+        keywords: str,
+        *,
+        limit: Optional[int] = None,
+        max_pages: int = 1000,
+    ):
+        """Yield every :class:`Group` matching ``keywords`` across all pages."""
+        await self.connect_async()
+        client = self._ensure_client()
+        async for g in client.iter_search_groups_async(keywords, limit=limit, max_pages=max_pages):
+            yield g
 
     async def list_files_async(self, group_id: str, file_group_id: Optional[str] = None) -> List[FileInfo]:
         """
@@ -330,6 +423,10 @@ class DataQuery:
             options: Download options
             num_parts: Number of parallel parts to split the file into (default 1,
                 single-stream). Set >1 to enable parallel HTTP range requests.
+                Note: files smaller than 10 MB always download as a single
+                stream regardless of ``num_parts`` — the byte-range overhead
+                outweighs any speedup at that size. The same fallback applies
+                when the server doesn't honor HTTP range requests.
             progress_callback: Optional progress callback function
 
         Returns:
@@ -437,7 +534,7 @@ class DataQuery:
         self,
         instruments: List[str],
         attributes: List[str],
-        data: str = "REFERENCE_DATA",
+        data: str = "ALL",
         format: str = "JSON",
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
@@ -453,7 +550,7 @@ class DataQuery:
         Args:
             instruments: List of instrument identifiers
             attributes: List of attribute identifiers
-            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL)
+            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL); default ALL
             format: Response format (JSON)
             start_date: Start date in YYYYMMDD or TODAY-Nx format
             end_date: End date in YYYYMMDD or TODAY-Nx format
@@ -492,7 +589,7 @@ class DataQuery:
         frequency: str = "FREQ_DAY",
         conversion: str = "CONV_LASTBUS_ABS",
         nan_treatment: str = "NA_NOTHING",
-        data: str = "REFERENCE_DATA",
+        data: str = "ALL",
         page: Optional[str] = None,
     ) -> "TimeSeriesResponse":
         """
@@ -507,7 +604,7 @@ class DataQuery:
             frequency: Frequency convention
             conversion: Conversion convention
             nan_treatment: Missing data treatment
-            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL)
+            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL); default ALL
             page: Optional page token for pagination
 
         Returns:
@@ -570,7 +667,7 @@ class DataQuery:
         group_id: str,
         attributes: List[str],
         filter: Optional[str] = None,
-        data: str = "REFERENCE_DATA",
+        data: str = "ALL",
         format: str = "JSON",
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
@@ -587,7 +684,7 @@ class DataQuery:
             group_id: Catalog data group identifier
             attributes: List of attribute identifiers
             filter: Optional filter string (e.g., "currency(USD)")
-            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL)
+            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL); default ALL
             format: Response format (JSON)
             start_date: Start date in YYYYMMDD or TODAY-Nx format
             end_date: End date in YYYYMMDD or TODAY-Nx format
@@ -978,64 +1075,7 @@ class DataQuery:
                 files=len(filtered_files),
             )
 
-            # Create all download tasks with parallel concurrency and staggered delays
-            async def download_file_concurrent(file_info, delay_seconds: float = 0.0):
-                file_group_id = file_info.get("file-group-id", file_info.get("file_group_id"))
-                file_datetime = file_info.get("file-datetime", file_info.get("file_datetime"))
-
-                if not file_group_id:
-                    logger.error("File info missing file-group-id", file_info=file_info)
-                    return None
-
-                # Apply delay before starting download
-                if delay_seconds > 0:
-                    logger.debug(
-                        "Applying delay before download",
-                        file_group_id=file_group_id,
-                        delay_seconds=delay_seconds,
-                    )
-                    await asyncio.sleep(delay_seconds)
-
-                destination_path = dest_dir
-
-                try:
-                    # Delegate to the shared parallel range helper so the global
-                    # semaphore covers every in-flight HTTP range across every
-                    # file in this batch.
-                    from .download.parallel import download_file_parallel
-
-                    result = await download_file_parallel(
-                        client=self._ensure_client(),
-                        file_group_id=file_group_id,
-                        file_datetime=file_datetime,
-                        destination_path=destination_path,
-                        num_parts=num_parts,
-                        global_semaphore=global_semaphore,
-                        progress_callback=progress_callback,
-                    )
-                    logger.info(
-                        "Downloaded file (parallel ranges)",
-                        file_group_id=file_group_id,
-                        file_datetime=file_datetime,
-                        status=result.status.value if result else "failed",
-                    )
-                    return result
-                except Exception as e:
-                    logger.error(
-                        "Flattened parallel download failed",
-                        file_group_id=file_group_id,
-                        file_datetime=file_datetime,
-                        error=str(e),
-                    )
-                    return None
-
-            # Execute all downloads concurrently with intelligent delay-based rate limiting
-            download_tasks = []
-            for i, file_info in enumerate(filtered_files):
-                # Calculate intelligent delay: combines base delay with rate limit protection
-                delay_seconds = i * intelligent_delay
-                task = download_file_concurrent(file_info, delay_seconds)
-                download_tasks.append(task)
+            from .download.parallel import download_files_with_retry
 
             logger.info(
                 "Starting downloads with intelligent delay-based rate limiting",
@@ -1046,78 +1086,17 @@ class DataQuery:
                 rate_limit_protection="enabled",
             )
 
-            download_results = await asyncio.gather(*download_tasks, return_exceptions=True)
-
-            # Process results
-            successful = []
-            failed = []
-
-            for file_info, result in zip(filtered_files, download_results):
-                if isinstance(result, BaseException):
-                    failed.append(file_info)
-                elif (
-                    result
-                    and hasattr(result, "status")
-                    and hasattr(result, "file_group_id")
-                    and result.status.value in ("completed", "already_exists")
-                ):
-                    successful.append(result)
-                else:
-                    failed.append(file_info)
-
-            # Retry failed downloads
-            retry_count = 0
-            while failed and retry_count < max_retries:
-                retry_count += 1
-                logger.info(
-                    f"Retrying failed downloads (attempt {retry_count}/{max_retries})",
-                    failed_count=len(failed),
-                )
-
-                # Wait before retry with exponential backoff
-                retry_delay = delay_between_downloads * (2 ** (retry_count - 1))
-                await asyncio.sleep(retry_delay)
-
-                # Create retry tasks for failed files
-                retry_tasks = []
-                for i, file_info in enumerate(failed):
-                    delay_seconds = i * intelligent_delay
-                    task = download_file_concurrent(file_info, delay_seconds)
-                    retry_tasks.append(task)
-
-                retry_results = await asyncio.gather(*retry_tasks, return_exceptions=True)
-
-                # Process retry results
-                still_failed = []
-                for file_info, result in zip(failed, retry_results):
-                    if isinstance(result, BaseException):
-                        still_failed.append(file_info)
-                    elif (
-                        result
-                        and hasattr(result, "status")
-                        and hasattr(result, "file_group_id")
-                        and result.status.value in ("completed", "already_exists")
-                    ):
-                        successful.append(result)
-                        logger.info(
-                            "Retry succeeded for file",
-                            file_group_id=file_info.get("file-group-id", file_info.get("file_group_id")),
-                            attempt=retry_count,
-                        )
-                    else:
-                        still_failed.append(file_info)
-
-                failed = still_failed
-
-                if not failed:
-                    logger.info("All failed downloads recovered after retries")
-                    break
-
-            if failed:
-                logger.warning(
-                    f"Some downloads failed after {max_retries} retries",
-                    failed_count=len(failed),
-                )
+            successful, failed, retry_count = await download_files_with_retry(
+                client=self._ensure_client(),
+                files=filtered_files,
+                destination_dir=dest_dir,
+                num_parts=num_parts,
+                global_semaphore=global_semaphore,
+                intelligent_delay=intelligent_delay,
+                base_retry_delay=delay_between_downloads,
+                max_retries=max_retries,
+                progress_callback=progress_callback,
+            )
 
             # Calculate total operation time
             operation_end_time = time.time()
@@ -1128,7 +1107,7 @@ class DataQuery:
             recommendations = self._get_rate_limit_recommendations(total_concurrent_requests)
 
             # Calculate per-file timing statistics
-            file_times = []
+            file_times: List[Dict[str, Any]] = []
             total_download_time = 0.0
             for result in successful:
                 if result.download_time:
@@ -1144,11 +1123,13 @@ class DataQuery:
 
             # Calculate timing statistics
             avg_file_time = total_download_time / len(successful) if successful else 0.0
-            min_file_time = min([ft["download_time_seconds"] for ft in file_times]) if file_times else 0.0
-            max_file_time = max([ft["download_time_seconds"] for ft in file_times]) if file_times else 0.0
+            file_time_values: List[float] = [float(ft["download_time_seconds"]) for ft in file_times]
+            min_file_time = min(file_time_values) if file_time_values else 0.0
+            max_file_time = max(file_time_values) if file_time_values else 0.0
 
             total_files = len(filtered_files)
             success_rate = (len(successful) / total_files * 100) if total_files else 0.0
+            status: Literal["success", "error", "partial"]
             if len(failed) == 0:
                 status = "success"
             elif len(successful) == 0:
@@ -1372,6 +1353,7 @@ class DataQuery:
         total_minutes = total_elapsed / 60.0
 
         chunks_with_errors = [f"{c['start_date']}-{c['end_date']}" for c in chunk_results if "error" in c]
+        status: Literal["success", "error", "partial"]
         if total_failed == 0 and not chunks_with_errors:
             status = "success"
         elif total_success == 0:
@@ -1808,9 +1790,29 @@ class DataQuery:
         """Synchronous wrapper for list_groups."""
         return self._run_sync(self.list_groups_async(limit))
 
-    def search_groups(self, keywords: str, limit: Optional[int] = 100, offset: Optional[int] = None) -> List[Group]:
-        """Synchronous wrapper for search_groups."""
-        return self._run_sync(self.search_groups_async(keywords, limit, offset))
+    def search_groups(
+        self,
+        keywords: str,
+        limit: Optional[int] = 100,
+        offset: Optional[int] = None,
+        *,
+        page: Optional[str] = None,
+    ) -> List[Group]:
+        """Synchronous wrapper for search_groups (single page)."""
+        return self._run_sync(self.search_groups_async(keywords, limit, offset, page=page))
+
+    def search_all_groups(
+        self,
+        keywords: str,
+        *,
+        limit: Optional[int] = None,
+        max_pages: int = 1000,
+        raise_on_cap: bool = True,
+    ) -> List[Group]:
+        """Synchronous wrapper for search_all_groups_async (cursor pagination)."""
+        return self._run_sync(
+            self.search_all_groups_async(keywords, limit=limit, max_pages=max_pages, raise_on_cap=raise_on_cap)
+        )
 
     def list_files(self, group_id: str, file_group_id: Optional[str] = None) -> List[FileInfo]:
         """Synchronous wrapper for list_files."""
@@ -1840,7 +1842,11 @@ class DataQuery:
                              from the Content-Disposition header in the response. If not provided,
                              uses the default download directory from configuration.
             options: Download options
-            num_parts: Number of parallel parts for download (default: 5)
+            num_parts: Number of parallel parts to split the file into (default 1,
+                single-stream). Set >1 to enable parallel HTTP range requests.
+                Note: files smaller than 10 MB always download as a single
+                stream regardless of ``num_parts``, and the same fallback
+                applies when the server doesn't honor HTTP range requests.
             progress_callback: Optional progress callback function
 
         Returns:
@@ -1909,7 +1915,7 @@ class DataQuery:
         self,
         instruments: List[str],
         attributes: List[str],
-        data: str = "REFERENCE_DATA",
+        data: str = "ALL",
         format: str = "JSON",
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
@@ -1925,7 +1931,7 @@ class DataQuery:
         Args:
             instruments: List of instrument identifiers
             attributes: List of attribute identifiers
-            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL)
+            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL); default ALL
             format: Response format (JSON)
             start_date: Start date in YYYYMMDD or TODAY-Nx format
             end_date: End date in YYYYMMDD or TODAY-Nx format
@@ -1964,7 +1970,7 @@ class DataQuery:
         frequency: str = "FREQ_DAY",
         conversion: str = "CONV_LASTBUS_ABS",
         nan_treatment: str = "NA_NOTHING",
-        data: str = "REFERENCE_DATA",
+        data: str = "ALL",
         page: Optional[str] = None,
     ) -> "TimeSeriesResponse":
         """
@@ -1979,7 +1985,7 @@ class DataQuery:
             frequency: Frequency convention
             conversion: Conversion convention
             nan_treatment: Missing data treatment
-            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL)
+            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL); default ALL
             page: Optional page token for pagination
 
         Returns:
@@ -2038,7 +2044,7 @@ class DataQuery:
         group_id: str,
         attributes: List[str],
         filter: Optional[str] = None,
-        data: str = "REFERENCE_DATA",
+        data: str = "ALL",
         format: str = "JSON",
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
@@ -2055,7 +2061,7 @@ class DataQuery:
             group_id: Catalog data group identifier
             attributes: List of attribute identifiers
             filter: Optional filter string (e.g., "currency(USD)")
-            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL)
+            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL); default ALL
             format: Response format (JSON)
             start_date: Start date in YYYYMMDD or TODAY-Nx format
             end_date: End date in YYYYMMDD or TODAY-Nx format
@@ -2236,6 +2242,47 @@ class DataQuery:
             heartbeat_timeout=heartbeat_timeout,
             max_tracked_files=max_tracked_files,
             max_tracked_errors=max_tracked_errors,
+        )
+
+    def auto_download(
+        self,
+        group_id: str,
+        destination_dir: str = "./downloads",
+        file_filter: Optional[Callable] = None,
+        progress_callback: Optional[Callable] = None,
+        error_callback: Optional[Callable] = None,
+        max_retries: int = 3,
+        max_concurrent_downloads: int = 5,
+        initial_check: bool = True,
+        reconnect_delay: float = 5.0,
+        max_reconnect_delay: float = 60.0,
+        file_group_id: Optional[Union[str, List[str]]] = None,
+        show_progress: bool = True,
+        enable_event_replay: bool = True,
+        heartbeat_timeout: float = 0.0,
+        max_tracked_files: int = 10_000,
+        max_tracked_errors: int = 1_000,
+    ):
+        """Synchronous proxy to client's auto_download_async."""
+        return self._run_sync(
+            self.auto_download_async(
+                group_id,
+                destination_dir,
+                file_filter,
+                progress_callback,
+                error_callback,
+                max_retries,
+                max_concurrent_downloads,
+                initial_check,
+                reconnect_delay,
+                max_reconnect_delay,
+                file_group_id=file_group_id,
+                show_progress=show_progress,
+                enable_event_replay=enable_event_replay,
+                heartbeat_timeout=heartbeat_timeout,
+                max_tracked_files=max_tracked_files,
+                max_tracked_errors=max_tracked_errors,
+            )
         )
 
     # DataFrame conversion proxies

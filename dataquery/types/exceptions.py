@@ -159,6 +159,28 @@ class FileTypeError(ValidationError):
         super().__init__(message, {"file_type": file_type, "allowed_types": allowed_types})
 
 
+class PaginationError(DataQueryError):
+    """Raised when paginated iteration fails — loop detected or page cap hit."""
+
+    def __init__(
+        self,
+        message: str,
+        pages_fetched: int,
+        items_collected: int,
+        cap: Optional[int] = None,
+        url: Optional[str] = None,
+    ):
+        details: Dict[str, Any] = {
+            "pages_fetched": pages_fetched,
+            "items_collected": items_collected,
+        }
+        if cap is not None:
+            details["max_pages"] = cap
+        if url is not None:
+            details["url"] = url
+        super().__init__(message, details)
+
+
 class WorkflowError(DataQueryError):
     """Raised when workflow operations fail."""
 
