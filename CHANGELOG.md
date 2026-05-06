@@ -26,4 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.4] - 2026-03-23
 - Introduced circuit breaker environment variable (`DATAQUERY_CIRCUIT_BREAKER_THRESHOLD`) 
 ## [0.1.5] - 2026-04-16
-- Introduced file-group-id to the group downloads 
+- Introduced file-group-id to the group downloads
+## [0.2.0] - 2026-05-06
+- SSE auto-download with cross-process event replay and multi-group support
+- Python 3.11+ only
