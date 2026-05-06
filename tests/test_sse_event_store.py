@@ -188,25 +188,25 @@ def test_load_returns_none_when_file_missing(tmp_path: Path):
 @pytest.mark.asyncio
 async def test_save_then_load_round_trip(tmp_path: Path):
     store = SSEEventIdStore(tmp_path / "state.json", subscription="group-id=G")
-    await store.save("evt-42")
-    assert store.load() == "evt-42"
+    await store.save("42")
+    assert store.load() == "42"
 
 
 @pytest.mark.asyncio
 async def test_save_overwrites_previous_value(tmp_path: Path):
     store = SSEEventIdStore(tmp_path / "state.json")
-    await store.save("evt-1")
-    await store.save("evt-2")
-    assert store.load() == "evt-2"
+    await store.save("100")
+    await store.save("200")
+    assert store.load() == "200"
 
 
 @pytest.mark.asyncio
 async def test_save_creates_parent_directory(tmp_path: Path):
     nested = tmp_path / "deeply" / "nested" / "state.json"
     store = SSEEventIdStore(nested)
-    await store.save("evt-1")
+    await store.save("100")
     assert nested.exists()
-    assert store.load() == "evt-1"
+    assert store.load() == "100"
 
 
 @pytest.mark.asyncio
@@ -214,6 +214,60 @@ async def test_save_empty_event_id_is_noop(tmp_path: Path):
     store = SSEEventIdStore(tmp_path / "state.json")
     await store.save("")
     assert not (tmp_path / "state.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_save_non_numeric_event_id_is_noop(tmp_path: Path):
+    """Non-numeric event IDs like 'welcome' are not persisted."""
+    store = SSEEventIdStore(tmp_path / "state.json")
+    await store.save("welcome")
+    assert not (tmp_path / "state.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_save_event_id_zero_persists(tmp_path: Path):
+    """Event ID '0' is persisted (numeric validation only)."""
+    store = SSEEventIdStore(tmp_path / "state.json")
+    await store.save("0")
+    assert store.load() == "0"
+
+
+@pytest.mark.asyncio
+async def test_save_event_id_one_persists(tmp_path: Path):
+    """Event ID '1' is persisted (numeric validation only)."""
+    store = SSEEventIdStore(tmp_path / "state.json")
+    await store.save("1")
+    assert store.load() == "1"
+
+
+def test_load_returns_stored_value_even_if_non_numeric(tmp_path: Path):
+    """load() trusts stored data (validation happens in save()).
+    
+    If invalid data is somehow in the file, it's returned as-is.
+    save() ensures only valid IDs are written.
+    """
+    p = tmp_path / "state.json"
+    p.write_text('{"last_event_id": "welcome"}')
+    store = SSEEventIdStore(p)
+    # Returns the stored value even though it's invalid
+    # (save() would have rejected it, but load() trusts the file)
+    assert store.load() == "welcome"
+
+
+def test_load_returns_stored_value_even_if_zero(tmp_path: Path):
+    """load() trusts stored data (validation happens in save())."""
+    p = tmp_path / "state.json"
+    p.write_text('{"last_event_id": "0"}')
+    store = SSEEventIdStore(p)
+    assert store.load() == "0"
+
+
+def test_load_returns_stored_value_even_if_one(tmp_path: Path):
+    """load() trusts stored data (validation happens in save())."""
+    p = tmp_path / "state.json"
+    p.write_text('{"last_event_id": "1"}')
+    store = SSEEventIdStore(p)
+    assert store.load() == "1"
 
 
 def test_load_returns_none_when_file_is_corrupt(tmp_path: Path):
@@ -233,7 +287,7 @@ def test_load_returns_none_when_event_id_field_missing(tmp_path: Path):
 @pytest.mark.asyncio
 async def test_clear_removes_file(tmp_path: Path):
     store = SSEEventIdStore(tmp_path / "state.json")
-    await store.save("evt-1")
+    await store.save("123")
     assert store.file_path.exists()
     store.clear()
     assert not store.file_path.exists()
@@ -249,7 +303,7 @@ def test_clear_when_file_missing_is_noop(tmp_path: Path):
 @pytest.mark.asyncio
 async def test_save_does_not_leave_temp_file_behind(tmp_path: Path):
     store = SSEEventIdStore(tmp_path / "state.json")
-    await store.save("evt-1")
+    await store.save("100")
     leftovers = list(tmp_path.glob("*.tmp"))
     assert leftovers == []
 
@@ -268,15 +322,15 @@ async def test_save_skips_disk_write_when_id_unchanged(tmp_path: Path):
     """
     p = tmp_path / "state.json"
     store = SSEEventIdStore(p)
-    await store.save("evt-1")
+    await store.save("100")
     mtime_first = p.stat().st_mtime_ns
     # Replay the same id many times — none should rewrite the file.
     for _ in range(5):
-        await store.save("evt-1")
+        await store.save("100")
     assert p.stat().st_mtime_ns == mtime_first
     # A new id must still write.
-    await store.save("evt-2")
-    assert store.load() == "evt-2"
+    await store.save("200")
+    assert store.load() == "200"
 
 
 @pytest.mark.asyncio
@@ -286,11 +340,11 @@ async def test_save_after_load_dedups_against_persisted_value(tmp_path: Path):
     p = tmp_path / "state.json"
     SSEEventIdStore(p)  # write once via a sibling instance
     seed = SSEEventIdStore(p)
-    await seed.save("evt-1")
+    await seed.save("100")
     fresh = SSEEventIdStore(p)
-    assert fresh.load() == "evt-1"
+    assert fresh.load() == "100"
     mtime = p.stat().st_mtime_ns
-    await fresh.save("evt-1")
+    await fresh.save("100")
     assert p.stat().st_mtime_ns == mtime
 
 
@@ -299,7 +353,7 @@ async def test_save_writes_compact_json(tmp_path: Path):
     """Compact form (no indented whitespace) keeps per-event writes cheap."""
     p = tmp_path / "state.json"
     store = SSEEventIdStore(p, subscription="group-id=G")
-    await store.save("evt-1")
+    await store.save("100")
     raw = p.read_text(encoding="utf-8")
     # No newlines or two-space indentation.
     assert "\n" not in raw
@@ -313,10 +367,10 @@ async def test_concurrent_saves_are_serialised(tmp_path: Path):
     store = SSEEventIdStore(p)
     # Fire 20 distinct saves concurrently — the file must end up with one of
     # them, never half-written.
-    await asyncio.gather(*(store.save(f"evt-{i}") for i in range(20)))
+    await asyncio.gather(*(store.save(f"{i+100}") for i in range(20)))
     final = store.load()
     assert final is not None
-    assert final.startswith("evt-")
+    assert final.isdigit() and int(final) >= 100
 
 
 @pytest.mark.asyncio
@@ -324,8 +378,8 @@ async def test_clear_resets_dedup_cache(tmp_path: Path):
     """After clear(), the next save() of the same id must hit disk again."""
     p = tmp_path / "state.json"
     store = SSEEventIdStore(p)
-    await store.save("evt-1")
+    await store.save("100")
     store.clear()
     assert not p.exists()
-    await store.save("evt-1")
-    assert p.exists() and store.load() == "evt-1"
+    await store.save("100")
+    assert p.exists() and store.load() == "100"

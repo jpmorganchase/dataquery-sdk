@@ -366,10 +366,13 @@ class SSEClient:
                 data_parts.append(field_value)
             elif field_name == "id":
                 event_id = field_value
-                # Update last_event_id immediately so reconnections use it
-                self._last_event_id = field_value
-                # Persist to store for cross-process replay
-                self._persist_event_id(field_value)
+                # Only store numeric event IDs for replay (filter out non-numeric server markers like "welcome")
+                # The server expects numeric event IDs for the last-event-id parameter
+                if field_value and field_value.isdigit():
+                    # Update last_event_id immediately so reconnections use it
+                    self._last_event_id = field_value
+                    # Persist to store for cross-process replay
+                    self._persist_event_id(field_value)
             elif field_name == "retry":
                 try:
                     retry_ms = int(field_value)

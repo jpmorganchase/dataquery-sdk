@@ -161,7 +161,11 @@ class SSEEventIdStore:
         self._save_lock: Optional[asyncio.Lock] = None
 
     def load(self) -> Optional[str]:
-        """Return the last persisted event id, or ``None`` if unavailable."""
+        """Return the last persisted event id, or ``None`` if unavailable.
+        
+        Assumes stored event IDs are valid (numeric > 1) since validation
+        happens during save().
+        """
         if not self.file_path.exists():
             return None
         try:
@@ -181,10 +185,10 @@ class SSEEventIdStore:
     async def save(self, event_id: str) -> None:
         """Atomically persist ``event_id``. Failures are logged, not raised.
 
-        No-op when ``event_id`` is falsy or matches the most recently
-        persisted value.
+        No-op when ``event_id`` is falsy, non-numeric, or matches the
+        most recently persisted value. Only numeric IDs are valid for replay.
         """
-        if not event_id:
+        if not event_id or not event_id.isdigit():
             return
         # Cheap pre-check outside the lock — the lock-protected check below
         # is the source of truth for race-free dedup.
