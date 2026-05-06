@@ -8,15 +8,14 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from dataquery.client import (
+from dataquery.core.client import (
     DataQueryClient,
-    format_file_size,
     get_filename_from_response,
     validate_attributes_list,
     validate_date_format,
     validate_file_datetime,
 )
-from dataquery.exceptions import (
+from dataquery.types.exceptions import (
     AuthenticationError,
     ConfigurationError,
     NetworkError,
@@ -24,7 +23,7 @@ from dataquery.exceptions import (
     RateLimitError,
     ValidationError,
 )
-from dataquery.models import (
+from dataquery.types.models import (
     ClientConfig,
     DownloadOptions,
     DownloadStatus,
@@ -151,44 +150,6 @@ def create_mock_response(status=200, json_data=None, headers=None, content=None)
 
 class TestUtilityFunctions:
     """Test utility functions in client module."""
-
-    def test_format_file_size_zero(self):
-        """Test formatting zero bytes."""
-        result = format_file_size(0)
-        assert result == "0 B"
-
-    def test_format_file_size_bytes(self):
-        """Test formatting bytes."""
-        result = format_file_size(512)
-        assert result == "512.00 B"
-
-    def test_format_file_size_kilobytes(self):
-        """Test formatting kilobytes."""
-        result = format_file_size(1536)  # 1.5 KB
-        assert result == "1.50 KB"
-
-    def test_format_file_size_megabytes(self):
-        """Test formatting megabytes."""
-        result = format_file_size(2097152)  # 2 MB
-        assert result == "2.00 MB"
-
-    def test_format_file_size_gigabytes(self):
-        """Test formatting gigabytes."""
-        result = format_file_size(3221225472)  # 3 GB
-        assert result == "3.00 GB"
-
-    def test_format_file_size_terabytes(self):
-        """Test formatting terabytes."""
-        result = format_file_size(4398046511104)  # 4 TB
-        assert result == "4.00 TB"
-
-    def test_format_file_size_edge_cases(self):
-        """Test format_file_size with edge cases."""
-        # Test exact powers of 1024
-        assert format_file_size(1024) == "1.00 KB"
-        assert format_file_size(1024**2) == "1.00 MB"
-        assert format_file_size(1024**3) == "1.00 GB"
-        assert format_file_size(1024**4) == "1.00 TB"
 
     def test_parse_content_disposition_none(self):
         """Test parsing None content disposition."""
@@ -1000,7 +961,7 @@ class TestAuthenticationFlows:
     @pytest.mark.asyncio
     async def test_execute_request_with_auth_headers_failure(self):
         """Test request execution raises AuthenticationError when auth headers fail."""
-        from dataquery.exceptions import AuthenticationError
+        from dataquery.types.exceptions import AuthenticationError
 
         client = create_test_client()
 
@@ -1016,7 +977,7 @@ class TestAuthenticationFlows:
     @pytest.mark.asyncio
     async def test_execute_request_auth_header_failure(self):
         """Test request execution raises AuthenticationError when auth headers fail."""
-        from dataquery.exceptions import AuthenticationError
+        from dataquery.types.exceptions import AuthenticationError
 
         client = create_test_client()
 

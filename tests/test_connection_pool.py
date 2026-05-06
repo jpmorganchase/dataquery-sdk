@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
-from dataquery.connection_pool import (
+from dataquery.transport.connection_pool import (
     ConnectionPoolConfig,
     ConnectionPoolMonitor,
     ConnectionPoolStats,

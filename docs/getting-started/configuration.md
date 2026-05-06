@@ -182,7 +182,7 @@ Configure the SDK programmatically:
 
 ```python
 from dataquery import DataQuery
-from dataquery.models import ClientConfig
+from dataquery.types.models import ClientConfig
 
 # Minimal configuration - only credentials required, everything else uses defaults
 config = ClientConfig(
@@ -211,7 +211,7 @@ config = ClientConfig(
 ### Connection Settings
 
 ```python
-from dataquery.models import ClientConfig
+from dataquery.types.models import ClientConfig
 
 config = ClientConfig(
     client_id="your-client-id",
@@ -232,7 +232,7 @@ config = ClientConfig(
 ### Download Settings
 
 ```python
-from dataquery.models import DownloadOptions
+from dataquery.types.models import DownloadOptions
 
 options = DownloadOptions(
     # Destination
@@ -280,7 +280,7 @@ async with DataQuery() as dq:
 ```python
 import logging
 from dataquery import DataQuery
-from dataquery.models import ClientConfig
+from dataquery.types.models import ClientConfig
 
 # Create custom logger
 logger = logging.getLogger('dataquery')
@@ -316,7 +316,7 @@ async with DataQuery(config=config) as dq:
 ### HTTP Proxy
 
 ```python
-from dataquery.models import ClientConfig
+from dataquery.types.models import ClientConfig
 
 config = ClientConfig(
     client_id="your-client-id",
@@ -382,7 +382,7 @@ config = ClientConfig(
 
 ```python
 # development.py
-from dataquery.models import ClientConfig
+from dataquery.types.models import ClientConfig
 
 DEV_CONFIG = ClientConfig(
     client_id="dev-client-id",
@@ -398,7 +398,7 @@ DEV_CONFIG = ClientConfig(
 
 ```python
 # production.py
-from dataquery.models import ClientConfig
+from dataquery.types.models import ClientConfig
 
 PROD_CONFIG = ClientConfig(
     client_id="prod-client-id",
@@ -415,7 +415,7 @@ PROD_CONFIG = ClientConfig(
 
 ```python
 # test_config.py
-from dataquery.models import ClientConfig
+from dataquery.types.models import ClientConfig
 
 TEST_CONFIG = ClientConfig(
     client_id="test-client-id",
@@ -432,8 +432,8 @@ TEST_CONFIG = ClientConfig(
 The SDK validates configuration on startup:
 
 ```python
-from dataquery.models import ClientConfig
-from dataquery.exceptions import ConfigurationError
+from dataquery.types.models import ClientConfig
+from dataquery.types.exceptions import ConfigurationError
 
 try:
     config = ClientConfig(
