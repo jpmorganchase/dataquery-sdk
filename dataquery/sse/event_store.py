@@ -162,7 +162,7 @@ class SSEEventIdStore:
 
     def load(self) -> Optional[str]:
         """Return the last persisted event id, or ``None`` if unavailable.
-        
+
         Assumes stored event IDs are valid (numeric > 1) since validation
         happens during save().
         """

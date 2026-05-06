@@ -242,7 +242,7 @@ async def test_save_event_id_one_persists(tmp_path: Path):
 
 def test_load_returns_stored_value_even_if_non_numeric(tmp_path: Path):
     """load() trusts stored data (validation happens in save()).
-    
+
     If invalid data is somehow in the file, it's returned as-is.
     save() ensures only valid IDs are written.
     """
@@ -367,7 +367,7 @@ async def test_concurrent_saves_are_serialised(tmp_path: Path):
     store = SSEEventIdStore(p)
     # Fire 20 distinct saves concurrently — the file must end up with one of
     # them, never half-written.
-    await asyncio.gather(*(store.save(f"{i+100}") for i in range(20)))
+    await asyncio.gather(*(store.save(f"{i + 100}") for i in range(20)))
     final = store.load()
     assert final is not None
     assert final.isdigit() and int(final) >= 100

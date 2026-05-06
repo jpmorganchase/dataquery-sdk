@@ -15,15 +15,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # noqa: E402
 
 from dataquery import DataQuery  # noqa: E402
 
-
 GROUP_IDS = ["JPMAQS", "MARKETS", "ECON"]
 
 
 async def main():
     async with DataQuery() as dq:
-        managers = await asyncio.gather(
-            *(dq.auto_download_async(group_id=group_id) for group_id in GROUP_IDS)
-        )
+        managers = await asyncio.gather(*(dq.auto_download_async(group_id=group_id) for group_id in GROUP_IDS))
         try:
             while True:
                 await asyncio.sleep(60)
