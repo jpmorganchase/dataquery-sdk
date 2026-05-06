@@ -6,11 +6,29 @@ Python SDK for the J.P. Morgan DataQuery API — authenticated file downloads, t
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Linting: Ruff](https://img.shields.io/badge/linting-ruff-261230.svg)](https://github.com/astral-sh/ruff)
 
+## Contents
+
+- [Features](#features)
+- [New here? Three steps to your first download](#new-here-three-steps-to-your-first-download)
+- [Installation](#installation)
+- [Configure credentials](#configure-credentials)
+- [Quick start](#quick-start)
+- [Auto-download (notification-driven)](#auto-download-notification-driven)
+- [CLI](#cli)
+- [Configuration](#configuration)
+- [Logging](#logging)
+- [Error handling](#error-handling)
+- [Troubleshooting](#troubleshooting)
+- [Date formats](#date-formats)
+- [Performance tuning](#performance-tuning)
+- [API reference (most-used methods)](#api-reference-most-used-methods)
+- [Examples](#examples) · [Development](#development) · [Requirements](#requirements) · [Support](#support)
+
 ## Features
 
-- **Parallel file downloads** — when `num_parts > 1`, HTTP range requests split the file into parallel chunks with bounded concurrency; `num_parts=1` (default) uses a simple streaming GET
+- **Streaming file downloads** — single streaming GET per file
 - **Historical and date-range downloads** — fetch every file in a group (optionally filtered to one or many `file-group-id`s) between two dates
-- **Notification-driven downloads (SSE)** — subscribe to the `/notification` stream and auto-download files as soon as they are published
+- **Notification-driven downloads (SSE)** — subscribe to the `/events/notification` stream and auto-download files as soon as they are published
 - **Time-series queries** — by expression, by instrument, or by group with attribute / filter projections
 - **OAuth 2.0 with token caching and refresh** — or supply a bearer token directly
 - **Token-bucket rate limiter** — 300 rpm / 5 tps defaults (configurable up to API limits)
@@ -18,6 +36,29 @@ Python SDK for the J.P. Morgan DataQuery API — authenticated file downloads, t
 - **Sync and async APIs** — every operation has `_async` and sync variants
 - **Optional pandas integration** — `to_dataframe(...)` on any response
 - **CLI** — `dataquery groups | files | availability | download | download-group | auth | config`
+
+## New here? Three steps to your first download
+
+1. `pip install dataquery-sdk`
+2. Put your OAuth credentials in a `.env` file (see [Configure credentials](#configure-credentials))
+3. Run a one-liner to confirm everything works:
+
+   ```python
+   import asyncio
+   from dataquery import DataQuery
+
+   async def main():
+       async with DataQuery() as dq:
+           groups = await dq.list_groups_async(limit=5)
+           for g in groups:
+               print(g.group_id, "—", g.group_name)
+
+   asyncio.run(main())
+   ```
+
+If that prints groups, auth and networking are working. From there, jump to
+[Quick start](#quick-start) (date-range download), [Auto-download](#auto-download-notification-driven)
+(SSE), or the [CLI](#cli).
 
 ## Installation
 
@@ -75,9 +116,10 @@ async with DataQuery() as dq:
         end_date="20250131",
         destination_dir="./data",
     )
-    print(f"{result['successful_downloads']}/{result['total_files']} files downloaded")
+    # OperationReport (Pydantic model) — counts/timing/data/details are dicts on it.
+    print(f"{result.counts['successful_downloads']}/{result.counts['total_files']} files downloaded")
 
-# sync
+# sync — same arguments, drop the _async suffix
 with DataQuery() as dq:
     result = dq.run_group_download(
         group_id="JPMAQS_GENERIC_RETURNS",
@@ -114,7 +156,6 @@ async with DataQuery() as dq:
         file_group_id="JPMAQS_GENERIC_RETURNS",
         file_datetime="20250115",
         destination_path=Path("./downloads"),
-        num_parts=5,  # parallel chunks
     )
     print(f"Downloaded: {result.local_path} ({result.file_size} bytes)")
 ```
@@ -158,12 +199,88 @@ async with DataQuery() as dq:
     )
 ```
 
-## Auto-download (coming soon)
+## Auto-download (notification-driven)
 
-Real-time notification-driven downloads via the DataQuery SSE stream are under
-active development and will be available in a future release. Once released,
-`auto_download_async` will subscribe to the `/notification` endpoint and
-download files automatically as they are published — no polling required.
+`auto_download_async` opens a long-lived Server-Sent Events connection to the
+DataQuery `/events/notification` endpoint and downloads files as soon as the
+server announces them — no polling, no schedule.
+
+### Single group
+
+```python
+import asyncio
+from dataquery import DataQuery
+
+async def main():
+    async with DataQuery() as dq:
+        manager = await dq.auto_download_async(
+            group_id="JPMAQS",
+            destination_dir="./downloads",
+            file_group_id=["JPMAQS_FX_VOL", "JPMAQS_RATES"],  # optional filter
+            initial_check=False,         # rely on SSE only
+            enable_event_replay=True,    # resume via last-event-id on restart
+            heartbeat_timeout=90.0,      # force reconnect on silent connections
+        )
+        try:
+            while True:
+                await asyncio.sleep(60)
+        except KeyboardInterrupt:
+            await manager.stop()
+            print(manager.get_stats())
+
+asyncio.run(main())
+```
+
+`file_group_id` is sent to the server as a query parameter, so filtering happens
+at the source — the client never receives events for files it would discard.
+
+### Cross-process event replay
+
+When `enable_event_replay=True` (default), the most recent SSE event id is
+persisted under `<destination>/.sse_state/sse_<fingerprint>.json`. On restart
+the SDK sends it as `last-event-id`, so events published while the process was
+down are replayed automatically. Each `(group_id, file_group_ids)` tuple gets
+its own fingerprint, so multiple subscriptions don't clobber each other's
+state. Set `enable_event_replay=False` to opt out.
+
+### Multiple groups in one process
+
+The SSE endpoint takes one `group-id` per connection, so run one manager per
+group concurrently with `asyncio.gather`:
+
+```python
+async with DataQuery() as dq:
+    managers = await asyncio.gather(
+        dq.auto_download_async(group_id="JPMAQS",  destination_dir="./downloads/jpmaqs"),
+        dq.auto_download_async(group_id="MARKETS", destination_dir="./downloads/markets"),
+        dq.auto_download_async(group_id="ECON",    destination_dir="./downloads/econ"),
+    )
+    # ... keep alive ...
+    await asyncio.gather(*(m.stop() for m in managers), return_exceptions=True)
+```
+
+Authentication and rate limiting are shared through the single `DataQuery`
+instance. See `examples/system/auto_download_multi_group_example.py` for a
+runnable version with stats and Ctrl+C handling.
+
+### Callbacks
+
+```python
+def on_progress(p):  # called during download
+    print(f"{p.file_group_id} {p.percentage:.0f}%")
+
+def on_error(exc):   # called on connection or download errors
+    print(f"error: {exc}")
+
+manager = await dq.auto_download_async(
+    group_id="JPMAQS",
+    destination_dir="./downloads",
+    progress_callback=on_progress,
+    error_callback=on_error,
+)
+```
+
+Both callbacks may be sync or async.
 
 ## CLI
 
@@ -183,17 +300,16 @@ dataquery availability --file-group-id JPMAQS_GENERIC_RETURNS --file-datetime 20
 # Download a single file
 dataquery download --file-group-id JPMAQS_GENERIC_RETURNS \
                    --file-datetime 20250115 \
-                   --destination ./downloads \
-                   --num-parts 5
+                   --destination ./downloads
 
-# Watch a group and download as new files arrive
+# Watch a group and download as new files arrive (calls auto_download_async under the hood —
+# same SSE subscription, same event-replay state files)
 dataquery download --watch --group-id JPMAQS_GENERIC_RETURNS --destination ./downloads
 
 # Download everything in a date range
 dataquery download-group --group-id JPMAQS_GENERIC_RETURNS \
                          --start-date 20250101 --end-date 20250131 \
-                         --destination ./data \
-                         --max-concurrent 5 --num-parts 4
+                         --destination ./data
 
 # Restrict to one or more file-group-ids
 dataquery download-group --group-id JPMAQS_GENERIC_RETURNS \
@@ -226,8 +342,6 @@ All environment variables use the `DATAQUERY_` prefix.
 | `DATAQUERY_CLIENT_SECRET` | _(none)_ | Required for OAuth |
 | `DATAQUERY_BEARER_TOKEN` | _(none)_ | Alternative to OAuth |
 | `DATAQUERY_OAUTH_ENABLED` | `true` | Set `false` to use bearer-token mode |
-| `DATAQUERY_OAUTH_TOKEN_URL` | `https://authe.jpmorgan.com/as/token.oauth2` | |
-| `DATAQUERY_OAUTH_AUD` | `JPMC:URI:RS-06785-DataQueryExternalApi-PROD` | |
 
 **API endpoints**
 
@@ -277,6 +391,50 @@ async with DataQuery(client_id="...", client_secret="...", timeout=60.0) as dq:
     ...
 ```
 
+## Logging
+
+The SDK logs through [structlog](https://www.structlog.org/) and emits
+structured events for requests, retries, rate-limit waits, SSE reconnects, and
+download progress. Two ways to drive it:
+
+**Standard Python logging** — works without extra setup:
+
+```python
+import logging
+logging.basicConfig(level=logging.INFO)
+logging.getLogger("dataquery").setLevel(logging.DEBUG)   # SDK-only DEBUG
+```
+
+DEBUG includes per-chunk download progress and SSE keepalives — useful while
+debugging, noisy in production.
+
+**Structured (JSON) output** — recommended for long-running `auto_download`
+services so a log shipper can parse the events:
+
+```python
+from pathlib import Path
+from dataquery.config.logging import (
+    LogFormat, LogLevel, create_logging_config, create_logging_manager,
+)
+
+cfg = create_logging_config(
+    level=LogLevel.INFO,
+    format=LogFormat.JSON,           # or LogFormat.CONSOLE for humans
+    enable_file=True,
+    log_file=Path("./dataquery.log"),
+    enable_request_logging=False,    # set True to log every HTTP request/response
+)
+create_logging_manager(cfg)          # installs handlers on the root logger
+```
+
+`examples/system/enable_request_logging.py` is a runnable version showing
+request/response logging for traffic debugging.
+
+**Health snapshots for `auto_download`** — `manager.get_stats()` returns
+notifications received, files downloaded / skipped / failed, the last event
+id, and a bounded ring of recent errors. Wire it into a `/healthz` endpoint
+for daemon-style deployments.
+
 ## Error handling
 
 All errors inherit from `DataQueryError`:
@@ -310,6 +468,54 @@ async with DataQuery() as dq:
         ...  # any other SDK-level failure
 ```
 
+## Troubleshooting
+
+**`AuthenticationError` / HTTP 401 on the first call**
+
+- Verify both `DATAQUERY_CLIENT_ID` and `DATAQUERY_CLIENT_SECRET` are set:
+  `dataquery config show` will print the resolved config (secrets masked).
+- Confirm OAuth is reaching the right endpoint:
+  `dataquery auth test` performs a token exchange and reports the failure mode.
+- If the credentials are correct but the audience is wrong, set
+  `DATAQUERY_OAUTH_AUD` to the value provisioned for your client.
+
+**`.env` file isn't picked up**
+
+- The SDK looks for `.env` in the current working directory at instantiation.
+  Either `cd` to the directory containing `.env` before running, or pass the
+  path explicitly: `DataQuery(env_file=".env.production")`.
+- Variables already set in the shell environment win over the `.env` file —
+  unset them (`unset DATAQUERY_CLIENT_ID`) if you want the file to take effect.
+- The CLI accepts `--env-file PATH` on every subcommand for the same reason.
+
+**Connection / proxy / SSL failures**
+
+- Behind a corporate proxy, set `DATAQUERY_PROXY_ENABLED=true` and
+  `DATAQUERY_PROXY_URL=http://proxy.host:port`. Add `DATAQUERY_PROXY_USERNAME`
+  / `DATAQUERY_PROXY_PASSWORD` if auth is required.
+- For self-signed proxy CAs, set `DATAQUERY_PROXY_VERIFY_SSL=false` (insecure;
+  prefer pointing `SSL_CERT_FILE` at the corporate root CA bundle).
+- Sporadic `NetworkError` after long idle periods usually means a stateful
+  middlebox is dropping the SSE socket — set
+  `heartbeat_timeout=90.0` on `auto_download_async` to force a reconnect when
+  no bytes arrive within the window.
+
+**Rate-limit pauses**
+
+- Default is 300 rpm / 5 tps. The SDK self-throttles via the token-bucket
+  limiter; if you see long sleeps before requests, lower
+  `DATAQUERY_REQUESTS_PER_MINUTE` is not the cure — it's likely working as
+  designed. Raise it (up to your provisioned limit) to go faster.
+- `dq.get_rate_limit_info()` shows the current bucket state.
+
+**SSE auto-download "missed" events after a restart**
+
+- Confirm `enable_event_replay=True` (the default).
+- Replay state lives under `<destination>/.sse_state/sse_<fingerprint>.json` —
+  if that directory was wiped, the next start has nothing to resume from. Use
+  `manager.clear_event_id()` (or `dataquery download --watch --reset-event-id`)
+  only when you intentionally want a clean slate.
+
 ## Date formats
 
 ```python
@@ -323,13 +529,9 @@ start_date="TODAY-1Y"
 
 ## Performance tuning
 
-`run_group_download_async` parallelizes at the range level — total concurrent
-HTTP requests = `max_concurrent × num_parts`.
-
-With `num_parts=1` (the default) each file downloads as a single streaming GET.
-Set `num_parts > 1` to enable parallel HTTP range requests per file — the SDK
-probes the file size first, then downloads byte ranges concurrently. Files under
-10 MB always use a single stream regardless of `num_parts`.
+`run_group_download_async` streams each file as a single GET. The SDK
+automatically inserts delays between file starts so the configured
+`requests_per_minute` is not exceeded.
 
 ```python
 await dq.run_group_download_async(
@@ -337,15 +539,13 @@ await dq.run_group_download_async(
     start_date="20250101",
     end_date="20250131",
     destination_dir="./data",
-    max_concurrent=5,   # parallel files
-    num_parts=4,        # parallel chunks per file (1 = single stream)
     max_retries=3,
 )
 ```
 
-Typical settings: `max_concurrent` 3–5, `num_parts` 2–8. The SDK automatically
-inserts delays between file starts so the configured `requests_per_minute` is not
-exceeded.
+Tune throughput via `DATAQUERY_REQUESTS_PER_MINUTE` and `DATAQUERY_BURST_CAPACITY`
+(see [Configuration](#environment-variables)) rather than per-call concurrency
+flags.
 
 ## API reference (most-used methods)
 
@@ -372,8 +572,10 @@ exceeded.
 | | `to_dataframe(response)` | requires `pandas` extra |
 | | `get_stats()` / `get_pool_stats()` / `get_rate_limit_info()` | diagnostics |
 
-Every async method above has a sync counterpart (without the `_async` suffix, or
-with an explicit `_sync` suffix) that runs the coroutine via `asyncio.run`.
+Every async method has a sync counterpart with the same name minus the
+`_async` suffix — `list_groups_async` ↔ `list_groups`, `download_file_async` ↔
+`download_file`, etc. Sync calls run the coroutine internally via
+`asyncio.run`, so do not call them from inside an existing event loop.
 
 ## Examples
 
@@ -384,13 +586,14 @@ The `examples/` directory is organised by feature:
 - `examples/instruments/` — instrument discovery + time series
 - `examples/groups/` and `examples/groups_advanced/` — group discovery and time series
 - `examples/grid/` — grid data
-- `examples/system/` — SSE notification subscriber, diagnostics
+- `examples/system/` — SSE notification subscriber (single + multi-group), diagnostics
 
 Run any example directly:
 
 ```bash
 python examples/files/download_file.py
-python examples/system/sse_local_server_example.py
+python examples/system/auto_download_example.py            # single group
+python examples/system/auto_download_multi_group_example.py  # several groups in parallel
 ```
 
 ## Development
