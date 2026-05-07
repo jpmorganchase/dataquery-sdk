@@ -13,7 +13,7 @@ Python SDK for the J.P. Morgan DataQuery API — authenticated file downloads, t
 - [Installation](#installation)
 - [Configure credentials](#configure-credentials)
 - [Quick start](#quick-start)
-- [Auto-download (notification-driven)](#auto-download-notification-driven)
+- [Auto-download (coming soon)](#auto-download-coming-soon)
 - [CLI](#cli)
 - [Configuration](#configuration)
 - [Logging](#logging)
@@ -57,8 +57,7 @@ Python SDK for the J.P. Morgan DataQuery API — authenticated file downloads, t
    ```
 
 If that prints groups, auth and networking are working. From there, jump to
-[Quick start](#quick-start) (date-range download), [Auto-download](#auto-download-notification-driven)
-(SSE), or the [CLI](#cli).
+[Quick start](#quick-start) (date-range download) or the [CLI](#cli).
 
 ## Installation
 
@@ -199,88 +198,12 @@ async with DataQuery() as dq:
     )
 ```
 
-## Auto-download (notification-driven)
+## Auto-download (coming soon)
 
-`auto_download_async` opens a long-lived Server-Sent Events connection to the
-DataQuery `/events/notification` endpoint and downloads files as soon as the
-server announces them — no polling, no schedule.
-
-### Single group
-
-```python
-import asyncio
-from dataquery import DataQuery
-
-async def main():
-    async with DataQuery() as dq:
-        manager = await dq.auto_download_async(
-            group_id="JPMAQS",
-            destination_dir="./downloads",
-            file_group_id=["JPMAQS_FX_VOL", "JPMAQS_RATES"],  # optional filter
-            initial_check=False,         # rely on SSE only
-            enable_event_replay=True,    # resume via last-event-id on restart
-            heartbeat_timeout=90.0,      # force reconnect on silent connections
-        )
-        try:
-            while True:
-                await asyncio.sleep(60)
-        except KeyboardInterrupt:
-            await manager.stop()
-            print(manager.get_stats())
-
-asyncio.run(main())
-```
-
-`file_group_id` is sent to the server as a query parameter, so filtering happens
-at the source — the client never receives events for files it would discard.
-
-### Cross-process event replay
-
-When `enable_event_replay=True` (default), the most recent SSE event id is
-persisted under `<destination>/.sse_state/sse_<fingerprint>.json`. On restart
-the SDK sends it as `last-event-id`, so events published while the process was
-down are replayed automatically. Each `(group_id, file_group_ids)` tuple gets
-its own fingerprint, so multiple subscriptions don't clobber each other's
-state. Set `enable_event_replay=False` to opt out.
-
-### Multiple groups in one process
-
-The SSE endpoint takes one `group-id` per connection, so run one manager per
-group concurrently with `asyncio.gather`:
-
-```python
-async with DataQuery() as dq:
-    managers = await asyncio.gather(
-        dq.auto_download_async(group_id="JPMAQS",  destination_dir="./downloads/jpmaqs"),
-        dq.auto_download_async(group_id="MARKETS", destination_dir="./downloads/markets"),
-        dq.auto_download_async(group_id="ECON",    destination_dir="./downloads/econ"),
-    )
-    # ... keep alive ...
-    await asyncio.gather(*(m.stop() for m in managers), return_exceptions=True)
-```
-
-Authentication and rate limiting are shared through the single `DataQuery`
-instance. See `examples/system/auto_download_multi_group_example.py` for a
-runnable version with stats and Ctrl+C handling.
-
-### Callbacks
-
-```python
-def on_progress(p):  # called during download
-    print(f"{p.file_group_id} {p.percentage:.0f}%")
-
-def on_error(exc):   # called on connection or download errors
-    print(f"error: {exc}")
-
-manager = await dq.auto_download_async(
-    group_id="JPMAQS",
-    destination_dir="./downloads",
-    progress_callback=on_progress,
-    error_callback=on_error,
-)
-```
-
-Both callbacks may be sync or async.
+Real-time notification-driven downloads via the DataQuery SSE stream are under
+active development and will be available in a future release. Once released,
+`auto_download_async` will subscribe to the notification endpoint and download
+files automatically as they are published — no polling required.
 
 ## CLI
 
