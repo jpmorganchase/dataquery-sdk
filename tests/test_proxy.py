@@ -261,6 +261,8 @@ class _StubSSESessionCtx:
 def _sse_auth_manager():
     mgr = SimpleNamespace()
     mgr.get_headers = AsyncMock(return_value={"Authorization": "Bearer T"})
+    mgr.force_refresh = AsyncMock(return_value=None)
+    mgr.token_manager = SimpleNamespace(current_token=None)
     return mgr
 
 
