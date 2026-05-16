@@ -134,7 +134,7 @@ class TestEnvConfig:
         with patch.dict(os.environ, {}, clear=True):
             config = EnvConfig.create_client_config()
             # Should use default values
-            assert config.base_url == "https://api-developer.jpmorgan.com"
+            assert config.base_url == "https://api-dataquery.jpmchase.com"
             assert config.context_path == "/research/dataquery-authe/api/v2"
             assert config.oauth_token_url == "https://authe.jpmorgan.com/as/token.oauth2"
 

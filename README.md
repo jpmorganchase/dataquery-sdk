@@ -1,6 +1,15 @@
 # DataQuery SDK
 
-Python SDK for the J.P. Morgan DataQuery API — authenticated file downloads, time-series queries, and real-time notification-driven downloads with OAuth 2.0, rate limiting, and automatic retries built in.
+Python SDK for the J.P. Morgan DataQuery API. The SDK wraps two distinct
+surfaces behind one client:
+
+- **File Delivery API** — list, check availability of, and download files
+  (single, date-range, historical backfill, or live via SSE notifications).
+- **JSON Data API** — discover groups/instruments and run
+  time-series, grid, and attribute queries that return JSON.
+
+OAuth 2.0, token-bucket rate limiting, retries, and a circuit breaker are
+built in for both.
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -8,12 +17,14 @@ Python SDK for the J.P. Morgan DataQuery API — authenticated file downloads, t
 
 ## Contents
 
+- [The two APIs at a glance](#the-two-apis-at-a-glance)
 - [Features](#features)
 - [New here? Three steps to your first download](#new-here-three-steps-to-your-first-download)
 - [Installation](#installation)
 - [Configure credentials](#configure-credentials)
-- [Quick start](#quick-start)
-- [Auto-download (coming soon)](#auto-download-coming-soon)
+- [Quick start — File Delivery API](#quick-start--file-delivery-api)
+- [Quick start — JSON Data API](#quick-start--json-data-api)
+- [Auto-download (SSE)](#auto-download-sse)
 - [CLI](#cli)
 - [Configuration](#configuration)
 - [Logging](#logging)
@@ -24,17 +35,38 @@ Python SDK for the J.P. Morgan DataQuery API — authenticated file downloads, t
 - [API reference (most-used methods)](#api-reference-most-used-methods)
 - [Examples](#examples) · [Development](#development) · [Requirements](#requirements) · [Support](#support)
 
+## The two APIs at a glance
+
+| | **File Delivery API** | **JSON Data API** |
+|---|---|---|
+| **What you get** | Binary file payloads (CSV, Parquet, etc.) streamed to disk | JSON responses for catalog metadata and time-series data |
+| **Typical methods** | `download_file_async`, `run_group_download_async`, `download_historical_async`, `auto_download_async`, `list_files_async`, `list_available_files_async`, `check_availability_async` | `list_groups_async`, `search_groups_async`, `list_instruments_async`, `search_instruments_async`, `get_group_attributes_async`, `get_group_filters_async`, `get_expressions_time_series_async`, `get_instrument_time_series_async`, `get_group_time_series_async`, `get_grid_data_async` |
+| **CLI surface** | `dataquery files`, `availability`, `download`, `download-group` | `dataquery groups` |
+
+Both surfaces share the same host and the same OAuth credentials, and run
+through one `DataQuery` client — pick the methods that match what you need.
+
 ## Features
 
+**File Delivery API**
+
 - **Streaming file downloads** — single streaming GET per file
-- **Historical and date-range downloads** — fetch every file in a group (optionally filtered to one or many `file-group-id`s) between two dates
+- **Date-range and historical downloads** — fetch every file in a group (optionally filtered to one or many `file-group-id`s) between two dates, or chunk a long historical backfill into monthly ranges
 - **Notification-driven downloads (SSE)** — subscribe to the `/events/notification` stream and auto-download files as soon as they are published
+
+**JSON Data API**
+
+- **Group, file, and instrument discovery** — list and keyword-search the catalog
 - **Time-series queries** — by expression, by instrument, or by group with attribute / filter projections
+- **Grid data** — pivoted grid queries for tabular responses
+- **Optional pandas integration** — `to_dataframe(...)` converts any JSON response
+
+**Cross-cutting**
+
 - **OAuth 2.0 with token caching and refresh** — or supply a bearer token directly
 - **Token-bucket rate limiter** — 300 rpm / 5 tps defaults (configurable up to API limits)
 - **Retry + circuit breaker** — exponential backoff, configurable failure threshold
 - **Sync and async APIs** — every operation has `_async` and sync variants
-- **Optional pandas integration** — `to_dataframe(...)` on any response
 - **CLI** — `dataquery groups | files | availability | download | download-group | auth | config`
 
 ## New here? Three steps to your first download
@@ -100,7 +132,9 @@ dq = DataQuery(client_id="...", client_secret="...")
 
 A starter `.env` can be generated with `dataquery config template --output .env`.
 
-## Quick start
+## Quick start — File Delivery API
+
+These methods stream binary file payloads to disk.
 
 ### Download files for a date range
 
@@ -159,6 +193,40 @@ async with DataQuery() as dq:
     print(f"Downloaded: {result.local_path} ({result.file_size} bytes)")
 ```
 
+### List files / check availability
+
+```python
+async with DataQuery() as dq:
+    files = await dq.list_files_async(group_id="JPMAQS_GENERIC_RETURNS")
+    available = await dq.list_available_files_async(
+        group_id="JPMAQS_GENERIC_RETURNS",
+        start_date="20250101",
+        end_date="20250131",
+    )
+    info = await dq.check_availability_async(
+        file_group_id="JPMAQS_GENERIC_RETURNS",
+        file_datetime="20250115",
+    )
+```
+
+For live notification-driven downloads, see [Auto-download (SSE)](#auto-download-sse).
+
+## Quick start — JSON Data API
+
+These methods return JSON (Pydantic-typed) responses. Use `to_dataframe(...)`
+to convert any response to a pandas DataFrame.
+
+### Discover groups and instruments
+
+```python
+async with DataQuery() as dq:
+    groups = await dq.list_groups_async(limit=100)
+    matches = await dq.search_groups_async("fixed income", limit=20)
+    instruments = await dq.search_instruments_async(
+        group_id="FI_GO_BO_EA", keywords="irish",
+    )
+```
+
 ### Time-series queries
 
 ```python
@@ -166,6 +234,14 @@ async with DataQuery() as dq:
     # By expression
     ts = await dq.get_expressions_time_series_async(
         expressions=["DB(MTE,IRISH EUR 1.100 15-May-2029 LON,,IE00BH3SQ895,MIDPRC)"],
+        start_date="20240101",
+        end_date="20240131",
+    )
+
+    # By instrument + attribute
+    ts = await dq.get_instrument_time_series_async(
+        instruments=["IE00BH3SQ895"],
+        attributes=["MIDPRC"],
         start_date="20240101",
         end_date="20240131",
     )
@@ -182,28 +258,71 @@ async with DataQuery() as dq:
     df = dq.to_dataframe(ts)  # requires pandas extra
 ```
 
-### Discover available data
+### Group metadata (attributes, filters)
 
 ```python
 async with DataQuery() as dq:
-    groups = await dq.list_groups_async(limit=100)
-    files = await dq.list_files_async(group_id="JPMAQS_GENERIC_RETURNS")
-    available = await dq.list_available_files_async(
-        group_id="JPMAQS_GENERIC_RETURNS",
-        start_date="20250101",
-        end_date="20250131",
-    )
-    instruments = await dq.search_instruments_async(
-        group_id="FI_GO_BO_EA", keywords="irish"
+    attrs = await dq.get_group_attributes_async(group_id="FI_GO_BO_EA")
+    filters = await dq.get_group_filters_async(group_id="FI_GO_BO_EA")
+```
+
+### Grid data
+
+```python
+async with DataQuery() as dq:
+    grid = await dq.get_grid_data_async(
+        expr="DB(GRID,...)",  # provider-supplied grid expression
+        date="20240131",
     )
 ```
 
-## Auto-download (coming soon)
+## Auto-download (SSE)
 
-Real-time notification-driven downloads via the DataQuery SSE stream are under
-active development and will be available in a future release. Once released,
-`auto_download_async` will subscribe to the notification endpoint and download
-files automatically as they are published — no polling required.
+`auto_download_async` subscribes to the DataQuery `/events/notification` SSE
+stream and downloads files as soon as the server announces them — no polling.
+The call returns immediately with a manager object; the subscription runs in
+the background until you call `manager.stop()`.
+
+```python
+import asyncio
+from dataquery import DataQuery
+
+async def main():
+    async with DataQuery() as dq:
+        manager = await dq.auto_download_async(
+            group_id="JPMAQS_GENERIC_RETURNS",
+            destination_dir="./downloads",
+            file_group_id=["FG_ABC", "FG_DEF"],  # optional server-side filter
+        )
+        try:
+            while True:
+                await asyncio.sleep(60)
+        except KeyboardInterrupt:
+            await manager.stop()
+            print(manager.get_stats())
+
+asyncio.run(main())
+```
+
+Key behaviours:
+
+- **Initial backfill** (`initial_check=True`, default) — on startup, checks
+  availability for the current day so files published before the subscription
+  started are not missed.
+- **Cross-process event replay** (`enable_event_replay=True`, default) — the
+  last SSE event id is persisted to
+  `<destination>/.sse_state/sse_<fingerprint>.json`, so a restart resumes from
+  where the previous session stopped rather than replaying from scratch.
+- **Reconnects** — exponential backoff between `reconnect_delay` (5s) and
+  `max_reconnect_delay` (60s). Set `heartbeat_timeout` (e.g. `90.0`) to force
+  a reconnect when no bytes arrive within the window — useful behind stateful
+  middleboxes that drop idle sockets.
+- **Health stats** — `manager.get_stats()` returns notifications received,
+  files downloaded / skipped / failed, the last event id, and a bounded ring
+  of recent errors.
+
+The same path is available from the CLI as `dataquery download --watch` (see
+below).
 
 ## CLI
 
@@ -266,14 +385,6 @@ All environment variables use the `DATAQUERY_` prefix.
 | `DATAQUERY_BEARER_TOKEN` | _(none)_ | Alternative to OAuth |
 | `DATAQUERY_OAUTH_ENABLED` | `true` | Set `false` to use bearer-token mode |
 
-**API endpoints**
-
-| Variable | Default |
-|---|---|
-| `DATAQUERY_BASE_URL` | `https://api-developer.jpmorgan.com` |
-| `DATAQUERY_FILES_BASE_URL` | `https://api-dataquery.jpmchase.com` |
-| `DATAQUERY_CONTEXT_PATH` | `/research/dataquery-authe/api/v2` |
-
 **HTTP / retry / rate limit**
 
 | Variable | Default |
@@ -300,7 +411,6 @@ from dataquery import ClientConfig, DataQuery
 config = ClientConfig(
     client_id="...",
     client_secret="...",
-    base_url="https://api-developer.jpmorgan.com",
     timeout=60.0,
     max_retries=3,
     requests_per_minute=300,
@@ -472,28 +582,40 @@ flags.
 
 ## API reference (most-used methods)
 
-| Area | Method | Notes |
-|---|---|---|
-| Discovery | `list_groups_async(limit)` | |
-| | `search_groups_async(keywords, limit, offset)` | |
-| | `list_files_async(group_id, file_group_id=None)` | |
-| | `list_available_files_async(group_id, file_group_id, start_date, end_date)` | |
-| | `list_instruments_async(group_id, instrument_id=None, page=None)` | |
-| | `search_instruments_async(group_id, keywords, page=None)` | |
-| | `get_group_attributes_async(group_id, ...)` | |
-| | `get_group_filters_async(group_id, page=None)` | |
-| Downloads | `download_file_async(file_group_id, file_datetime, ...)` | single file |
-| | `run_group_download_async(group_id, start_date, end_date, file_group_id=None, ...)` | date range, single or list of ids |
-| | `download_historical_async(...)` | chunked historical backfill |
-| | `auto_download_async(group_id, ...)` | SSE notifications (the only watch path) |
-| Time series | `get_expressions_time_series_async(expressions, start_date, end_date)` | |
-| | `get_instrument_time_series_async(instruments, attributes, start_date, end_date)` | |
-| | `get_group_time_series_async(group_id, attributes, filter, start_date, end_date)` | |
-| Grid data | `get_grid_data_async(...)` | |
-| Utilities | `check_availability_async(file_group_id, file_datetime)` | |
-| | `health_check_async()` | |
-| | `to_dataframe(response)` | requires `pandas` extra |
-| | `get_stats()` / `get_pool_stats()` / `get_rate_limit_info()` | diagnostics |
+### File Delivery API
+
+| Method | Notes |
+|---|---|
+| `list_files_async(group_id, file_group_id=None)` | List files in a group |
+| `list_available_files_async(group_id, file_group_id, start_date, end_date)` | Files available in a date range |
+| `check_availability_async(file_group_id, file_datetime)` | Per-file availability check |
+| `download_file_async(file_group_id, file_datetime, ...)` | Single-file streaming download |
+| `run_group_download_async(group_id, start_date, end_date, file_group_id=None, ...)` | Date-range download, single or list of ids |
+| `download_historical_async(...)` | Chunked historical backfill (monthly ranges) |
+| `auto_download_async(group_id, ...)` | SSE notification subscription (the only watch path) |
+
+### JSON Data API
+
+| Method | Notes |
+|---|---|
+| `list_groups_async(limit)` | List groups |
+| `search_groups_async(keywords, limit, offset)` | Keyword search |
+| `list_instruments_async(group_id, instrument_id=None, page=None)` | List / lookup instruments |
+| `search_instruments_async(group_id, keywords, page=None)` | Instrument keyword search |
+| `get_group_attributes_async(group_id, ...)` | Available attributes for a group |
+| `get_group_filters_async(group_id, page=None)` | Available filters for a group |
+| `get_expressions_time_series_async(expressions, start_date, end_date)` | Time series by expression |
+| `get_instrument_time_series_async(instruments, attributes, start_date, end_date)` | Time series by instrument + attribute |
+| `get_group_time_series_async(group_id, attributes, filter, start_date, end_date)` | Time series for a group |
+| `get_grid_data_async(expr=None, grid_id=None, date=None)` | Grid (pivoted) data |
+
+### Utilities (shared)
+
+| Method | Notes |
+|---|---|
+| `health_check_async()` | API heartbeat |
+| `to_dataframe(response)` | Requires `pandas` extra |
+| `get_stats()` / `get_pool_stats()` / `get_rate_limit_info()` | Diagnostics |
 
 Every async method has a sync counterpart with the same name minus the
 `_async` suffix — `list_groups_async` ↔ `list_groups`, `download_file_async` ↔
