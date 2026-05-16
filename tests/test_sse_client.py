@@ -35,6 +35,8 @@ def _make_auth_manager(headers: dict | None = None):
     headers = headers or {"Authorization": "Bearer T"}
     mgr = SimpleNamespace()
     mgr.get_headers = AsyncMock(return_value=dict(headers))
+    mgr.force_refresh = AsyncMock(return_value=None)
+    mgr.token_manager = SimpleNamespace(current_token=None)
     return mgr
 
 

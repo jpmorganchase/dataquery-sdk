@@ -196,6 +196,12 @@ class SSEClient:
         return f"{base}{C.SSE_NOTIFICATION_PATH}"
 
     async def _get_headers(self) -> dict:
+        # Force refresh if cached token is expired
+        token_mgr = self.auth_manager.token_manager
+        if token_mgr.current_token and token_mgr.current_token.is_expired:
+            logger.info("Cached token is expired, refreshing before SSE connection")
+            await self.auth_manager.force_refresh()
+
         headers = await self.auth_manager.get_headers()
         headers["Accept"] = "text/event-stream"
         if self._last_event_id is not None:

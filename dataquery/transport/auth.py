@@ -343,6 +343,11 @@ class OAuthManager:
         token = await self.authenticate()
         return {"Authorization": token}
 
+    async def force_refresh(self) -> Optional[str]:
+        """Discard the cached token and fetch a new one."""
+        self.token_manager.clear_token()
+        return await self.token_manager.get_valid_token()
+
     def is_authenticated(self) -> bool:
         """Check if authentication is configured."""
         return self.config.has_bearer_token or self.config.has_oauth_credentials
