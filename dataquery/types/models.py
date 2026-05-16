@@ -39,7 +39,7 @@ class ClientConfig(BaseModel):
 
     # API configuration
     base_url: str = Field(
-        default="https://api-developer.jpmorgan.com",
+        default="https://api-dataquery.jpmchase.com",
         description="Base URL of the DATAQUERY API",
     )
     context_path: Optional[str] = Field(default="/research/dataquery-authe/api/v2", description="API context path")

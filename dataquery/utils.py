@@ -49,13 +49,13 @@ def create_env_template(env_file: Optional[Path] = None) -> Path:
 # =============================================================================
 
 # Base URL of the DATAQUERY API (REQUIRED)
-# Example: https://api-developer.jpmorgan.com (Production)
-# Example: https://api-staging.dataquery.com
-DATAQUERY_BASE_URL=https://api-developer.jpmorgan.com
+# Example: https://api-dataquery.jpmchase.com (Production)
+DATAQUERY_BASE_URL=https://api-dataquery.jpmchase.com
 
 # Optional: Separate host for file endpoints
-# If set, file availability/list/download will use this host instead of DATAQUERY_BASE_URL
-# DATAQUERY_FILES_BASE_URL=https://files-api.example.com
+# Defaults to the same host as DATAQUERY_BASE_URL; override only if file
+# endpoints live on a different host.
+# DATAQUERY_FILES_BASE_URL=https://api-dataquery.jpmchase.com
 # DATAQUERY_FILES_CONTEXT_PATH=/research/dataquery-authe/api/v2
 
 # =============================================================================
@@ -67,8 +67,7 @@ DATAQUERY_BASE_URL=https://api-developer.jpmorgan.com
 DATAQUERY_OAUTH_ENABLED=true
 
 # OAuth token endpoint URL
-# Usually: {BASE_URL}/oauth/token
-DATAQUERY_OAUTH_TOKEN_URL=https://api-developer.jpmorgan.com/oauth/token
+DATAQUERY_OAUTH_TOKEN_URL=https://authe.jpmorgan.com/as/token.oauth2
 
 # OAuth client credentials (REQUIRED if OAuth enabled)
 # Get these from your DATAQUERY account dashboard
