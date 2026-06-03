@@ -9,7 +9,7 @@ authors = [
 ]
 description = "Python SDK for DATAQUERY Data API - Query, download, and check availability of economic data files"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
@@ -18,9 +18,9 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Office/Business :: Financial",
     "Topic :: Scientific/Engineering :: Information Analysis",
@@ -31,6 +31,7 @@ dependencies = [
     "pydantic>=2.0.0,<3.0.0",
     "structlog>=23.0.0",
     "python-dotenv>=1.0.0",
+    "idna>=3.15",
 ]
 dynamic = ["version"]
 keywords = [
@@ -63,12 +64,14 @@ dev = [
     "pip-audit>=2.7.0",
     "build>=1.3.0",
     "twine>=4.0.0",
+    "urllib3>=2.7.0",
 ]
 docs = [
     "mkdocs>=1.5.0",
     "mkdocs-material>=9.0.0",
     "mkdocstrings[python]>=0.24.0",
     "mike>=1.1.0",
+    "pymdown-extensions>=10.21.3",
 ]
 pandas = [
     "pandas>=2.0.0",
@@ -87,6 +90,8 @@ all = [
     "pandas>=2.0.0",
     "pip-audit>=2.7.0",
     "build>=1.3.0",
+    "urllib3>=2.7.0",
+    "pymdown-extensions>=10.21.3",
 ]
 
 [project.scripts]
@@ -124,7 +129,7 @@ quote-style = "double"
 
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = true
@@ -161,10 +166,8 @@ markers = [
     "asyncio: marks tests as async tests",
 ]
 filterwarnings = [
-  # Silence noisy runtime warnings from mocked async coroutines in tests
   "ignore:coroutine .* was never awaited:RuntimeWarning",
   "ignore:Enable tracemalloc to get traceback where the object was allocated:RuntimeWarning",
-  # Silence aiohttp connector deprecation noise on Python 3.13+
   "ignore:enable_cleanup_closed ignored because .* is fixed:DeprecationWarning",
 ]
 
@@ -199,4 +202,6 @@ dev = [
     "mkdocstrings-python>=1.18.2",
     "mypy>=1.17.1",
     "pytest>=8.4.2",
+    "urllib3>=2.7.0",
+    "pymdown-extensions>=10.21.3",
 ]

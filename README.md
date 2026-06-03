@@ -11,7 +11,7 @@ surfaces behind one client:
 OAuth 2.0, token-bucket rate limiting, retries, and a circuit breaker are
 built in for both.
 
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Linting: Ruff](https://img.shields.io/badge/linting-ruff-261230.svg)](https://github.com/astral-sh/ruff)
 
@@ -104,7 +104,7 @@ pip install "dataquery-sdk[pandas]"
 pip install "dataquery-sdk[dev]"
 ```
 
-Python 3.11+ is required.
+Python 3.12+ is required.
 
 ## Configure credentials
 
@@ -667,7 +667,7 @@ Pytest markers: `slow`, `integration`, `unit`, `asyncio`.
 
 ## Requirements
 
-- Python 3.11+
+- Python 3.12+
 - `aiohttp>=3.8,<4`, `pydantic>=2,<3`, `structlog>=23`, `python-dotenv>=1`
 - Optional: `pandas>=2` (for `to_dataframe`)
 
