@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Python 3.11 or higher
+- Python 3.12 or higher
 - pip or uv package manager
 
 ## Install from PyPI
@@ -67,7 +67,7 @@ uv add "dataquery-sdk[dev,docs]"
 You can also run DataQuery SDK in a Docker container:
 
 ```dockerfile
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 COPY requirements.txt .

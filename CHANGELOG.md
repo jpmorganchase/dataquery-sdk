@@ -30,3 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.0] - 2026-05-06
 - SSE auto-download with cross-process event replay and multi-group support
 - Python 3.11+ only
+## [1.0.0] - 2026-06-03
+- Stable 1.0 release
+- Bumped minimum Python to 3.12; added 3.14 to test matrix
+- Security floors: idna>=3.15, urllib3>=2.7.0, pymdown-extensions>=10.21.3
