@@ -29,18 +29,6 @@ class QueuePriority(int, Enum):
 
 
 @dataclass
-class QueuedRequest:
-    """Represents a queued request."""
-
-    priority: QueuePriority
-    timestamp: float
-    request_id: str
-    operation: str
-    future: asyncio.Future
-    timeout: Optional[float] = None
-
-
-@dataclass
 class RateLimitConfig:
     """Configuration for rate limiting."""
 
@@ -50,11 +38,12 @@ class RateLimitConfig:
     retry_after_header: str = "Retry-After"
     enable_rate_limiting: bool = True
 
-    # Queue configuration
+    # Queue configuration — retained because the diagnostics surface in
+    # ``DataQuery.get_rate_limit_info`` reports these; the limiter itself is a
+    # pure token bucket and does not queue.
     max_queue_size: int = 1000
     enable_queuing: bool = True
     queue_timeout: float = 600.0  # 10 minutes
-    priority_enabled: bool = True
 
     # Adaptive rate limiting
     adaptive_rate_limiting: bool = True
@@ -87,9 +76,9 @@ class RateLimitState:
     window_start: float = field(default_factory=time.time)
     retry_after: Optional[float] = None
 
-    # Queue state
+    # Retained for diagnostics/stats only. The limiter is a pure token bucket —
+    # nothing is ever enqueued, so this stays empty.
     queue: deque = field(default_factory=deque)
-    processing: bool = False
     last_request_time: float = field(default_factory=time.time)
 
     # Adaptive rate limiting
@@ -111,12 +100,6 @@ class EnhancedTokenBucketRateLimiter:
         self.config = config
         self.state = RateLimitState()
         self._lock: Optional[asyncio.Lock] = None
-        self._queue_processor_task: Optional[asyncio.Task] = None
-        self._shutdown_event: Optional[asyncio.Event] = None
-        self._queue_processor_started = False
-
-        self._queue_processor_started = False
-        self._queue_event = asyncio.Event()
 
         # Initialize tokens to burst capacity
         self.state.tokens = float(config.burst_capacity)
@@ -136,93 +119,6 @@ class EnhancedTokenBucketRateLimiter:
             self._lock = asyncio.Lock()
         return self._lock
 
-    def _get_shutdown_event(self) -> asyncio.Event:
-        """Get the shutdown event, creating it if necessary."""
-        if self._shutdown_event is None:
-            self._shutdown_event = asyncio.Event()
-        return self._shutdown_event
-
-    def _start_queue_processor(self):
-        """Start the background queue processor."""
-        if self._queue_processor_task is None or self._queue_processor_task.done():
-            try:
-                # Check if there's a running event loop
-                loop = asyncio.get_running_loop()
-                self._queue_processor_task = loop.create_task(self._process_queue())
-                self._queue_processor_started = True
-            except RuntimeError:
-                # No running event loop, will start when acquire is called
-                self._queue_processor_started = False
-
-    async def _process_queue(self):
-        """Background task to process queued requests."""
-        shutdown = self._get_shutdown_event()
-        while not shutdown.is_set():
-            try:
-                async with self._get_lock():
-                    queue_empty = not self.state.queue
-                    if queue_empty:
-                        self._queue_event.clear()
-
-                if queue_empty:
-                    await self._queue_event.wait()
-                    continue
-
-                async with self._get_lock():
-                    request = self._get_next_request()
-                    if request is None:
-                        continue
-
-                    if request.timeout and time.time() - request.timestamp > request.timeout:
-                        self.state.queue.remove(request)
-                        if not request.future.done():
-                            request.future.set_exception(asyncio.TimeoutError("Request timed out in queue"))
-                        continue
-
-                    if await self._try_acquire_token():
-                        self.state.queue.remove(request)
-                        if not request.future.done():
-                            request.future.set_result(True)
-                        continue
-
-                    wait_time = self._calculate_wait_time()
-
-                await asyncio.sleep(wait_time)
-
-            except asyncio.CancelledError:
-                raise
-            except Exception as e:
-                logger.error("Error in queue processor", error=str(e))
-                await asyncio.sleep(1.0)
-
-    def _get_next_request(self) -> Optional[QueuedRequest]:
-        """Get the next request from queue based on priority."""
-        if not self.state.queue:
-            return None
-
-        if not self.config.priority_enabled:
-            return self.state.queue[0]
-
-        # Find highest priority request
-        highest_priority = max(req.priority.value for req in self.state.queue)
-        for request in self.state.queue:
-            if request.priority.value == highest_priority:
-                return request
-
-        return None
-
-    async def _try_acquire_token(self) -> bool:
-        """Try to acquire a token without waiting."""
-        self._refill_tokens()
-
-        if self.state.tokens >= 1.0:
-            self.state.tokens -= 1.0
-            self.state.request_count += 1
-            self.state.last_request_time = time.time()
-            return True
-
-        return False
-
     async def acquire(
         self,
         timeout: Optional[float] = None,
@@ -230,12 +126,16 @@ class EnhancedTokenBucketRateLimiter:
         operation: str = "unknown",
     ) -> bool:
         """
-        Acquire a token for making a request with optimized performance.
+        Acquire a token for making a request.
+
+        Acquisition is a straight token bucket; ``priority`` and ``operation``
+        are accepted for call-site context (e.g. the timeout message in
+        :class:`RateLimitContext`) and do not affect ordering.
 
         Args:
             timeout: Maximum time to wait for a token (None = no timeout)
-            priority: Priority level for queuing (ignored for performance)
-            operation: Operation name for logging
+            priority: Accepted for API/context; does not affect ordering
+            operation: Operation name for logging/context
 
         Returns:
             True if token acquired, False if timeout
@@ -243,12 +143,6 @@ class EnhancedTokenBucketRateLimiter:
         if not self.config.enable_rate_limiting:
             return True
 
-        # Use optimized simple acquisition for better performance
-        # If queuing is enabled, we should use the queue for fairness if there's contention
-        return await self._optimized_acquire(timeout, operation)
-
-    async def _optimized_acquire(self, timeout: Optional[float] = None, operation: str = "unknown") -> bool:
-        """Optimized token acquisition with minimal overhead."""
         start_time = time.time()
 
         async with self._get_lock():
@@ -261,7 +155,6 @@ class EnhancedTokenBucketRateLimiter:
                     self.state.last_request_time = time.time()
                     return True
 
-                # Calculate wait time more efficiently
                 wait_time = self._calculate_wait_time()
 
                 if timeout is not None:
@@ -269,30 +162,8 @@ class EnhancedTokenBucketRateLimiter:
                     if elapsed + wait_time > timeout:
                         return False
 
-                # Use shorter sleep intervals for better responsiveness
+                # Short sleep intervals keep cancellation/timeout responsive.
                 await asyncio.sleep(min(wait_time, 0.1))
-
-    async def _simple_acquire(self, timeout: Optional[float] = None) -> bool:
-        """Simple token bucket acquisition without queuing."""
-        start_time = time.time()
-
-        async with self._get_lock():
-            while True:
-                self._refill_tokens()
-
-                if self.state.tokens >= 1.0:
-                    self.state.tokens -= 1.0
-                    self.state.request_count += 1
-                    return True
-
-                wait_time = self._calculate_wait_time()
-
-                if timeout is not None:
-                    elapsed = time.time() - start_time
-                    if elapsed + wait_time > timeout:
-                        return False
-
-                await asyncio.sleep(wait_time)
 
     def _refill_tokens(self):
         """Refill tokens based on time elapsed."""
@@ -397,34 +268,14 @@ class EnhancedTokenBucketRateLimiter:
                 self.state.tokens = float(self.config.burst_capacity)
                 self.state.last_refill = time.time()
 
-                # Clear queue
-                for request in self.state.queue:
-                    if not request.future.done():
-                        request.future.cancel()
-                self.state.queue.clear()
-
         # Schedule reset
         asyncio.create_task(_reset())
         logger.info("Rate limiter reset")
 
     async def shutdown(self) -> None:
-        """Shutdown the rate limiter and clear queue."""
-        self._get_shutdown_event().set()
-
-        if self._queue_processor_task:
-            self._queue_processor_task.cancel()
-            try:
-                await self._queue_processor_task
-            except asyncio.CancelledError:
-                pass
-
-        # Clear queue
+        """Shutdown the rate limiter."""
         async with self._get_lock():
-            for request in self.state.queue:
-                if not request.future.done():
-                    request.future.cancel()
             self.state.queue.clear()
-
         logger.info("Rate limiter shutdown complete")
 
 

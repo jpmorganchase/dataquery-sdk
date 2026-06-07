@@ -16,6 +16,7 @@ import structlog
 from dotenv import load_dotenv
 
 from .config import EnvConfig
+from .core._sync import SyncRunner
 from .core.client import DataQueryClient
 from .types.exceptions import ConfigurationError
 from .types.models import (
@@ -219,6 +220,9 @@ class DataQuery:
 
         self._client: Optional[DataQueryClient] = None
         self._sync_proxy: Optional[_SyncProxy] = None
+        # All synchronous calls share one persistent loop so the aiohttp
+        # session stays valid across calls (see :class:`SyncRunner`).
+        self._sync_runner = SyncRunner()
 
     @property
     def sync(self) -> "_SyncProxy":
@@ -276,7 +280,13 @@ class DataQuery:
 
     def _run_sync(self, coro):
         """
-        Run an async coroutine in a new event loop.
+        Run an async coroutine to completion and return its result.
+
+        The coroutine runs on a persistent background event loop (one per
+        :class:`DataQuery` instance) rather than a throwaway loop, so the
+        aiohttp session created on the first call remains usable on every
+        subsequent call. Raises ``RuntimeError`` if invoked from within a
+        running event loop — use the ``*_async`` method there instead.
 
         Args:
             coro: Coroutine to run
@@ -284,15 +294,7 @@ class DataQuery:
         Returns:
             Result of the coroutine
         """
-        try:
-            return asyncio.run(coro)
-        except RuntimeError as e:
-            if "cannot run loop while another loop is running" in str(e):
-                raise RuntimeError(
-                    "Cannot run sync method when an asyncio event loop is already running. "
-                    "Use the async version of the method instead."
-                ) from e
-            raise
+        return self._sync_runner.run(coro)
 
     # Core API Methods
 
@@ -1783,8 +1785,13 @@ class DataQuery:
 
     def close(self):
         """Close the connection and cleanup resources."""
-        if self._client:
-            return self._run_sync(self.close_async())
+        try:
+            if self._client:
+                self._run_sync(self.close_async())
+        finally:
+            # Stop the background loop so the daemon thread doesn't linger.
+            # The runner lazily restarts if the client is reused afterwards.
+            self._sync_runner.close()
 
     def list_groups(self, limit: Optional[int] = 100) -> List[Group]:
         """Synchronous wrapper for list_groups."""
@@ -2194,9 +2201,12 @@ class DataQuery:
 
     def cleanup(self):
         """Synchronous cleanup resources and ensure proper shutdown."""
-        if self._client:
-            self._run_sync(self.close_async())
-            self._client = None
+        try:
+            if self._client:
+                self._run_sync(self.close_async())
+                self._client = None
+        finally:
+            self._sync_runner.close()
 
     # Sync wrapper methods with _sync suffix for testing compatibility
 

@@ -12,7 +12,6 @@ from .connection_pool import (
 )
 from .rate_limiter import (
     EnhancedTokenBucketRateLimiter,
-    QueuedRequest,
     QueuePriority,
     RateLimitConfig,
     RateLimitContext,
@@ -42,7 +41,6 @@ __all__ = [
     "create_connection_pool_config",
     # rate limiter
     "EnhancedTokenBucketRateLimiter",
-    "QueuedRequest",
     "QueuePriority",
     "RateLimitConfig",
     "RateLimitContext",

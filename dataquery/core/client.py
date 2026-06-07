@@ -70,6 +70,7 @@ from ._mixins import (
     MetadataMixin,
     TimeSeriesMixin,
 )
+from ._sync import SyncRunner
 
 __all__ = [
     "DataQueryClient",
@@ -108,6 +109,9 @@ class DataQueryClient(
         self.config = config
         self.session: Optional[aiohttp.ClientSession] = None
         self.auth_manager = OAuthManager(config)
+        # Synchronous wrappers share one persistent loop so the aiohttp session
+        # stays valid across sync calls (see :class:`SyncRunner`).
+        self._sync_runner = SyncRunner()
 
         # Initialize enhanced components
         self._setup_enhanced_components()
@@ -1788,12 +1792,12 @@ class DataQueryClient(
         return self._run_sync(self.get_grid_data_async(expr, grid_id, date))
 
     def _run_sync(self, coro):
-        try:
-            asyncio.get_running_loop()
-            import concurrent.futures
+        """Run a coroutine to completion on the shared persistent loop.
 
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(asyncio.run, coro)
-                return future.result()
-        except RuntimeError:
-            return asyncio.run(coro)
+        Uses one long-lived background loop (see :class:`SyncRunner`) rather than
+        a throwaway ``asyncio.run`` loop per call, so the aiohttp session created
+        on the first sync call stays usable on subsequent calls. Raises
+        ``RuntimeError`` if called from within a running event loop — use the
+        ``*_async`` method there instead.
+        """
+        return self._sync_runner.run(coro)

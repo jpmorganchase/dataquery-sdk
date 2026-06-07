@@ -11,7 +11,6 @@ import pytest
 
 from dataquery.transport.rate_limiter import (
     EnhancedTokenBucketRateLimiter,
-    QueuedRequest,
     QueuePriority,
     RateLimitConfig,
     RateLimitContext,
@@ -198,49 +197,6 @@ class TestEnhancedTokenBucketRateLimiterFeatures:
         assert limiter.state.consecutive_failures > 0
 
 
-class TestQueuedRequestFeatures:
-    """Test QueuedRequest features."""
-
-    @pytest.mark.asyncio
-    async def test_queued_request_creation_minimal(self):
-        """Test QueuedRequest creation with minimal args."""
-        # Create with the actual required arguments
-        loop = asyncio.get_event_loop()
-        future = loop.create_future()
-        request = QueuedRequest(
-            priority=QueuePriority.NORMAL,
-            timestamp=time.time(),
-            request_id="test_123",
-            operation="test_operation",
-            future=future,
-        )
-
-        assert request.priority == QueuePriority.NORMAL
-        assert request.request_id == "test_123"
-        assert request.operation == "test_operation"
-        assert request.future == future
-
-    @pytest.mark.asyncio
-    async def test_queued_request_attributes(self):
-        """Test QueuedRequest has expected attributes."""
-        loop = asyncio.get_event_loop()
-        future = loop.create_future()
-        request = QueuedRequest(
-            priority=QueuePriority.HIGH,
-            timestamp=time.time(),
-            request_id="test_456",
-            operation="test_op",
-            future=future,
-        )
-
-        # Test attributes exist
-        assert hasattr(request, "priority")
-        assert hasattr(request, "timestamp")
-        assert hasattr(request, "request_id")
-        assert hasattr(request, "operation")
-        assert hasattr(request, "future")
-
-
 class TestRateLimitContextFeatures:
     """Test RateLimitContext features."""
 
@@ -340,7 +296,7 @@ def _make_rate_limiter(**overrides) -> EnhancedTokenBucketRateLimiter:
 
 
 @pytest.mark.asyncio
-async def test_simple_acquire_without_queuing_merged():
+async def test_acquire_without_queuing_merged():
     rl = _make_rate_limiter(enable_queuing=False)
     assert await rl.acquire(timeout=0.1)
     assert not await rl.acquire(timeout=0.05)
