@@ -3,6 +3,7 @@ Data models for the DATAQUERY SDK based on the OpenAPI specification.
 """
 
 import asyncio
+import base64
 import time
 from datetime import date, datetime, timedelta
 from enum import Enum
@@ -245,13 +246,13 @@ class ClientConfig(BaseModel):
             return {}
         kwargs: Dict[str, Any] = {"proxy": self.proxy_url}
         if self.has_proxy_credentials:
-            # Local import avoids making aiohttp a hard dependency of models.
-            from aiohttp import BasicAuth
-
-            kwargs["proxy_auth"] = BasicAuth(
-                login=self.proxy_username or "",
-                password=self.proxy_password or "",
-            )
+            # Encode the Basic proxy credential ourselves rather than via
+            # aiohttp.BasicAuth, which is deprecated and removed in aiohttp 4.0.
+            # (latin1 matches aiohttp.BasicAuth's historical default encoding;
+            # the byte output is identical to aiohttp.encode_basic_auth().)
+            raw = f"{self.proxy_username or ''}:{self.proxy_password or ''}".encode("latin1")
+            token = base64.b64encode(raw).decode("ascii")
+            kwargs["proxy_headers"] = {"Proxy-Authorization": f"Basic {token}"}
         return kwargs
 
     @property
