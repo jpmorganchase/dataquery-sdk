@@ -44,7 +44,7 @@ class LoggingConfig:
     enable_console: bool = True
     enable_file: bool = False
     log_file: Optional[Path] = None
-    max_file_size: int = 10 * 1024 * 1024  # 10MB
+    max_file_size: int = 10 * 1024 * 1024
     backup_count: int = 5
     enable_request_logging: bool = False
     enable_performance_logging: bool = True
@@ -117,7 +117,6 @@ class RequestResponseLogger:
         if correlation_id:
             log_data["correlation_id"] = correlation_id
 
-        # Use appropriate log level based on status code
         if status_code >= 500:
             self.logger.error("HTTP Response", **log_data)
         elif status_code >= 400:
@@ -184,7 +183,6 @@ class PerformanceLogger:
             else:
                 self.logger.warning("Operation failed", **log_data)
 
-            # Clean up
             del self.metrics[operation]
 
     def log_metric(self, name: str, value: float, unit: str = "", **kwargs):
@@ -215,7 +213,6 @@ class StructuredLogger:
         if self.config.include_timestamps:
             processors.append(structlog.processors.TimeStamper(fmt="iso"))
 
-        # Minimal and safe error processors
         processors.extend(
             [
                 structlog.processors.StackInfoRenderer(),
@@ -244,8 +241,6 @@ class StructuredLogger:
 
     def _add_correlation_id(self, logger, method_name, event_dict):
         """Add correlation ID to log entries."""
-        # This would be implemented to add correlation IDs
-        # from context or generate new ones
         return event_dict
 
     def get_logger(self, name: Optional[str] = None) -> structlog.BoundLogger:
@@ -262,7 +257,6 @@ class LoggingManager:
         self.request_logger = RequestResponseLogger(config)
         self.performance_logger = PerformanceLogger(config)
 
-        # Setup file logging if enabled
         if config.enable_file and config.log_file:
             self._setup_file_logging()
 
@@ -278,22 +272,18 @@ class LoggingManager:
         try:
             from logging.handlers import RotatingFileHandler
 
-            # Check if log_file is set
             if not self.config.log_file:
                 logger.warning("File logging enabled but no log file specified")
                 return
 
-            # Ensure log directory exists
             self.config.log_file.parent.mkdir(parents=True, exist_ok=True)
 
-            # Create rotating file handler
             handler = RotatingFileHandler(
                 str(self.config.log_file),
                 maxBytes=self.config.max_file_size,
                 backupCount=self.config.backup_count,
             )
 
-            # Set formatter
             if self.config.format == LogFormat.JSON:
                 formatter = logging.Formatter("%(message)s")
             else:
@@ -301,7 +291,6 @@ class LoggingManager:
 
             handler.setFormatter(formatter)
 
-            # Add to root logger
             root_logger = logging.getLogger()
             root_logger.addHandler(handler)
             root_logger.setLevel(getattr(logging, self.config.level.value))

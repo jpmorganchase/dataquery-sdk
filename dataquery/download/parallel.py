@@ -38,11 +38,6 @@ if TYPE_CHECKING:
 logger = structlog.get_logger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Pure helpers
-# ---------------------------------------------------------------------------
-
-
 def _seek_write(fh: IO[bytes], pos: int, data: bytes) -> None:
     """Sync seek+write; runs in the default thread executor."""
     fh.seek(pos)
@@ -67,11 +62,6 @@ def _compute_ranges(total_bytes: int, num_parts: int) -> list[tuple[int, int]]:
         ranges.append((cursor, end))
         cursor = end + 1
     return ranges
-
-
-# ---------------------------------------------------------------------------
-# Size probe
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -113,11 +103,6 @@ async def _probe_size(
             return _ProbeResult(total_bytes=total_bytes, filename=filename)
 
 
-# ---------------------------------------------------------------------------
-# Progress reporting
-# ---------------------------------------------------------------------------
-
-
 class _ProgressReporter:
     """Tracks total bytes downloaded and throttles callback/log dispatch.
 
@@ -155,7 +140,6 @@ class _ProgressReporter:
         self._progress.update_progress(self.bytes_downloaded)
 
     def _maybe_dispatch(self) -> None:
-        # Byte threshold checked first to avoid time.time() syscall on every chunk.
         if not (
             self.bytes_downloaded - self._last_callback_bytes >= C.CALLBACK_BYTE_THRESHOLD
             or self.bytes_downloaded == self._total_bytes
@@ -176,11 +160,6 @@ class _ProgressReporter:
                 percentage=f"{self._progress.percentage:.1f}%",
                 downloaded=_format_file_size(self.bytes_downloaded, precision=2, strict=True),
             )
-
-
-# ---------------------------------------------------------------------------
-# Range worker
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -241,11 +220,6 @@ async def _download_range(ctx: _RangeContext, start_byte: int, end_byte: int) ->
                 raise
 
 
-# ---------------------------------------------------------------------------
-# Finalization / salvage
-# ---------------------------------------------------------------------------
-
-
 def _salvage(
     client: "DataQueryClient",
     file_group_id: str,
@@ -284,11 +258,6 @@ def _salvage(
             error=str(cleanup_err),
         )
     return None
-
-
-# ---------------------------------------------------------------------------
-# Public entry point
-# ---------------------------------------------------------------------------
 
 
 async def download_file_multipart(
@@ -365,7 +334,6 @@ async def download_file_multipart(
             file_group_id=file_group_id,
         )
 
-        # One slot per part → all parts run concurrently without external throttling.
         ctx = _RangeContext(
             client=client,
             url=url,
@@ -438,7 +406,6 @@ async def download_file_parallel(
         overwrite_existing=client.config.overwrite_existing,
     )
 
-    # Single part or range downloads disabled → skip the probe/preallocate overhead.
     if num_parts <= 1 or not client.config.enable_range_downloads:
         return await client.download_file_async(
             file_group_id=file_group_id,
@@ -461,7 +428,6 @@ async def download_file_parallel(
     try:
         url = client._build_files_api_url(C.DOWNLOAD_API_PATH)
 
-        # Step 1: probe size; fall back to single-stream when appropriate.
         probe = await _probe_size(client, url, params, file_group_id, file_datetime, global_semaphore)
         if probe is None:
             return await client.download_file_async(
@@ -472,16 +438,13 @@ async def download_file_parallel(
             )
         total_bytes = probe.total_bytes
 
-        # Step 2: resolve destination and check for existing file.
         destination = client._resolve_destination(download_options, file_group_id, probe.filename)
         if destination.exists() and not download_options.overwrite_existing:
             raise FileExistsError(f"File already exists: {destination}")
 
-        # Step 3: preallocate temp file off the event loop.
         temp_destination = destination.with_suffix(destination.suffix + C.TEMP_SUFFIX)
         await loop.run_in_executor(None, _preallocate_file, temp_destination, total_bytes)
 
-        # Step 4: build shared state and ranges.
         progress = DownloadProgress(
             file_group_id=file_group_id,
             total_bytes=total_bytes,
@@ -515,7 +478,6 @@ async def download_file_parallel(
             retry_delay=download_options.retry_delay,
         )
 
-        # Step 5: launch all ranges concurrently.
         ranges = _compute_ranges(total_bytes, num_parts)
         await asyncio.gather(*(_download_range(ctx, s, e) for s, e in ranges))
         reporter.flush()
@@ -550,11 +512,6 @@ async def download_file_parallel(
 
         logger.error("Flattened parallel download failed", file_group_id=file_group_id, error=str(e))
         return None
-
-
-# ---------------------------------------------------------------------------
-# Bulk orchestration with stagger + retry
-# ---------------------------------------------------------------------------
 
 
 def _file_id(file_info: dict) -> Optional[str]:

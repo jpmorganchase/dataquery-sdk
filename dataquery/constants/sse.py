@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-# A connection that stays open at least this long is considered healthy for
-# reconnect-backoff purposes — the next disconnect resets the exponential
-# backoff so an expected periodic server-side recycle doesn't inflate the
-# reconnect delay across cycles.
 SSE_HEALTHY_CONNECTION_SECONDS = 30.0
+
+SSE_MAX_AUTH_RETRIES = 2
+
+# Generous per-line read buffer so a large frame can't trip aiohttp's LineTooLong.
+SSE_READ_BUFSIZE = 1024 * 1024

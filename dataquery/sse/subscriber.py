@@ -138,7 +138,7 @@ class NotificationDownloadManager:
 
     def __init__(
         self,
-        client,  # DataQueryClient
+        client,
         group_id: str,
         destination_dir: str = "./downloads",
         file_filter: Optional[Callable[[Dict[str, Any]], bool]] = None,
@@ -219,8 +219,6 @@ class NotificationDownloadManager:
         """
         self.client = client
         self.subscription = Subscription.from_user(group_id, file_group_id)
-        # Preserve the original kwargs as attributes for backward-compat with
-        # callers that read them off the manager (CLI, tests, get_stats).
         self.group_id = group_id
         self.file_group_id = file_group_id
         self.destination_dir = Path(destination_dir)
@@ -234,7 +232,6 @@ class NotificationDownloadManager:
 
         self.destination_dir.mkdir(parents=True, exist_ok=True)
 
-        # SSE client (created in start())
         self._sse_client: Optional[SSEClient] = None
         self._reconnect_delay = reconnect_delay
         self._max_reconnect_delay = max_reconnect_delay
@@ -248,7 +245,6 @@ class NotificationDownloadManager:
         self._download_semaphore: Optional[asyncio.Semaphore] = None
         self._inflight: Set[asyncio.Task] = set()
 
-        # Statistics — ``errors`` is a ring buffer for the same reason.
         self.stats: Dict[str, Any] = {
             "start_time": None,
             "notifications_received": 0,
@@ -268,10 +264,6 @@ class NotificationDownloadManager:
             show_progress=show_progress,
         )
 
-    # ------------------------------------------------------------------
-    # Public interface
-    # ------------------------------------------------------------------
-
     async def start(self) -> "NotificationDownloadManager":
         """Start the SSE subscription and (optionally) an initial check."""
         if self._running:
@@ -287,10 +279,6 @@ class NotificationDownloadManager:
             self.destination_dir,
         )
 
-        # Resolve the persistent event-id store and decide whether to replay.
-        # When a stored event id exists, the SSE server replays missed events
-        # so the bulk initial-check is unnecessary (and would re-check files
-        # that the replay is about to deliver).
         stored_event_id: Optional[str] = None
         if self.enable_event_replay:
             self._event_id_store = build_event_id_store(self.client.config, self.subscription)
@@ -307,11 +295,8 @@ class NotificationDownloadManager:
                 await self._check_and_download()
             except Exception as exc:
                 logger.warning("Initial availability check failed: %s", exc)
-                # Surface through the same path as SSE/download errors so
-                # callers with an error_callback see startup failures too.
                 await self._dispatch_error(exc)
 
-        # Start the SSE client.
         self._sse_client = SSEClient(
             config=self.client.config,
             auth_manager=self.client.auth_manager,
@@ -367,9 +352,7 @@ class NotificationDownloadManager:
             "failed_file_keys": len(self._failed_files),
             "last_event_id": last_event_id,
         }
-        # Convert the bounded ring buffer to a plain list so callers that
-        # JSON-serialise the snapshot (CLI --watch, get_stats consumers) do
-        # not need to know about the underlying deque.
+        # Copy the bounded error ring so external mutation can't corrupt it.
         snapshot["errors"] = list(self.stats["errors"])
         return snapshot
 
@@ -378,10 +361,6 @@ class NotificationDownloadManager:
         scratch (or runs the legacy initial bulk check, depending on flags)."""
         if self._event_id_store is not None:
             self._event_id_store.clear()
-
-    # ------------------------------------------------------------------
-    # SSE callbacks
-    # ------------------------------------------------------------------
 
     async def _on_sse_event(self, event: SSEEvent) -> None:
         """Schedule the download triggered by an SSE event.
@@ -431,17 +410,11 @@ class NotificationDownloadManager:
 
     async def _on_sse_error(self, exc: Exception) -> None:
         """Called by SSEClient on connection errors."""
-        # TransferEncodingError and similar are expected when server closes
-        # the connection (idle timeout, scheduled recycle). Log at debug.
         if is_expected_disconnect(exc):
             logger.debug("SSE connection closed: %s", exc)
         else:
             logger.warning("SSE connection error: %s", exc)
         await self._dispatch_error(exc)
-
-    # ------------------------------------------------------------------
-    # Event-driven download (single file per notification)
-    # ------------------------------------------------------------------
 
     async def _handle_notification(self, event: SSEEvent) -> None:
         """Extract file-group-id/file-datetime from the event and download.
@@ -464,29 +437,22 @@ class NotificationDownloadManager:
             logger.debug("SSE event has no data payload — skipping")
             return
 
-        # Parse the JSON payload
         try:
             payload = json.loads(event.data)
         except (json.JSONDecodeError, TypeError) as exc:
             logger.warning("Could not parse SSE event data as JSON: %s", exc)
             return
 
-        # Use SSE standard id: field for event replay
-        # Note: The SSEClient already handles updating _last_event_id and
-        # persisting to the event_id_store when parsing the stream, so we
-        # just log here for debugging.
         event_id: Optional[str] = str(event.id) if event.id is not None else None
         if event_id:
             logger.debug("Processing event with id: %s", event_id)
 
-        # New schema: fields are at top level in the payload
         data: Dict[str, Any] = payload if isinstance(payload, dict) else {}
 
         file_group_id: Optional[str] = data.get("file-group-id")
         file_date_time: Optional[str] = data.get("file-datetime")
         group_id: Optional[str] = data.get("group-id")
 
-        # Event type from SSE event: field (e.g., "file-updated")
         event_type = event.event
 
         if not file_group_id or not file_date_time:
@@ -507,7 +473,6 @@ class NotificationDownloadManager:
             event_type,
         )
 
-        # Only download on "file-updated" event type
         if event_type != "file-updated":
             logger.debug(
                 "Skipping file %s — event-type '%s' is not 'file-updated'",
@@ -516,7 +481,6 @@ class NotificationDownloadManager:
             )
             return
 
-        # Already handled?
         if file_key in self._downloaded_files:
             logger.debug("Already downloaded %s — skipping", file_key)
             return
@@ -529,7 +493,6 @@ class NotificationDownloadManager:
             self._downloaded_files.add(file_key)
             return
 
-        # Optional user filter
         filter_data = {
             "file-group-id": file_group_id,
             "file-datetime": file_date_time,
@@ -542,12 +505,7 @@ class NotificationDownloadManager:
 
         self.stats["files_discovered"] += 1
 
-        # Download
         await self._download_file(file_group_id, file_date_time, file_key)
-
-    # ------------------------------------------------------------------
-    # Initial bulk check (startup only)
-    # ------------------------------------------------------------------
 
     async def _check_and_download(self) -> None:
         """Bulk-fetch available files for today and download any that are new.
@@ -636,10 +594,6 @@ class NotificationDownloadManager:
                 self.error_callback(exc)
         except Exception as cb_exc:
             logger.error("Error in error_callback: %s", cb_exc)
-
-    # ------------------------------------------------------------------
-    # Dunder helpers
-    # ------------------------------------------------------------------
 
     def __str__(self) -> str:
         status = "running" if self._running else "stopped"

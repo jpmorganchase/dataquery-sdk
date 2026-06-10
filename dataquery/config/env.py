@@ -23,27 +23,14 @@ from pydantic_core import PydanticUndefined
 from ..types.exceptions import ConfigurationError
 from ..types.models import ClientConfig
 
-# ---------------------------------------------------------------------------
-# Per-field metadata that the model itself does not encode.
-# ---------------------------------------------------------------------------
-
-# Field-name → env-key overrides for fields whose env name does not follow
-# the field-name-uppercased convention. Keep this list short — every entry
-# is a deliberate deviation, not a typo.
 _ENV_NAME_OVERRIDES: Dict[str, str] = {
     "aud": "OAUTH_AUD",
 }
 
-# Env keys whose default differs from the model default. Currently only
-# ``TOKEN_STORAGE_DIR``: the model declares ``None`` (the directory is
-# resolved from ``download_dir`` at use-time) but historically the env
-# fallback has been ``.tokens``.
 _DEFAULT_OVERRIDES: Dict[str, str] = {
     "TOKEN_STORAGE_DIR": ".tokens",
 }
 
-# Field names whose values must be redacted from log output / serialised
-# config dumps.
 _SENSITIVE_FIELDS = frozenset(
     {
         "client_id",
@@ -102,10 +89,6 @@ class EnvConfig:
     PREFIX = "DATAQUERY_"
     DEFAULTS: Dict[str, Optional[str]] = _build_defaults()
 
-    # ------------------------------------------------------------------
-    # .env file loading
-    # ------------------------------------------------------------------
-
     @classmethod
     def load_env_file(cls, env_file: Optional[Path] = None) -> None:
         """Load environment variables from a ``.env`` file (no-op if missing)."""
@@ -113,14 +96,6 @@ class EnvConfig:
             env_file = Path(".env")
         if env_file.exists():
             load_dotenv(env_file)
-
-    # ------------------------------------------------------------------
-    # Typed env-var getters
-    #
-    # Empty strings are treated as "unset" — the legacy contract preserved
-    # so callers that read ``EnvConfig.get_int("MAX_RETRIES")`` with the
-    # var explicitly set to "" still get ``0``, not the model default.
-    # ------------------------------------------------------------------
 
     @classmethod
     def get_env_var(cls, key: str, default: Optional[str] = None) -> Optional[str]:
@@ -160,10 +135,6 @@ class EnvConfig:
         value = cls.get_env_var(key, default)
         return Path(value) if value else Path(".")
 
-    # ------------------------------------------------------------------
-    # ClientConfig factory
-    # ------------------------------------------------------------------
-
     @classmethod
     def create_client_config_with_defaults(cls, base_url: str) -> ClientConfig:
         """Build a :class:`ClientConfig` with only ``base_url`` overridden."""
@@ -193,9 +164,6 @@ class EnvConfig:
         for field_name, field in ClientConfig.model_fields.items():
             kwargs[field_name] = cls._read_field(field_name, field)
 
-        # Auto-derive an OAuth token URL when OAuth is enabled but the URL
-        # is missing — preserves legacy behaviour for users who only set
-        # base_url + credentials.
         if kwargs.get("oauth_enabled") and not kwargs.get("oauth_token_url"):
             kwargs["oauth_token_url"] = f"{kwargs['base_url']}/oauth/token"
 
@@ -212,12 +180,7 @@ class EnvConfig:
             return cls.get_int(env_key)
         if ann is float:
             return cls.get_float(env_key)
-        # Strings, paths, anything else — return raw string or None.
         return cls.get_env_var(env_key)
-
-    # ------------------------------------------------------------------
-    # Subset views (used by the CLI / examples)
-    # ------------------------------------------------------------------
 
     @classmethod
     def get_download_options(cls) -> Dict[str, Any]:
@@ -273,10 +236,6 @@ class EnvConfig:
             "directory": cls.get_env_var("TOKEN_STORAGE_DIR", ".tokens"),
         }
 
-    # ------------------------------------------------------------------
-    # Validation
-    # ------------------------------------------------------------------
-
     @classmethod
     def validate_config(cls, config: ClientConfig) -> None:
         """Raise :class:`ConfigurationError` if the cross-field invariants fail."""
@@ -313,10 +272,6 @@ class EnvConfig:
 
         if errors:
             raise ConfigurationError(f"Configuration validation failed: {'; '.join(errors)}")
-
-    # ------------------------------------------------------------------
-    # Template & introspection helpers
-    # ------------------------------------------------------------------
 
     @classmethod
     def create_env_template(cls, output_path: Optional[Path] = None) -> Path:

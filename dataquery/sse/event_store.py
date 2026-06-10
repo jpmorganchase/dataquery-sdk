@@ -53,8 +53,6 @@ class Subscription:
         elif isinstance(file_group_id, str):
             ids = (file_group_id,)
         else:
-            # Sorted so the identity of the subscription is order-invariant
-            # (server treats the comma-separated list as a set anyway).
             ids = tuple(sorted(str(x) for x in file_group_id))
         return cls(group_id=group_id, file_group_ids=ids)
 
@@ -156,8 +154,6 @@ class SSEEventIdStore:
         self.file_path = Path(file_path)
         self.subscription = subscription
         self._last_saved_id: Optional[str] = None
-        # Lazy-init in save() — `asyncio.Lock()` on Python 3.9 eagerly binds
-        # to the running loop, which breaks construction from sync code.
         self._save_lock: Optional[asyncio.Lock] = None
 
     def load(self) -> Optional[str]:
@@ -173,7 +169,6 @@ class SSEEventIdStore:
                 data = json.load(f)
             event_id = data.get("last_event_id")
             if event_id is not None:
-                # Convert to string (some APIs send numeric event IDs)
                 event_id_str = str(event_id)
                 self._last_saved_id = event_id_str
                 return event_id_str
@@ -190,8 +185,6 @@ class SSEEventIdStore:
         """
         if not event_id or not event_id.isdigit():
             return
-        # Cheap pre-check outside the lock — the lock-protected check below
-        # is the source of truth for race-free dedup.
         if event_id == self._last_saved_id:
             return
         if self._save_lock is None:
@@ -211,8 +204,6 @@ class SSEEventIdStore:
                 fd = os.open(temp_file, flags, 0o600)
                 try:
                     with os.fdopen(fd, "w", encoding="utf-8") as f:
-                        # Compact form: machine-read, written per event,
-                        # so indented whitespace is pure overhead.
                         json.dump(payload, f, separators=(",", ":"))
                 except BaseException:
                     try:

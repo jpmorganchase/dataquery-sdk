@@ -400,9 +400,9 @@ async def test_run_loop_reconnects_with_exponential_backoff_then_stops():
         sse_mod.asyncio.wait_for = orig_wait_for  # type: ignore[assignment]
 
     assert attempts["n"] >= 2
-    # Delays should grow: 1.0, 2.0 ... (capped at 8.0).
-    assert delays[0] == pytest.approx(1.0)
-    assert delays[1] == pytest.approx(2.0)
+    # Delays grow 1.0 → 2.0 (capped at 8.0), each jittered to [delay/2, delay].
+    assert 0.5 <= delays[0] <= 1.0
+    assert 1.0 <= delays[1] <= 2.0
 
 
 # ---------------------------------------------------------------------------
@@ -554,13 +554,13 @@ async def test_backoff_resets_after_healthy_connection_then_disconnect():
     finally:
         sse_mod.asyncio.wait_for = orig_wait_for  # type: ignore[assignment]
 
-    # Sequence:
-    #   1) connect → 0.5s   → wait reconnect_delay (1.0s), then double next time
-    #   2) connect → 60s    → wait current delay (2.0s), then RESET to 1.0s
-    #   3) connect → 0.5s   → wait 1.0s (proves the reset happened) then exit
-    assert delays[0] == pytest.approx(1.0)
-    assert delays[1] == pytest.approx(2.0)
-    assert delays[2] == pytest.approx(1.0)
+    # Sequence (each wait jittered to [delay/2, delay]):
+    #   1) connect → 0.5s   → wait ~reconnect_delay (1.0s), then double next time
+    #   2) connect → 60s    → wait ~current delay (2.0s), then RESET to 1.0s
+    #   3) connect → 0.5s   → wait ~1.0s (proves the reset happened) then exit
+    assert 0.5 <= delays[0] <= 1.0
+    assert 1.0 <= delays[1] <= 2.0
+    assert 0.5 <= delays[2] <= 1.0  # reset to base (not ~4.0) proves healthy-reset
 
 
 # ---------------------------------------------------------------------------

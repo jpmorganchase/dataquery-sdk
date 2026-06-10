@@ -46,10 +46,9 @@ from .download import (
     TEMP_SUFFIX,
 )
 from .rate_limit import RATE_LIMIT_MIN_WAIT_SECONDS
-from .sse import SSE_HEALTHY_CONNECTION_SECONDS
+from .sse import SSE_HEALTHY_CONNECTION_SECONDS, SSE_MAX_AUTH_RETRIES, SSE_READ_BUFSIZE
 
 __all__ = [
-    # api
     "API_EXPRESSIONS_TIME_SERIES",
     "API_GRID_DATA",
     "API_GROUPS",
@@ -67,7 +66,6 @@ __all__ = [
     "API_INSTRUMENTS_TIME_SERIES",
     "DOWNLOAD_API_PATH",
     "SSE_NOTIFICATION_PATH",
-    # download
     "CALLBACK_BYTE_THRESHOLD",
     "CALLBACK_TIME_THRESHOLD",
     "DEFAULT_CHUNK_SIZE",
@@ -78,8 +76,8 @@ __all__ = [
     "PROBE_HEADERS",
     "SMALL_FILE_THRESHOLD",
     "TEMP_SUFFIX",
-    # rate_limit
     "RATE_LIMIT_MIN_WAIT_SECONDS",
-    # sse
     "SSE_HEALTHY_CONNECTION_SECONDS",
+    "SSE_MAX_AUTH_RETRIES",
+    "SSE_READ_BUFSIZE",
 ]

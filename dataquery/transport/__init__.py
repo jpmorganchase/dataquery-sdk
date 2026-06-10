@@ -12,7 +12,6 @@ from .connection_pool import (
 )
 from .rate_limiter import (
     EnhancedTokenBucketRateLimiter,
-    QueuedRequest,
     QueuePriority,
     RateLimitConfig,
     RateLimitContext,
@@ -32,24 +31,19 @@ from .retry import (
 )
 
 __all__ = [
-    # auth
     "OAuthManager",
     "TokenManager",
-    # connection pool
     "ConnectionPoolConfig",
     "ConnectionPoolMonitor",
     "ConnectionPoolStats",
     "create_connection_pool_config",
-    # rate limiter
     "EnhancedTokenBucketRateLimiter",
-    "QueuedRequest",
     "QueuePriority",
     "RateLimitConfig",
     "RateLimitContext",
     "RateLimitState",
     "TokenBucketRateLimiter",
     "create_rate_limiter",
-    # retry
     "CircuitBreaker",
     "CircuitState",
     "RetryConfig",

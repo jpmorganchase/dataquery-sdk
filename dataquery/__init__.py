@@ -14,13 +14,12 @@ Quick Start:
 For more information, visit: https://github.com/dataquery/dataquery-sdk
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __author__ = "DATAQUERY SDK Team"
 __email__ = "dataquery_support@jpmorgan.com"
 __license__ = "MIT"
 __url__ = "https://github.com/jpmorganchase/dataquery-sdk"
 
-# Core
 from .config import EnvConfig
 from .core import DataQueryClient
 from .dataquery import DataQuery
@@ -57,12 +56,9 @@ from .types.models import (
     GroupList,
 )
 
-# Type aliases for convenience
 __all__ = [
-    # Core
     "DataQuery",
     "DataQueryClient",
-    # Models
     "ClientConfig",
     "Group",
     "GroupList",
@@ -75,7 +71,6 @@ __all__ = [
     "DownloadOptions",
     "DownloadProgress",
     "DateRange",
-    # Exceptions
     "DataQueryError",
     "AuthenticationError",
     "ValidationError",
@@ -90,18 +85,14 @@ __all__ = [
     "DateRangeError",
     "FileTypeError",
     "WorkflowError",
-    # Configuration
     "EnvConfig",
-    # SSE notification-driven download
     "NotificationDownloadManager",
     "SSEClient",
     "SSEEvent",
 ]
 
-# Version info
 __version_info__ = tuple(int(x) for x in __version__.split("."))
 
-# Package metadata
 __package_info__ = {
     "name": "dataquery-sdk",
     "version": __version__,
@@ -110,5 +101,5 @@ __package_info__ = {
     "license": __license__,
     "url": __url__,
     "description": "Python SDK for DATAQUERY Data API - Query, download, and check availability of economic data files",
-    "python_requires": ">=3.11",
+    "python_requires": ">=3.12",
 }

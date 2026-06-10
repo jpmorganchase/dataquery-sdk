@@ -97,8 +97,9 @@ all = [
 [project.scripts]
 dataquery = "dataquery.cli:main"
 
-[tool.setuptools]
-packages = ["dataquery"]
+[tool.setuptools.packages.find]
+include = ["dataquery*"]
+namespaces = false
 
 [tool.setuptools.dynamic]
 version = {attr = "dataquery.__version__"}
@@ -108,7 +109,7 @@ dataquery = ["py.typed"]
 
 [tool.ruff]
 line-length = 120
-target-version = "py311"
+target-version = "py312"
 exclude = [
     ".venv",
     "build",

@@ -8,15 +8,24 @@ client and the main API request path, so those are exercised here too.
 
 from __future__ import annotations
 
+import base64
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from aiohttp import BasicAuth
 
 from dataquery.sse.client import SSEClient
 from dataquery.transport.auth import TokenManager
 from dataquery.types.models import ClientConfig, OAuthToken, TokenResponse
+
+
+def _proxy_basic_creds(headers: dict) -> tuple[str, str]:
+    """Decode a Basic ``Proxy-Authorization`` header into (login, password)."""
+    value = headers["Proxy-Authorization"]
+    assert value.startswith("Basic "), value
+    login, _, password = base64.b64decode(value.split(" ", 1)[1]).decode().partition(":")
+    return login, password
+
 
 # ---------------------------------------------------------------------------
 # ClientConfig.get_proxy_kwargs — the single source of truth
@@ -41,7 +50,7 @@ def test_proxy_kwargs_url_only_when_no_credentials():
     )
     kwargs = cfg.get_proxy_kwargs()
     assert kwargs == {"proxy": "http://proxy:8080"}
-    assert "proxy_auth" not in kwargs
+    assert "proxy_headers" not in kwargs
 
 
 def test_proxy_kwargs_includes_basic_auth_when_credentials_set():
@@ -54,9 +63,7 @@ def test_proxy_kwargs_includes_basic_auth_when_credentials_set():
     )
     kwargs = cfg.get_proxy_kwargs()
     assert kwargs["proxy"] == "http://proxy:8080"
-    assert isinstance(kwargs["proxy_auth"], BasicAuth)
-    assert kwargs["proxy_auth"].login == "alice"
-    assert kwargs["proxy_auth"].password == "s3cret"
+    assert _proxy_basic_creds(kwargs["proxy_headers"]) == ("alice", "s3cret")
 
 
 # ---------------------------------------------------------------------------
@@ -142,7 +149,7 @@ async def test_get_new_token_applies_proxy_without_auth():
     assert isinstance(token, OAuthToken)
     assert recorder["_url"] == cfg.oauth_token_url
     assert recorder["proxy"] == "http://proxy:8080"
-    assert "proxy_auth" not in recorder
+    assert "proxy_headers" not in recorder
 
 
 @pytest.mark.asyncio
@@ -157,9 +164,7 @@ async def test_get_new_token_applies_proxy_with_basic_auth():
         await mgr._get_new_token()
 
     assert recorder["proxy"] == "http://proxy:8080"
-    assert isinstance(recorder["proxy_auth"], BasicAuth)
-    assert recorder["proxy_auth"].login == "u"
-    assert recorder["proxy_auth"].password == "p"
+    assert _proxy_basic_creds(recorder["proxy_headers"]) == ("u", "p")
 
 
 @pytest.mark.asyncio
@@ -181,7 +186,7 @@ async def test_get_new_token_omits_proxy_kwargs_when_disabled():
         await mgr._get_new_token()
 
     assert "proxy" not in recorder
-    assert "proxy_auth" not in recorder
+    assert "proxy_headers" not in recorder
 
 
 @pytest.mark.asyncio
@@ -203,7 +208,7 @@ async def test_refresh_token_applies_proxy():
         await mgr._refresh_token()
 
     assert recorder["proxy"] == "http://proxy:8080"
-    assert isinstance(recorder["proxy_auth"], BasicAuth)
+    assert _proxy_basic_creds(recorder["proxy_headers"]) == ("u", "p")
 
 
 # ---------------------------------------------------------------------------
@@ -286,5 +291,4 @@ async def test_sse_connect_includes_proxy_and_auth():
         await client._connect_and_listen()
 
     assert recorder["proxy"] == "http://proxy:8080"
-    assert isinstance(recorder["proxy_auth"], BasicAuth)
-    assert recorder["proxy_auth"].login == "u"
+    assert _proxy_basic_creds(recorder["proxy_headers"]) == ("u", "p")

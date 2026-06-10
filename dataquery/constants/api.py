@@ -6,8 +6,6 @@ API base URL (``_build_files_api_url``) unless otherwise noted.
 
 from __future__ import annotations
 
-# Main API -------------------------------------------------------------------
-
 API_GROUPS = "groups"
 API_GROUPS_SEARCH = "groups/search"
 API_GROUP_INSTRUMENTS = "group/instruments"
@@ -20,16 +18,13 @@ API_GROUP_TIME_SERIES = "group/time-series"
 API_GRID_DATA = "grid-data"
 API_HEARTBEAT = "services/heartbeat"
 
-# Files API ------------------------------------------------------------------
 
 API_GROUP_FILES = "group/files"
 API_GROUP_FILE_AVAILABILITY = "group/file/availability"
 API_GROUP_FILE_DOWNLOAD = "group/file/download"
 API_GROUP_FILES_AVAILABLE = "group/files/available-files"
 
-# Backwards-compatible alias.
 DOWNLOAD_API_PATH = API_GROUP_FILE_DOWNLOAD
 
-# SSE (appended to the files-API base URL, with a leading slash) -------------
 
 SSE_NOTIFICATION_PATH = "/events/notification"

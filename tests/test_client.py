@@ -1552,9 +1552,7 @@ class TestDataQueryClientSyncWrappers:
 
         expected_result = [{"id": "group1", "name": "Group 1"}]
 
-        with patch("asyncio.run") as mock_run:
-            mock_run.return_value = expected_result
-
+        with patch.object(client, "_run_sync", return_value=expected_result) as mock_run:
             result = client.list_groups(limit=10)
 
             mock_run.assert_called_once()
@@ -1566,9 +1564,7 @@ class TestDataQueryClientSyncWrappers:
 
         expected_result = Mock()
 
-        with patch("asyncio.run") as mock_run:
-            mock_run.return_value = expected_result
-
+        with patch.object(client, "_run_sync", return_value=expected_result) as mock_run:
             result = client.list_files("group1")
 
             mock_run.assert_called_once()
@@ -1580,9 +1576,7 @@ class TestDataQueryClientSyncWrappers:
 
         expected_result = Mock()
 
-        with patch("asyncio.run") as mock_run:
-            mock_run.return_value = expected_result
-
+        with patch.object(client, "_run_sync", return_value=expected_result) as mock_run:
             result = client.get_file_info("group1", "file123")
 
             mock_run.assert_called_once()
@@ -1594,12 +1588,7 @@ class TestDataQueryClientSyncWrappers:
 
         expected_result = Mock()
 
-        with (
-            patch.object(client, "check_availability_async", return_value=expected_result) as mock_async,
-            patch("asyncio.run") as mock_run,
-        ):
-            mock_run.return_value = expected_result
-
+        with patch.object(client, "_run_sync", return_value=expected_result) as mock_run:
             result = client.check_availability("file123", "20240115")
 
             mock_run.assert_called_once()
@@ -1611,22 +1600,18 @@ class TestDataQueryClientSyncWrappers:
 
         expected_result = Mock()
 
-        with patch("asyncio.run") as mock_run:
-            mock_run.return_value = expected_result
-
+        with patch.object(client, "_run_sync", return_value=expected_result) as mock_run:
             options = DownloadOptions(output_dir="./downloads")
             result = client.download_file("file123", options)
 
             mock_run.assert_called_once()
             assert result == expected_result
 
-    def test_all_sync_wrappers_call_asyncio_run(self):
-        """Test that all sync methods properly call asyncio.run."""
+    def test_all_sync_wrappers_call_run_sync(self):
+        """Test that all sync methods delegate to the shared _run_sync runner."""
         client = create_test_client()
 
-        with patch("asyncio.run") as mock_run:
-            mock_run.return_value = []
-
+        with patch.object(client, "_run_sync", return_value=[]) as mock_run:
             # Test various sync wrappers
             client.list_groups(limit=10)
             client.list_files("group1")
@@ -1639,7 +1624,7 @@ class TestDataQueryClientSyncWrappers:
             client.list_available_files("group1")
             client.health_check()
 
-            # Verify asyncio.run was called for each
+            # Verify _run_sync was called for each
             assert mock_run.call_count == 10
 
 

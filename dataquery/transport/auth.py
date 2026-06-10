@@ -4,6 +4,7 @@ Authentication module for the DATAQUERY SDK.
 Provides OAuth token management and Bearer token authentication.
 """
 
+import asyncio
 import json
 import os
 from datetime import datetime
@@ -13,7 +14,7 @@ from typing import Any, Dict, Optional
 import aiohttp
 import structlog
 
-from ..types.exceptions import AuthenticationError, ConfigurationError
+from ..types.exceptions import AuthenticationError, ConfigurationError, NetworkError
 from ..types.models import ClientConfig, OAuthToken, TokenRequest, TokenResponse
 
 logger = structlog.get_logger(__name__)
@@ -26,19 +27,25 @@ class TokenManager:
         self.config = config
         self.current_token: Optional[OAuthToken] = None
         self.token_file: Optional[Path] = None
+        # Lazily-created single-flight lock around token acquisition so
+        # concurrent callers don't stampede the token endpoint. Created on
+        self._token_lock: Optional[asyncio.Lock] = None
         self._setup_token_storage()
+
+    def _get_token_lock(self) -> asyncio.Lock:
+        """Return the token-acquisition lock, creating it on first use."""
+        if self._token_lock is None:
+            self._token_lock = asyncio.Lock()
+        return self._token_lock
 
     def _setup_token_storage(self):
         """Setup token storage file."""
-        # Prefer explicit token_storage_dir only when token storage is enabled,
-        # else fallback to download_dir/.tokens if download_dir is provided.
         base_dir: Optional[Path] = None
         token_storage_enabled = bool(getattr(self.config, "token_storage_enabled", False))
         token_storage_dir = getattr(self.config, "token_storage_dir", None)
         if token_storage_enabled and token_storage_dir:
             base_dir = Path(token_storage_dir)
         elif getattr(self.config, "download_dir", None):
-            # Use hidden .tokens folder under download_dir only if download_dir is configured
             try:
                 if str(self.config.download_dir).strip():
                     base_dir = Path(self.config.download_dir) / ".tokens"
@@ -64,31 +71,35 @@ class TokenManager:
         Returns:
             Bearer token string or None if no valid token available
         """
-        # Check if we have a static bearer token
         if self.config.has_bearer_token:
             return f"Bearer {self.config.bearer_token}"
 
-        # Check if OAuth is enabled and credentials are available
         if not self.config.has_oauth_credentials:
             logger.warning("No OAuth credentials or bearer token configured")
             return None
 
-        # Load existing token
         if not self.current_token:
             await self._load_token()
 
-        # Check if current token is valid
         if self.current_token and not self.current_token.is_expired:
-            # Check if token is expiring soon
             if self.current_token.is_expiring_soon(self.config.token_refresh_threshold):
-                logger.info("Token expiring soon, refreshing...")
-                await self._refresh_token()
+                # Single-flight: only one coroutine refreshes; peers reuse the
+                async with self._get_token_lock():
+                    if (
+                        self.current_token
+                        and not self.current_token.is_expired
+                        and self.current_token.is_expiring_soon(self.config.token_refresh_threshold)
+                    ):
+                        logger.info("Token expiring soon, refreshing...")
+                        await self._refresh_token()
 
-            return self.current_token.to_authorization_header()
+            if self.current_token:
+                return self.current_token.to_authorization_header()
 
-        # Token is expired or invalid, get new token
-        logger.info("Getting new OAuth token...")
-        await self._get_new_token()
+        async with self._get_token_lock():
+            if not (self.current_token and not self.current_token.is_expired):
+                logger.info("Getting new OAuth token...")
+                await self._get_new_token()
 
         if self.current_token:
             return self.current_token.to_authorization_header()
@@ -100,11 +111,9 @@ class TokenManager:
         if not self.config.oauth_token_url:
             raise ConfigurationError("OAuth token URL not configured")
 
-        # Validate required fields
         if not self.config.client_id or not self.config.client_secret:
             raise ConfigurationError("client_id and client_secret are required for OAuth")
 
-        # Create token request
         token_request = TokenRequest(
             grant_type=self.config.grant_type,
             client_id=self.config.client_id,
@@ -113,7 +122,6 @@ class TokenManager:
         )
 
         try:
-            # Make token request (honoring proxy config, if any).
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     self.config.oauth_token_url,
@@ -131,7 +139,6 @@ class TokenManager:
                         token_response = TokenResponse(**data)
                         self.current_token = token_response.to_oauth_token()
 
-                        # Save token
                         await self._save_token()
 
                         logger.info(
@@ -148,18 +155,19 @@ class TokenManager:
                         )
                         raise AuthenticationError(f"OAuth token request failed: {response.status}")
 
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            logger.error("Network error getting OAuth token", error=str(e))
+            raise NetworkError(f"Failed to get OAuth token: {e}") from e
         except Exception as e:
             logger.error("Error getting OAuth token", error=str(e))
-            raise AuthenticationError(f"Failed to get OAuth token: {e}")
+            raise AuthenticationError(f"Failed to get OAuth token: {e}") from e
 
     async def _refresh_token(self) -> Optional[OAuthToken]:
         """Refresh the current OAuth token."""
         if not self.current_token or not self.current_token.refresh_token:
-            # No refresh token available, get new token
             return await self._get_new_token()
 
         try:
-            # Create refresh request
             refresh_data = {
                 "grant_type": "refresh_token",
                 "refresh_token": self.current_token.refresh_token,
@@ -167,11 +175,9 @@ class TokenManager:
                 "client_secret": self.config.client_secret,
             }
 
-            # Validate OAuth token URL
             if not self.config.oauth_token_url:
                 raise ConfigurationError("OAuth token URL not configured")
 
-            # Make refresh request (honoring proxy config, if any).
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     self.config.oauth_token_url,
@@ -189,7 +195,6 @@ class TokenManager:
                         token_response = TokenResponse(**data)
                         self.current_token = token_response.to_oauth_token()
 
-                        # Save token
                         await self._save_token()
 
                         logger.info(
@@ -204,12 +209,10 @@ class TokenManager:
                             status=response.status,
                             error=error_data,
                         )
-                        # Fall back to getting new token
                         return await self._get_new_token()
 
         except Exception as e:
             logger.error("Error refreshing OAuth token", error=str(e))
-            # Fall back to getting new token
             return await self._get_new_token()
 
     async def _load_token(self) -> Optional[OAuthToken]:
@@ -221,13 +224,11 @@ class TokenManager:
             with open(self.token_file, "r") as f:
                 token_data = json.load(f)
 
-            # Convert timestamp back to datetime
             if "issued_at" in token_data:
                 token_data["issued_at"] = datetime.fromisoformat(token_data["issued_at"])
 
             self.current_token = OAuthToken(**token_data)
 
-            # Check if token is still valid
             if self.current_token.is_expired:
                 logger.info("Stored token is expired")
                 self.current_token = None
@@ -247,16 +248,13 @@ class TokenManager:
 
         try:
             token_data = self.current_token.model_dump()
-            # Convert datetime to ISO string for JSON serialization
             if "issued_at" in token_data and token_data["issued_at"] is not None:
                 token_data["issued_at"] = token_data["issued_at"].isoformat()
 
-            # Ensure directory exists
             self.token_file.parent.mkdir(parents=True, exist_ok=True)
 
             # Write to a temp file that is created with owner-only permissions
             # from the start (no TOCTOU window between open() and chmod()),
-            # then atomically rename onto the final path.
             temp_file = self.token_file.with_suffix(".tmp")
             flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
             fd = os.open(temp_file, flags, 0o600)
@@ -264,22 +262,18 @@ class TokenManager:
                 with os.fdopen(fd, "w") as f:
                     json.dump(token_data, f, indent=2)
             except BaseException:
-                # fdopen takes ownership of fd on success; on failure we must
-                # still ensure the descriptor isn't leaked.
                 try:
                     os.close(fd)
                 except OSError:
                     pass
                 raise
 
-            # Atomic rename
             temp_file.replace(self.token_file)
 
             logger.debug("Token saved to storage with secure permissions")
 
         except Exception as e:
             logger.warning("Failed to save token to storage", error=str(e))
-            # Clean up temp file if it exists
             temp_file = self.token_file.with_suffix(".tmp")
             try:
                 temp_file.unlink(missing_ok=True)
