@@ -14,9 +14,6 @@ import structlog
 from .types.exceptions import ValidationError
 from .types.models import ClientConfig
 
-# Note: load_dotenv is imported where used to avoid unused import in environments
-
-
 logger = structlog.get_logger(__name__)
 
 
@@ -32,12 +29,10 @@ def create_env_template(env_file: Optional[Path] = None) -> Path:
     """
     template_file = env_file or Path(".env.template")
 
-    # Validate the path
     if not isinstance(template_file, Path):
         template_file = Path(template_file)
 
     try:
-        # Ensure parent directory exists
         template_file.parent.mkdir(parents=True, exist_ok=True)
 
         template_content = """# DATAQUERY SDK Configuration Template
@@ -174,8 +169,8 @@ DATAQUERY_DEFAULT_DIR=files
 # =============================================================================
 
 # User agent string for HTTP requests
-# Default: DATAQUERY-SDK/1.0.0
-DATAQUERY_USER_AGENT=DATAQUERY-SDK/1.0.0
+# Default: DATAQUERY-SDK/1.1.0
+DATAQUERY_USER_AGENT=DATAQUERY-SDK/1.1.0
 
 # Enable HTTP/2 support (true/false)
 # Default: true
@@ -240,7 +235,6 @@ def save_config_to_env(config: ClientConfig, env_file: Optional[Path] = None) ->
     """
     env_file = env_file or Path(".env")
 
-    # Ensure env_file is a Path object
     if not isinstance(env_file, Path):
         env_file = Path(env_file)
 
@@ -302,19 +296,16 @@ def load_env_file(env_file: Optional[Path] = None) -> None:
         env_file: Path to the .env file (default: .env)
     """
     try:
-        from dotenv import load_dotenv  # pylint: disable=import-outside-toplevel
+        from dotenv import load_dotenv
     except ImportError:
         logger.warning("python-dotenv not installed, skipping .env file loading")
         return
 
     env_file = env_file or Path(".env")
 
-    # Ensure env_file is a Path object
     if not isinstance(env_file, Path):
         env_file = Path(env_file)
 
-    # For compatibility with tests: only call loader if file exists
-    # Use Path.exists as an unbound method to cooperate with tests that patch pathlib.Path.exists
     if Path.exists(env_file):
         try:
             _ = load_dotenv(env_file)
@@ -359,7 +350,6 @@ def validate_env_config() -> None:
     Raises:
         ValueError: If required variables are missing or invalid
     """
-    # Validate numeric values if present
     timeout = get_env_value("DATAQUERY_TIMEOUT")
     if timeout:
         try:
@@ -374,17 +364,14 @@ def validate_env_config() -> None:
         except ValueError:
             raise ValueError(f"Invalid max retries value: {max_retries}")
 
-    # Validate boolean values if present
     oauth_enabled_val = get_env_value("DATAQUERY_OAUTH_ENABLED")
     if oauth_enabled_val and oauth_enabled_val.lower() not in ("true", "false"):
         raise ValueError(f"Invalid OAuth enabled value: {oauth_enabled_val}")
 
-    # Check required variables - BASE_URL is always required
     base_url = get_env_value("DATAQUERY_BASE_URL")
     if not base_url or not base_url.startswith(("http://", "https://")):
         raise ValueError("DATAQUERY_BASE_URL is required")
 
-    # Validate OAuth configuration
     oauth_enabled_val = get_env_value("DATAQUERY_OAUTH_ENABLED", "false")
     oauth_enabled = (oauth_enabled_val or "false").lower() == "true"
     if oauth_enabled:
@@ -393,12 +380,9 @@ def validate_env_config() -> None:
         if not client_id or not client_secret or client_id.strip() == "" or client_secret.strip() == "":
             raise ValueError("OAuth credentials are required")
 
-    # Check if either OAuth or Bearer token is configured
     if not oauth_enabled:
         bearer_token = get_env_value("DATAQUERY_BEARER_TOKEN")
         if not bearer_token or bearer_token.strip() == "":
-            # Only require authentication if OAuth is explicitly enabled
-            # If OAuth is disabled and no bearer token, that's okay for testing
             pass
 
     logger.info("Environment configuration validation passed")
@@ -431,7 +415,7 @@ def format_file_size(size_bytes: int, precision: int = 1, strict: bool = False) 
         size_float /= 1024.0
         i += 1
 
-    if i == 0:  # Bytes
+    if i == 0:
         if strict:
             return f"{sign}{size_float:.{precision}f} {size_names[i]}"
         return f"{sign}{size_float:.0f} {size_names[i]}"
@@ -458,7 +442,6 @@ def format_duration(seconds: float, compact: bool = False) -> str:
     seconds = abs(seconds)
 
     if compact:
-        # Client-style compact formatting
         if seconds < 60:
             return f"{sign}{seconds:.1f}s"
         if seconds < 3600:
@@ -467,7 +450,6 @@ def format_duration(seconds: float, compact: bool = False) -> str:
         hours = seconds / 3600.0
         return f"{sign}{hours:.1f}h"
 
-    # Original verbose formatting
     if seconds < 60:
         return f"{sign}{seconds:.1f}s"
     elif seconds < 3600:
@@ -491,7 +473,6 @@ def format_duration(seconds: float, compact: bool = False) -> str:
 
 def ensure_directory(path) -> Path:
     """Ensure directory exists and return the path."""
-    # Convert string to Path if needed
     if not isinstance(path, Path):
         path = Path(path)
 
@@ -507,7 +488,6 @@ def get_download_paths(base_dir: Optional[Path] = None) -> dict:
     if base_dir is None:
         base_download_dir = Path(os.getenv("DATAQUERY_DOWNLOAD_DIR", "./downloads"))
     else:
-        # Convert string to Path if needed
         if not isinstance(base_dir, Path):
             base_download_dir = Path(base_dir)
         else:
@@ -542,12 +522,10 @@ def parse_content_disposition(content_disposition: str) -> Optional[str]:
         filename = urllib.parse.unquote(filename)
         return filename.strip('"')
 
-    # Try to find filename="..."
     filename_match = re.search(r'filename="([^"]+)"', content_disposition, re.IGNORECASE)
     if filename_match:
         return urllib.parse.unquote(filename_match.group(1))
 
-    # Try to find filename=...
     filename_match2 = re.search(r"filename=([^;\r\n]+)", content_disposition, re.IGNORECASE)
     if filename_match2:
         return urllib.parse.unquote(filename_match2.group(1).strip('"'))
@@ -571,27 +549,22 @@ def get_filename_from_response(
     Returns:
         Filename to use for the download
     """
-    # Try to get filename from Content-Disposition header
     content_disposition = response.headers.get("content-disposition")
     if content_disposition:
         filename = parse_content_disposition(content_disposition)
         if filename:
-            # Sanitize to avoid path traversal or illegal characters
             try:
                 safe_name = Path(filename).name
                 return safe_name
             except Exception:
                 return filename
 
-    # Fallback: generate filename from file_group_id and datetime
     filename = f"{file_group_id}"
     if file_datetime:
         filename += f"_{file_datetime}"
 
-    # Try to get extension from Content-Type header
     content_type = response.headers.get("content-type", "")
     if content_type:
-        # Extract extension from MIME type
         mime_to_ext = {
             "application/json": ".json",
             "text/csv": ".csv",
@@ -607,18 +580,14 @@ def get_filename_from_response(
             "application/octet-stream": ".bin",
         }
 
-        # Get base MIME type (remove parameters)
         base_mime = content_type.split(";")[0].strip().lower()
         if base_mime in mime_to_ext:
             filename += mime_to_ext[base_mime]
         else:
-            # Default extension for unknown types
             filename += ".bin"
     else:
-        # No content type, use default extension
         filename += ".bin"
 
-    # Final sanitize fallback
     filename = Path(filename).name
     return filename
 
@@ -631,9 +600,9 @@ def validate_file_datetime(file_datetime: str) -> None:
     if not file_datetime:
         return
     patterns = [
-        r"^\d{8}$",  # YYYYMMDD
-        r"^\d{8}T\d{4}$",  # YYYYMMDDTHHMM
-        r"^\d{8}T\d{6}$",  # YYYYMMDDTHHMMSS
+        r"^\d{8}$",
+        r"^\d{8}T\d{4}$",
+        r"^\d{8}T\d{6}$",
     ]
     if not any(re.match(p, file_datetime) for p in patterns):
         raise ValueError(
@@ -654,13 +623,12 @@ def validate_date_format(date_str: str, param_name: str) -> None:
         ValidationError: If date format is invalid
     """
     if not date_str:
-        return  # Optional parameter
+        return
 
-    # Valid formats: YYYYMMDD, TODAY, TODAY-Nx (where x is D/W/M/Y)
     valid_patterns = [
-        r"^\d{8}$",  # YYYYMMDD
-        r"^TODAY$",  # TODAY
-        r"^TODAY-\d+[DWMY]$",  # TODAY-nX
+        r"^\d{8}$",
+        r"^TODAY$",
+        r"^TODAY-\d+[DWMY]$",
     ]
 
     if not any(re.match(pattern, date_str) for pattern in valid_patterns):
@@ -681,7 +649,7 @@ def validate_instruments_list(instruments: List[str]) -> None:
     if not instruments or not isinstance(instruments, list):
         raise ValidationError("'instruments' must be a non-empty list")
 
-    if len(instruments) > 20:  # Per specification limit
+    if len(instruments) > 20:
         raise ValidationError("Maximum 20 instrument IDs are supported per request")
 
     for instrument in instruments:

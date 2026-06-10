@@ -97,8 +97,9 @@ all = [
 [project.scripts]
 dataquery = "dataquery.cli:main"
 
-[tool.setuptools]
-packages = ["dataquery"]
+[tool.setuptools.packages.find]
+include = ["dataquery*"]
+namespaces = false
 
 [tool.setuptools.dynamic]
 version = {attr = "dataquery.__version__"}

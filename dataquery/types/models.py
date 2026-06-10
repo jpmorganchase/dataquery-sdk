@@ -38,14 +38,12 @@ class TokenStatus(str, Enum):
 class ClientConfig(BaseModel):
     """Configuration for the DATAQUERY client."""
 
-    # API configuration
     base_url: str = Field(
         default="https://api-dataquery.jpmchase.com",
         description="Base URL of the DATAQUERY API",
     )
     context_path: Optional[str] = Field(default="/research/dataquery-authe/api/v2", description="API context path")
     api_version: str = Field(default="2.0.0", description="API version")
-    # Optional separate host for file endpoints
     files_base_url: Optional[str] = Field(
         default="https://api-dataquery.jpmchase.com",
         description="Separate base URL for file endpoints",
@@ -55,7 +53,6 @@ class ClientConfig(BaseModel):
         description="Context path for the files host",
     )
 
-    # OAuth configuration
     oauth_enabled: bool = Field(default=True, description="Enable OAuth authentication")
     oauth_token_url: Optional[str] = Field(
         default="https://authe.jpmorgan.com/as/token.oauth2",
@@ -69,25 +66,20 @@ class ClientConfig(BaseModel):
     )
     grant_type: str = Field(default="client_credentials", description="OAuth grant type")
 
-    # Bearer token configuration
     bearer_token: Optional[str] = Field(default=None, description="Bearer token for API access")
     token_refresh_threshold: int = Field(default=300, description="Seconds before expiry to refresh token")
 
-    # HTTP configuration
     timeout: float = Field(default=600.0, description="Default request timeout in seconds")
     max_retries: int = Field(default=3, description="Maximum retry attempts")
     retry_delay: float = Field(default=1.0, description="Delay between retries in seconds")
     circuit_breaker_threshold: int = Field(default=5, description="Number of failures before circuit breaker opens")
 
-    # Connection pooling
     pool_connections: int = Field(default=10, description="Number of connection pools")
     pool_maxsize: int = Field(default=20, description="Maximum connections per pool")
 
-    # Rate limiting - conservative 5 TPS default (300 requests per minute)
     requests_per_minute: int = Field(default=300, description="Requests per minute limit (5 TPS)")
     burst_capacity: int = Field(default=5, description="Burst capacity for rate limiting")
 
-    # Proxy configuration
     proxy_enabled: bool = Field(default=False, description="Enable proxy support")
     proxy_url: Optional[str] = Field(
         default="",
@@ -97,11 +89,9 @@ class ClientConfig(BaseModel):
     proxy_password: Optional[str] = Field(default="", description="Proxy password for authentication")
     proxy_verify_ssl: bool = Field(default=True, description="Verify SSL certificates for proxy connections")
 
-    # Logging
     log_level: str = Field(default="INFO", description="Logging level")
     enable_debug_logging: bool = Field(default=False, description="Enable debug logging")
 
-    # Download configuration
     download_dir: str = Field(default="./downloads", description="Base download directory")
     create_directories: bool = Field(default=True, description="Create parent directories if they don't exist")
     overwrite_existing: bool = Field(default=False, description="Overwrite existing files")
@@ -110,7 +100,6 @@ class ClientConfig(BaseModel):
         description="Optional directory to store OAuth tokens; defaults to '<download_dir>/.tokens'",
     )
 
-    # Batch Download Configuration
     max_concurrent_downloads: int = Field(default=5, description="Maximum concurrent downloads")
     batch_size: int = Field(default=10, description="Batch size for operations")
     retry_failed: bool = Field(default=True, description="Retry failed downloads")
@@ -134,11 +123,9 @@ class ClientConfig(BaseModel):
         description="Download chunk size in bytes (1MB default, optimized for large files)",
     )
 
-    # Download Options
     enable_range_requests: bool = Field(default=True, description="Enable HTTP range requests")
     show_progress: bool = Field(default=True, description="Show download progress")
 
-    # Workflow Configuration
     workflow_dir: str = Field(default="workflow", description="Workflow files subdirectory")
     groups_dir: str = Field(default="groups", description="Groups files subdirectory")
     availability_dir: str = Field(default="availability", description="Availability files subdirectory")
@@ -148,23 +135,19 @@ class ClientConfig(BaseModel):
     mask_secrets: bool = Field(default=True, description="Mask secrets in logs")
     token_storage_enabled: bool = Field(default=False, description="Enable token storage")
 
-    model_config = ConfigDict(
-        extra="allow", populate_by_name=True
-    )  # Allow extra fields from API and populate by both alias and name
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
 
     @field_validator("base_url")
     @classmethod
     def validate_base_url(cls, v):
-        # Allow invalid URLs for testing - validation happens in client
         if v and v.startswith(("http://", "https://")):
             return v.rstrip("/")
-        return v  # Allow invalid URLs to be created
+        return v
 
     @field_validator("context_path")
     @classmethod
     def validate_context_path(cls, v):
         if v is not None:
-            # Ensure context path starts with / and doesn't end with /
             if not v.startswith("/"):
                 v = "/" + v
             return v.rstrip("/")
@@ -190,11 +173,9 @@ class ClientConfig(BaseModel):
     @field_validator("proxy_url")
     @classmethod
     def validate_proxy_url(cls, v):
-        # Allow None or empty string without validation
         if v is None or v == "":
             return v
         if v is not None:
-            # Validate proxy URL format
             if not v.startswith(("http://", "https://", "socks4://", "socks5://")):
                 raise ValueError("Proxy URL must start with http://, https://, socks4://, or socks5://")
         return v
@@ -211,7 +192,6 @@ class ClientConfig(BaseModel):
     @classmethod
     def validate_oauth_token_url(cls, v, info):
         if info.data.get("oauth_enabled", True) and not v:
-            # Auto-generate token URL from base URL
             base_url = info.data.get("base_url", "")
             if base_url:
                 return f"{base_url}/oauth/token"
@@ -246,10 +226,7 @@ class ClientConfig(BaseModel):
             return {}
         kwargs: Dict[str, Any] = {"proxy": self.proxy_url}
         if self.has_proxy_credentials:
-            # Encode the Basic proxy credential ourselves rather than via
-            # aiohttp.BasicAuth, which is deprecated and removed in aiohttp 4.0.
-            # (latin1 matches aiohttp.BasicAuth's historical default encoding;
-            # the byte output is identical to aiohttp.encode_basic_auth().)
+            # Encode Basic proxy auth ourselves: aiohttp.BasicAuth is removed in 4.0 (latin1).
             raw = f"{self.proxy_username or ''}:{self.proxy_password or ''}".encode("latin1")
             token = base64.b64encode(raw).decode("ascii")
             kwargs["proxy_headers"] = {"Proxy-Authorization": f"Basic {token}"}
@@ -280,12 +257,9 @@ class OAuthToken(BaseModel):
     expires_in: Optional[int] = Field(default=None, description="Token expiry time in seconds")
     refresh_token: Optional[str] = Field(default=None, description="Refresh token")
 
-    # Internal tracking
     issued_at: Optional[datetime] = Field(default=None, description="Token issue time")
 
-    model_config = ConfigDict(
-        extra="allow", populate_by_name=True
-    )  # Allow extra fields from API and populate by both alias and name
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
 
     @property
     def expires_at(self) -> Optional[datetime]:
@@ -306,7 +280,6 @@ class OAuthToken(BaseModel):
         if not self.expires_at:
             return False
         remaining_time = (self.expires_at - datetime.now()).total_seconds()
-        # If threshold is larger than the original token lifetime, not expiring soon
         if self.expires_in and threshold > self.expires_in:
             return False
         return remaining_time < threshold
@@ -331,9 +304,7 @@ class TokenRequest(BaseModel):
     client_secret: Optional[str] = Field(None, description="OAuth client secret")
     aud: Optional[str] = Field(None, description="OAuth audience (aud)")
 
-    model_config = ConfigDict(
-        extra="allow", populate_by_name=True
-    )  # Allow extra fields from API and populate by both alias and name
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
 
     def to_dict(self) -> Dict[str, str]:
         """Convert to dictionary for request."""
@@ -345,7 +316,6 @@ class TokenRequest(BaseModel):
         if self.client_secret:
             data["client_secret"] = cast(str, self.client_secret)
         if getattr(self, "aud", None):
-            # Send audience as 'aud' per provider requirement
             data["aud"] = cast(str, self.aud)
         return data
 
@@ -358,9 +328,7 @@ class TokenResponse(BaseModel):
     expires_in: Optional[int] = Field(default=None, description="Token expiry time in seconds")
     refresh_token: Optional[str] = Field(default=None, description="Refresh token")
 
-    model_config = ConfigDict(
-        extra="allow", populate_by_name=True
-    )  # Allow extra fields from API and populate by both alias and name
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
 
     def to_oauth_token(self) -> "OAuthToken":
         """Convert to OAuthToken."""
@@ -369,8 +337,7 @@ class TokenResponse(BaseModel):
             token_type=(self.token_type or "Bearer"),
             expires_in=self.expires_in,
             refresh_token=self.refresh_token,
-            issued_at=datetime.now(),  # Set issued_at when converting
-            # status is computed property
+            issued_at=datetime.now(),
         )
 
 
@@ -384,9 +351,7 @@ class FileMetadata(BaseModel):
     publication_time: Optional[str] = Field(None, alias="publication-time", description="Publication time")
     data_lag: Optional[str] = Field(None, alias="data-lag", description="Data lag information")
 
-    model_config = ConfigDict(
-        extra="allow", populate_by_name=True
-    )  # Allow extra fields from API and populate by both alias and name
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
 
 
 class SchemaColumn(BaseModel):
@@ -397,9 +362,7 @@ class SchemaColumn(BaseModel):
     column_description: Optional[str] = Field(None, alias="columnDescription", description="Column description")
     data_type: str = Field(..., alias="dataType", description="Data type")
 
-    model_config = ConfigDict(
-        extra="allow", populate_by_name=True
-    )  # Allow extra fields from API and populate by both alias and name
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
 
 
 class DateRange(BaseModel):
@@ -408,9 +371,7 @@ class DateRange(BaseModel):
     earliest: str = Field(..., description="Earliest date in YYYYMMDD format")
     latest: str = Field(..., description="Latest date in YYYYMMDD format")
 
-    model_config = ConfigDict(
-        extra="allow", populate_by_name=True
-    )  # Allow extra fields from API and populate by both alias and name
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
 
     def get_earliest_date(self) -> Optional[date]:
         """Get earliest date as date object."""
@@ -441,9 +402,7 @@ class Group(BaseModel):
     attributes: Optional[List[Dict[str, Any]]] = Field(None, description="Group attributes")
     file_groups: Optional[int] = Field(None, alias="file-groups", description="Number of file groups")
 
-    model_config = ConfigDict(
-        extra="allow", populate_by_name=True
-    )  # Allow extra fields from API and populate by both alias and name
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
 
 
 class Link(BaseModel):
@@ -452,9 +411,7 @@ class Link(BaseModel):
     self: Optional[str] = Field(None, description="Current page URL")
     next: Optional[str] = Field(None, description="Next page URL")
 
-    model_config = ConfigDict(
-        extra="allow", populate_by_name=True
-    )  # Allow extra fields from API and populate by both alias and name
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
 
 
 class Paginated(BaseModel):
@@ -494,10 +451,8 @@ class FileInfo(BaseModel):
     Only `file_group_id` is supported as the identifier.
     """
 
-    # Primary identifier
     file_group_id: Optional[str] = Field(None, alias="file-group-id", description="Unique file group identifier")
 
-    # Additional info
     description: Optional[str] = Field(None, description="File description")
     file_type: Optional[List[str]] = Field(None, alias="file-type", description="Type(s) of the file")
     metadata: Optional[FileMetadata] = Field(None, description="File metadata")
@@ -515,10 +470,7 @@ class FileInfo(BaseModel):
             return [v]
         if isinstance(v, list):
             return [str(x) for x in v if x is not None]
-        # Fallback: coerce to string and wrap
         return [str(v)]
-
-    # inputs must use 'file-group-id'
 
     def get_file_extension(self) -> str:
         """Get file extension based on file type."""
@@ -553,9 +505,7 @@ class FileList(BaseModel):
     group_id: str = Field(..., alias="group-id", description="Group identifier")
     file_group_ids: List[FileInfo] = Field(..., alias="file-group-ids", description="List of file information")
 
-    model_config = ConfigDict(
-        extra="allow", populate_by_name=True
-    )  # Allow extra fields from API and populate by both alias and name
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
 
     @property
     def file_count(self) -> int:
@@ -594,9 +544,7 @@ class AvailabilityInfo(BaseModel):
     first_created_on: Optional[str] = Field(None, alias="first-created-on", description="First creation timestamp")
     last_modified: Optional[str] = Field(None, alias="last-modified", description="Last modification timestamp")
 
-    model_config = ConfigDict(
-        extra="allow", populate_by_name=True
-    )  # Allow extra fields from API and populate by both alias and name
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
 
     def get_file_date(self) -> Optional[date]:
         """Get file date as date object."""
@@ -616,9 +564,7 @@ class AvailableFilesResponse(BaseModel):
     available_files: List[Dict[str, Any]] = Field(..., alias="available-files", description="List of available files")
     summary: Optional[Dict[str, Any]] = Field(None, alias="summary", description="Summary of available files")
 
-    model_config = ConfigDict(
-        extra="allow", populate_by_name=True
-    )  # Allow extra fields from API and populate by both alias and name
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
 
 
 class DownloadProgress(BaseModel):
@@ -634,7 +580,7 @@ class DownloadProgress(BaseModel):
     last_update: datetime = Field(default_factory=datetime.now, description="Last progress update time")
     status: DownloadStatus = Field(default=DownloadStatus.PENDING, description="Download status")
 
-    model_config = ConfigDict(extra="allow")  # Allow extra fields from API
+    model_config = ConfigDict(extra="allow")
 
     @property
     def is_complete(self) -> bool:
@@ -660,12 +606,10 @@ class DownloadProgress(BaseModel):
 class DownloadOptions(BaseModel):
     """Options for file downloads."""
 
-    # File options
     destination_path: Optional[Path] = Field(default=None, description="Local path to save the file")
     create_directories: bool = Field(default=True, description="Create parent directories if they don't exist")
     overwrite_existing: bool = Field(default=False, description="Overwrite existing files")
 
-    # Download options
     chunk_size_setting: int = Field(
         default=1048576,
         description="Chunk size for streaming downloads (1MB default, optimized for large files)",
@@ -675,7 +619,6 @@ class DownloadOptions(BaseModel):
     retry_delay: float = Field(default=1.0, description="Delay between retries in seconds")
     timeout: float = Field(default=600.0, description="Request timeout in seconds")
 
-    # Range requests
     enable_range_requests: bool = Field(default=True, description="Enable HTTP range requests for resumable downloads")
     range_start: Optional[int] = Field(default=None, description="Start byte position for range download (0-based)")
     range_end: Optional[int] = Field(default=None, description="End byte position for range download (inclusive)")
@@ -684,7 +627,6 @@ class DownloadOptions(BaseModel):
         description="Custom range header (e.g., 'bytes=0-1023')",
     )
 
-    # Progress tracking
     show_progress: bool = Field(default=True, description="Show download progress")
     progress_callback: Optional[Any] = Field(default=None, description="Custom progress callback function")
 
@@ -696,12 +638,11 @@ class DownloadOptions(BaseModel):
         default=None, description="Maximum bandwidth limit in Mbps (None = unlimited)"
     )
 
-    model_config = ConfigDict(extra="allow")  # Allow extra fields from API
+    model_config = ConfigDict(extra="allow")
 
     @property
     def overwrite(self) -> bool:
         """Backward compatibility property."""
-        # Check if overwrite was passed in extra fields
         extra_overwrite = getattr(self, "__pydantic_extra__", {}).get("overwrite")
         if extra_overwrite is not None:
             return extra_overwrite
@@ -710,18 +651,16 @@ class DownloadOptions(BaseModel):
     @property
     def verify_checksum(self) -> bool:
         """Backward compatibility property."""
-        # Check if verify_checksum was passed in extra fields
         extra_verify_checksum = getattr(self, "__pydantic_extra__", {}).get("verify_checksum")
         if extra_verify_checksum is not None:
             return extra_verify_checksum
-        return False  # Default to False for backward compatibility
+        return False
 
     @property
     def chunk_size(self) -> int:
         """Public chunk size value always returning a positive integer."""
         extra_chunk_size = getattr(self, "__pydantic_extra__", {}).get("chunk_size")
         value = extra_chunk_size if extra_chunk_size is not None else self.chunk_size_setting
-        # Safety clamp to [DEFAULT_CHUNK_SIZE, LARGE_FILE_CHUNK_SIZE].
         try:
             value_int = int(value)
         except Exception:
@@ -737,7 +676,7 @@ class DownloadOptions(BaseModel):
     def validate_chunk_size(cls, v):
         if v <= 0:
             raise ValueError("Chunk size must be positive")
-        if v > 8 * 1024 * 1024:  # 8MB
+        if v > 8 * 1024 * 1024:
             raise ValueError("Chunk size cannot exceed 8MB")
         return v
 
@@ -770,7 +709,7 @@ class DownloadResult(BaseModel):
     status: DownloadStatus = Field(DownloadStatus.FAILED, description="Download status")
     error_message: Optional[str] = Field(None, description="Error message if download failed")
 
-    model_config = {"extra": "allow"}  # Allow extra fields from API
+    model_config = {"extra": "allow"}
 
     @property
     def speed_mbps(self) -> float:
@@ -997,9 +936,6 @@ class Unavailable(ErrorResponse):
     """DataQuery Services are currently unavailable."""
 
 
-# Time series parameters from OpenAPI specification
-
-
 class DataType(str, Enum):
     """Data type for time series requests."""
 
@@ -1011,7 +947,7 @@ class DataType(str, Enum):
 class Calendar(str, Enum):
     """Calendar convention for time-series."""
 
-    CAL_USBANK = "CAL_USBANK"  # Default
+    CAL_USBANK = "CAL_USBANK"
     CAL_ALLDAYS = "CAL_ALLDAYS"
     CAL_WEEKDAYS = "CAL_WEEKDAYS"
     CAL_AUSTRALIA = "CAL_AUSTRALIA"
@@ -1049,7 +985,7 @@ class Frequency(str, Enum):
     """Frequency convention for time-series."""
 
     FREQ_INTRA = "FREQ_INTRA"
-    FREQ_DAY = "FREQ_DAY"  # Default
+    FREQ_DAY = "FREQ_DAY"
     FREQ_WEEK = "FREQ_WEEK"
     FREQ_MONTH = "FREQ_MONTH"
     FREQ_QUARTER = "FREQ_QUARTER"
@@ -1059,7 +995,7 @@ class Frequency(str, Enum):
 class Conversion(str, Enum):
     """Conversion convention for time-series."""
 
-    CONV_LASTBUS_ABS = "CONV_LASTBUS_ABS"  # Default
+    CONV_LASTBUS_ABS = "CONV_LASTBUS_ABS"
     CONV_FIRSTBUS_ABS = "CONV_FIRSTBUS_ABS"
     CONV_LASTBUS_REL = "CONV_LASTBUS_REL"
     CONV_FIRSTBUS_REL = "CONV_FIRSTBUS_REL"
@@ -1076,7 +1012,7 @@ class Conversion(str, Enum):
 class NanTreatment(str, Enum):
     """Missing data point treatment for time-series."""
 
-    NA_NOTHING = "NA_NOTHING"  # Default
+    NA_NOTHING = "NA_NOTHING"
     NA_LAST = "NA_LAST"
     NA_NEXT = "NA_NEXT"
     NA_INTERP = "NA_INTERP"

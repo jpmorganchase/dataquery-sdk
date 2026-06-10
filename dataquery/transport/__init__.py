@@ -31,15 +31,12 @@ from .retry import (
 )
 
 __all__ = [
-    # auth
     "OAuthManager",
     "TokenManager",
-    # connection pool
     "ConnectionPoolConfig",
     "ConnectionPoolMonitor",
     "ConnectionPoolStats",
     "create_connection_pool_config",
-    # rate limiter
     "EnhancedTokenBucketRateLimiter",
     "QueuePriority",
     "RateLimitConfig",
@@ -47,7 +44,6 @@ __all__ = [
     "RateLimitState",
     "TokenBucketRateLimiter",
     "create_rate_limiter",
-    # retry
     "CircuitBreaker",
     "CircuitState",
     "RetryConfig",

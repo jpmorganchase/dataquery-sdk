@@ -8,6 +8,7 @@ handlers. Automatically reconnects on connection loss using exponential backoff.
 import asyncio
 import inspect
 import logging
+import random
 import time
 from dataclasses import dataclass
 from typing import Awaitable, Callable, Optional, Union
@@ -28,10 +29,44 @@ def is_expected_disconnect(exc: BaseException) -> bool:
     Centralised so :class:`SSEClient` and :class:`NotificationDownloadManager`
     classify disconnects consistently. ``TransferEncodingError`` lives in
     :mod:`aiohttp.http_exceptions` and is a subclass of ``ClientPayloadError``,
-    so the two ``isinstance`` checks below cover all three cases the SDK saw
-    in practice (idle timeout, scheduled recycle, peer-side close).
+    so the ``isinstance`` checks below cover the cases the SDK saw in practice:
+    idle ``sock_read`` timeout (``ServerTimeoutError``, which also covers
+    ``SocketTimeoutError``), scheduled recycle, and peer-side close. These are
+    routine for a long-lived stream and should log at DEBUG, not WARNING.
     """
-    return isinstance(exc, (aiohttp.ClientPayloadError, aiohttp.ServerDisconnectedError))
+    return isinstance(
+        exc,
+        (aiohttp.ClientPayloadError, aiohttp.ServerDisconnectedError, aiohttp.ServerTimeoutError),
+    )
+
+
+def _with_jitter(delay: float) -> float:
+    """Apply equal jitter: a random point in ``[delay/2, delay]``.
+
+    De-synchronises reconnects across many clients/subscriptions so a single
+    server-side recycle doesn't trigger a synchronised reconnect storm against
+    the shared notification endpoint (thundering herd).
+    """
+    if delay <= 0:
+        return delay
+    return random.uniform(delay / 2.0, delay)
+
+
+class _SSEFatalError(Exception):
+    """Non-retryable SSE failure (403/404 or exhausted auth) — stop reconnecting."""
+
+    def __init__(self, status: int, message: str) -> None:
+        self.status = status
+        super().__init__(message)
+
+
+class _SSEAuthError(Exception):
+    """HTTP 401 on connect — retryable a bounded number of times (the token may
+    just need refreshing), then escalated to a fatal error."""
+
+    def __init__(self, status: int, message: str) -> None:
+        self.status = status
+        super().__init__(message)
 
 
 @dataclass
@@ -72,7 +107,7 @@ class SSEClient:
         on_error: Optional[Callable[[Exception], Union[None, Awaitable[None]]]] = None,
         reconnect_delay: float = 5.0,
         max_reconnect_delay: float = 60.0,
-        sse_timeout: float = 90.0,  # 0 = no timeout on the streaming read
+        sse_timeout: float = 90.0,
         params: Optional[dict] = None,
         event_id_store: Optional[SSEEventIdStore] = None,
         heartbeat_timeout: float = 0.0,
@@ -135,10 +170,9 @@ class SSEClient:
                 logger.info("Seeded SSE last-event-id from store: %s", stored)
         self._save_tasks: set[asyncio.Task] = set()
         self._last_connection_duration: float = 0.0
-
-    # ------------------------------------------------------------------
-    # Public interface
-    # ------------------------------------------------------------------
+        self._consecutive_auth_failures: int = 0
+        self._server_retry_delay: Optional[float] = None
+        self._stop_lock: Optional[asyncio.Lock] = None
 
     async def start(self) -> "SSEClient":
         """Start the SSE connection loop in a background task."""
@@ -153,27 +187,34 @@ class SSEClient:
         return self
 
     async def stop(self) -> None:
-        """Signal the connection loop to stop and wait for it to finish."""
-        if not self._running:
-            return
-        self._running = False
-        if self._stop_event is not None:
-            self._stop_event.set()
-        if self._task:
-            try:
-                await asyncio.wait_for(self._task, timeout=10.0)
-            except asyncio.TimeoutError:
-                self._task.cancel()
+        """Signal the connection loop to stop and wait for it to finish.
+
+        Guarded by a lock so concurrent callers all block until teardown is
+        complete, rather than a second caller returning early (before the task
+        is joined and pending event-id saves are drained).
+        """
+        if self._stop_lock is None:
+            self._stop_lock = asyncio.Lock()
+        async with self._stop_lock:
+            if not self._running and self._task is None:
+                return
+            self._running = False
+            if self._stop_event is not None:
+                self._stop_event.set()
+            if self._task:
                 try:
-                    await self._task
-                except asyncio.CancelledError:
-                    pass
-        if self._save_tasks:
-            await asyncio.gather(*self._save_tasks, return_exceptions=True)
-            # Done-callbacks that remove completed tasks from the set are scheduled
-            # via call_soon, so they may not have fired yet. Clear explicitly.
-            self._save_tasks.clear()
-        logger.info("SSEClient stopped")
+                    await asyncio.wait_for(self._task, timeout=10.0)
+                except asyncio.TimeoutError:
+                    self._task.cancel()
+                    try:
+                        await self._task
+                    except asyncio.CancelledError:
+                        pass
+                self._task = None
+            if self._save_tasks:
+                await asyncio.gather(*self._save_tasks, return_exceptions=True)
+                self._save_tasks.clear()
+            logger.info("SSEClient stopped")
 
     @property
     def is_running(self) -> bool:
@@ -187,26 +228,24 @@ class SSEClient:
         """
         return self._last_event_id
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
     def _build_notification_url(self) -> str:
         base = self.config.api_base_url.rstrip("/")
         return f"{base}{C.SSE_NOTIFICATION_PATH}"
 
     async def _get_headers(self) -> dict:
-        # Force refresh if cached token is expired
-        token_mgr = self.auth_manager.token_manager
-        if token_mgr.current_token and token_mgr.current_token.is_expired:
-            logger.info("Cached token is expired, refreshing before SSE connection")
-            await self.auth_manager.force_refresh()
-
+        # already validates and refreshes the token (with single-flight locking)
         headers = await self.auth_manager.get_headers()
         headers["Accept"] = "text/event-stream"
         if self._last_event_id is not None:
             headers["Last-Event-ID"] = self._last_event_id
         return headers
+
+    def _base_delay(self) -> float:
+        """The reconnect floor: the server-supplied ``retry:`` hint when one has
+        been received, otherwise the configured ``reconnect_delay``."""
+        if self._server_retry_delay is not None:
+            return self._server_retry_delay
+        return self.reconnect_delay
 
     async def _run_loop(self) -> None:
         """Outer loop: reconnect with exponential backoff on failure.
@@ -215,8 +254,10 @@ class SSEClient:
         enough to count as "healthy" (see ``SSE_HEALTHY_CONNECTION_SECONDS``
         in ``constants``) so an expected periodic server recycle — e.g. a
         5-minute idle timeout — doesn't grow the reconnect delay across cycles.
+        Each wait is jittered to ``[delay/2, delay]`` so many clients don't
+        reconnect in lockstep after a shared server-side recycle.
         """
-        delay = self.reconnect_delay
+        delay = self._base_delay()
         if self._stop_event is None:
             self._stop_event = asyncio.Event()
         stop_event = self._stop_event
@@ -224,62 +265,72 @@ class SSEClient:
             self._last_connection_duration = 0.0
             try:
                 await self._connect_and_listen()
-                # If _connect_and_listen returned cleanly (stop requested),
-                # exit the loop.
+                self._consecutive_auth_failures = 0
                 if not self._running:
                     break
-                # Server closed the connection — reconnect after a short pause.
                 logger.info(
-                    "SSE connection closed by server after %.1fs; reconnecting in %.1fs",
+                    "SSE connection closed by server after %.1fs; reconnecting in ~%.1fs",
                     self._last_connection_duration,
                     delay,
                 )
             except asyncio.CancelledError:
                 break
+            except _SSEFatalError as exc:
+                # 403/404 (or exhausted auth) won't self-heal — stop reconnecting
+                logger.error("SSE fatal error (HTTP %s): %s; not reconnecting", exc.status, exc)
+                await self._dispatch_error(exc)
+                break
             except Exception as exc:
-                # TransferEncodingError and similar are expected when server closes
-                # the connection (idle timeout, scheduled recycle). Log at debug.
-                if is_expected_disconnect(exc):
-                    logger.debug(
-                        "SSE connection closed after %.1fs: %s; reconnecting in %.1fs",
-                        self._last_connection_duration,
-                        exc,
-                        delay,
+                if isinstance(exc, _SSEAuthError):
+                    self._consecutive_auth_failures += 1
+                    if self._consecutive_auth_failures > C.SSE_MAX_AUTH_RETRIES:
+                        logger.error(
+                            "SSE authentication failed %d consecutive times (HTTP 401); not reconnecting",
+                            self._consecutive_auth_failures,
+                        )
+                        await self._dispatch_error(exc)
+                        break
+                    logger.warning(
+                        "SSE auth failed (HTTP 401), attempt %d/%d; retrying after token refresh",
+                        self._consecutive_auth_failures,
+                        C.SSE_MAX_AUTH_RETRIES,
                     )
                 else:
-                    logger.warning(
-                        "SSE connection error after %.1fs: %s; reconnecting in %.1fs",
-                        self._last_connection_duration,
-                        exc,
-                        delay,
-                    )
+                    self._consecutive_auth_failures = 0
+                    if is_expected_disconnect(exc):
+                        logger.debug(
+                            "SSE connection closed after %.1fs: %s; reconnecting in ~%.1fs",
+                            self._last_connection_duration,
+                            exc,
+                            delay,
+                        )
+                    else:
+                        logger.warning(
+                            "SSE connection error after %.1fs: %s; reconnecting in ~%.1fs",
+                            self._last_connection_duration,
+                            exc,
+                            delay,
+                        )
                 await self._dispatch_error(exc)
-                # Exponential backoff only on failure, capped at max_reconnect_delay.
                 next_delay = min(delay * 2, self.max_reconnect_delay)
 
-                # Wait for `delay` seconds or until stop() is called.
                 try:
-                    await asyncio.wait_for(stop_event.wait(), timeout=delay)
-                    break  # stop() was called during the wait
+                    await asyncio.wait_for(stop_event.wait(), timeout=_with_jitter(delay))
+                    break
                 except asyncio.TimeoutError:
                     pass
                 delay = next_delay
                 continue
 
-            # Successful-session path: short pause before reconnecting.
             try:
-                await asyncio.wait_for(stop_event.wait(), timeout=delay)
+                await asyncio.wait_for(stop_event.wait(), timeout=_with_jitter(delay))
                 break
             except asyncio.TimeoutError:
                 pass
 
             if self._last_connection_duration >= C.SSE_HEALTHY_CONNECTION_SECONDS:
-                # The previous connection lasted long enough to be considered
-                # successful, so the next hiccup should start from a fresh
-                # short delay rather than inheriting the last backoff value.
-                delay = self.reconnect_delay
+                delay = self._base_delay()
             else:
-                # Exponential backoff, capped at max_reconnect_delay.
                 delay = min(delay * 2, self.max_reconnect_delay)
 
         self._running = False
@@ -304,26 +355,36 @@ class SSEClient:
         headers = await self._get_headers()
         request_params = self._build_request_params()
 
-        # Use a fresh session per connection rather than a shared/long-lived
-        # one. SSE connections are single-stream long-poll: there's nothing to
-        # pool (only one in-flight request at a time, no keep-alive reuse
-        # benefit), and a per-connection session ensures stale auth headers,
-        # half-closed sockets, and any aiohttp-internal state from the prior
-        # disconnect are dropped on every reconnect. The cost is one TCP+TLS
-        # handshake per reconnect, which is negligible at our reconnect rates.
+        # Fresh session per reconnect: drops stale auth/half-closed sockets; nothing to pool.
         timeout = aiohttp.ClientTimeout(total=None, connect=30.0, sock_read=self.sse_timeout or None)
 
         proxy_kwargs = self.config.get_proxy_kwargs()
 
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        # read_bufsize raises the per-line limit so a large frame can't trip LineTooLong.
+        async with aiohttp.ClientSession(timeout=timeout, read_bufsize=C.SSE_READ_BUFSIZE) as session:
             async with session.get(url, headers=headers, params=request_params, **proxy_kwargs) as response:
                 if response.status != 200:
-                    raise ConnectionError(f"SSE endpoint returned HTTP {response.status} for {url}")
+                    body = ""
+                    try:
+                        body = (await response.text())[:200]
+                    except Exception:
+                        pass
+                    detail = f": {body}" if body else ""
+                    if response.status in (403, 404):
+                        # Forbidden / not-found won't self-heal on reconnect.
+                        raise _SSEFatalError(
+                            response.status,
+                            f"SSE endpoint returned HTTP {response.status} for {url}{detail}",
+                        )
+                    if response.status == 401:
+                        # May be a stale token; retried a bounded number of times before failing.
+                        raise _SSEAuthError(
+                            response.status,
+                            f"SSE authentication failed (HTTP 401) for {url}{detail}",
+                        )
+                    raise ConnectionError(f"SSE endpoint returned HTTP {response.status} for {url}{detail}")
                 logger.info("SSE connection established to %s (params=%s)", url, request_params)
                 started_at = time.monotonic()
-                # Any exception from _parse_sse_stream propagates with the
-                # connection duration recorded on `self` so callers can read
-                # it after the exception bubbles up.
                 self._last_connection_duration = 0.0
                 try:
                     await self._parse_sse_stream(response)
@@ -354,6 +415,7 @@ class SSEClient:
         event_id: Optional[str] = None
         retry_ms: Optional[int] = None
 
+        # Relies on aiohttp readline: one full line per iteration (no internal line buffer).
         content_iter = response.content.__aiter__()
         while True:
             if not self._running:
@@ -369,16 +431,22 @@ class SSEClient:
                     raw_line = await content_iter.__anext__()
             except StopAsyncIteration:
                 break
+            except aiohttp.ServerTimeoutError:
+                # sock_read idle timeout; SocketTimeoutError subclasses asyncio.TimeoutError, so handle first.
+                raise
             except asyncio.TimeoutError as exc:
                 raise ConnectionError(
-                    f"No SSE data received within {self.heartbeat_timeout:.1f}s "
-                    "(heartbeat watchdog triggered) — forcing reconnect"
+                    f"No SSE data within {self.heartbeat_timeout:.1f}s (heartbeat watchdog) — forcing reconnect"
                 ) from exc
 
-            line = raw_line.decode("utf-8").rstrip("\r\n")
+            # utf-8-sig strips a leading UTF-8 BOM (SSE spec); strip exactly the terminator.
+            line = raw_line.decode("utf-8-sig")
+            if line.endswith("\n"):
+                line = line[:-1]
+            if line.endswith("\r"):
+                line = line[:-1]
 
             if not line:
-                # Blank line — dispatch the buffered event if there is data.
                 if data_parts:
                     event = SSEEvent(
                         event=event_type,
@@ -387,7 +455,6 @@ class SSEClient:
                         retry=retry_ms,
                     )
                     await self._dispatch_event(event)
-                # Reset buffers for the next event.
                 event_type = "message"
                 data_parts = []
                 event_id = None
@@ -395,13 +462,11 @@ class SSEClient:
                 continue
 
             if line.startswith(":"):
-                # Comment line — ignore.
                 continue
 
             if ":" in line:
                 field_name, _, field_value = line.partition(":")
-                # Per the SSE spec, strip *one* leading space — preserves
-                # any intentional whitespace inside the value.
+                # SSE spec: strip exactly one leading space from the value.
                 if field_value.startswith(" "):
                     field_value = field_value[1:]
             else:
@@ -414,12 +479,8 @@ class SSEClient:
                 data_parts.append(field_value)
             elif field_name == "id":
                 event_id = field_value
-                # Only store numeric event IDs for replay (filter out non-numeric server markers like "welcome")
-                # The server expects numeric event IDs for the last-event-id parameter
                 if field_value and field_value.isdigit():
-                    # Update last_event_id immediately so reconnections use it
                     self._last_event_id = field_value
-                    # Persist to store for cross-process replay
                     self._persist_event_id(field_value)
             elif field_name == "retry":
                 try:
@@ -427,11 +488,8 @@ class SSEClient:
                 except ValueError:
                     pass
                 else:
-                    # Per the SSE spec, ``retry`` updates the client's
-                    # reconnection time. Clamp to ``max_reconnect_delay`` so a
-                    # misbehaving server can't push the SDK into multi-hour
-                    # waits between reconnects.
-                    self.reconnect_delay = min(retry_ms / 1000.0, self.max_reconnect_delay)
+                    # SSE spec: 'retry' sets the reconnect time; track separately, clamp to max.
+                    self._server_retry_delay = min(retry_ms / 1000.0, self.max_reconnect_delay)
 
     async def _dispatch_event(self, event: SSEEvent) -> None:
         if not self.on_event:
@@ -442,9 +500,6 @@ class SSEClient:
             else:
                 self.on_event(event)
         except Exception:
-            # Use logger.exception so the full traceback is captured —
-            # callback bugs are otherwise invisible because the read loop
-            # deliberately keeps running.
             logger.exception("Error in SSE on_event callback (event=%s id=%s)", event.event, event.id)
 
     async def _dispatch_error(self, exc: Exception) -> None:

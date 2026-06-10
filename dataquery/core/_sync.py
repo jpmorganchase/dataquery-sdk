@@ -41,8 +41,6 @@ class SyncRunner:
         try:
             loop.run_forever()
         finally:
-            # Loop has been stopped; finish async generators before closing so
-            # streaming responses / SSE iterators release cleanly.
             try:
                 loop.run_until_complete(loop.shutdown_asyncgens())
             finally:
@@ -70,9 +68,7 @@ class SyncRunner:
 
     def run(self, coro: Any) -> Any:
         """Submit ``coro`` to the background loop and block for its result."""
-        # Refuse to block a loop running in the *calling* thread — that would
-        # deadlock or stall the caller's event loop. Direct them to the async
-        # method, mirroring the old asyncio.run() failure mode.
+        # Refuse to block the calling thread's own running loop — would deadlock.
         try:
             asyncio.get_running_loop()
         except RuntimeError:

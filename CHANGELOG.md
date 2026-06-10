@@ -34,3 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stable 1.0 release
 - Bumped minimum Python to 3.12; added 3.14 to test matrix
 - Security floors: idna>=3.15, urllib3>=2.7.0, pymdown-extensions>=10.21.3
+## [1.1.0] - 2026-06-10
+- Reliability: 429 responses are now retried instead of surfaced immediately; the server `Retry-After` is honored when timing retry backoff; adaptive rate-limit backoff now engages instead of staying at zero
+- Auth: OAuth token-fetch network/timeout failures now raise `NetworkError` (previously `AuthenticationError`); token acquisition is single-flight so concurrent callers don't stampede the token endpoint
+- SSE: jittered reconnect backoff to avoid synchronized reconnect storms; stop reconnecting on fatal 403/404 and bound retries on 401; idle `sock_read` timeout distinguished from the heartbeat watchdog; honor the server `retry:` hint; strip a leading UTF-8 BOM; larger read buffer guards against `LineTooLong`; `stop()` is await-safe under concurrent callers
+- Fixed: pandas 3.0 DataFrame auto-conversion (new `str` dtype); robust `Retry-After` parsing (integer seconds and HTTP-date)
+- Packaging: switched to setuptools package discovery (`packages.find`); cleaned up `MANIFEST.in`

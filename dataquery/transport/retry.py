@@ -6,6 +6,7 @@ and configurable retry strategies.
 """
 
 import asyncio
+import math
 import random
 import time
 from dataclasses import dataclass, field
@@ -31,9 +32,9 @@ class RetryStrategy(str, Enum):
 class CircuitState(str, Enum):
     """Circuit breaker states."""
 
-    CLOSED = "closed"  # Normal operation
-    OPEN = "open"  # Failing, reject requests
-    HALF_OPEN = "half_open"  # Testing if service recovered
+    CLOSED = "closed"
+    OPEN = "open"
+    HALF_OPEN = "half_open"
 
 
 @dataclass
@@ -112,7 +113,6 @@ class CircuitBreaker:
             return True
 
         if self.state == CircuitState.OPEN:
-            # Check if timeout has passed
             if self.last_failure_time and datetime.now() - self.last_failure_time >= timedelta(
                 seconds=self.config.circuit_breaker_timeout
             ):
@@ -120,7 +120,6 @@ class CircuitBreaker:
                 return True
             return False
 
-        # HALF_OPEN state
         return True
 
     def _open_circuit(self) -> None:
@@ -173,7 +172,6 @@ class RetryManager:
         self.stats = RetryStats()
         self.circuit_breaker = CircuitBreaker(config) if config.enable_circuit_breaker else None
 
-        # Default retryable exceptions (transient network / timeout only)
         if not config.retryable_exceptions:
             config.retryable_exceptions = [
                 ConnectionError,
@@ -207,18 +205,15 @@ class RetryManager:
         for attempt in range(self.config.max_retries + 1):
             self.stats.total_attempts += 1
 
-            # Check circuit breaker
             if self.circuit_breaker and not self.circuit_breaker.can_execute():
                 raise NetworkError("Circuit breaker is open - service temporarily unavailable")
 
             try:
-                # Execute function
                 if asyncio.iscoroutinefunction(func):
                     result = await func(*args, **kwargs)
                 else:
                     result = func(*args, **kwargs)
 
-                # Record success
                 self.stats.successful_attempts += 1
                 if self.circuit_breaker:
                     self.circuit_breaker.record_success()
@@ -230,7 +225,6 @@ class RetryManager:
                 self.stats.failed_attempts += 1
                 last_exception = e
 
-                # Check if exception is retryable
                 if not self._is_retryable_exception(e):
                     logger.warning(
                         "Non-retryable exception",
@@ -239,11 +233,9 @@ class RetryManager:
                     )
                     raise e
 
-                # Record failure in circuit breaker
                 if self.circuit_breaker:
                     self.circuit_breaker.record_failure()
 
-                # Check if this was the last attempt
                 if attempt == self.config.max_retries:
                     logger.error(
                         "All retry attempts failed",
@@ -252,8 +244,12 @@ class RetryManager:
                     )
                     break
 
-                # Calculate delay
                 delay = self._calculate_delay(attempt)
+
+                # Honor a server Retry-After carried on the exception, bounded by max_delay.
+                retry_after = self._retry_after_from_exception(e)
+                if retry_after is not None:
+                    delay = min(max(delay, retry_after), self.config.max_delay)
 
                 logger.warning(
                     "Operation failed, retrying",
@@ -263,14 +259,12 @@ class RetryManager:
                     error=str(e),
                 )
 
-                # Wait before retry
                 start_time = time.time()
                 await asyncio.sleep(delay)
                 self.stats.total_retry_time += time.time() - start_time
                 self.stats.retry_count += 1
                 self.stats.last_retry_time = datetime.now()
 
-        # All retries failed
         if last_exception is None:
             raise NetworkError("All retry attempts failed - operation could not be completed")
         raise last_exception
@@ -279,40 +273,48 @@ class RetryManager:
         """Check if exception is retryable."""
         exception_type = type(exception)
 
-        # Check non-retryable exceptions first
         for non_retryable in self.config.non_retryable_exceptions:
             if issubclass(exception_type, non_retryable):
                 return False
 
-        # Check retryable exceptions
         for retryable in self.config.retryable_exceptions:
             if issubclass(exception_type, retryable):
                 return True
 
-        # Default: retry on any exception if no specific lists provided
         return len(self.config.retryable_exceptions) == 0
 
     def _calculate_delay(self, attempt: int) -> float:
         """Calculate delay for retry attempt with optimized performance."""
         if self.config.strategy == RetryStrategy.EXPONENTIAL:
-            # Use bit shifting for faster exponentiation when possible
             if self.config.exponential_base == 2.0:
-                delay = self.config.base_delay * (1 << min(attempt, 10))  # Cap at 2^10
+                delay = self.config.base_delay * (1 << min(attempt, 10))
             else:
                 delay = self.config.base_delay * (self.config.exponential_base**attempt)
         elif self.config.strategy == RetryStrategy.LINEAR:
             delay = self.config.base_delay * (attempt + 1)
-        else:  # CONSTANT
+        else:
             delay = self.config.base_delay
 
-        # Apply jitter more efficiently
         if self.config.jitter and self.config.jitter_factor > 0:
-            # Use faster random generation
             jitter = random.random() * self.config.jitter_factor * delay
             delay += jitter
 
-        # Cap at maximum delay
         return min(delay, self.config.max_delay)
+
+    @staticmethod
+    def _retry_after_from_exception(exception: Exception) -> Optional[float]:
+        """Extract a server-provided Retry-After (seconds) from an exception.
+
+        Duck-typed on a ``details`` dict (e.g. ``RateLimitError`` carries
+        ``details["retry_after"]``) so the retry manager stays decoupled from
+        specific SDK exception types.
+        """
+        details = getattr(exception, "details", None)
+        if isinstance(details, dict):
+            value = details.get("retry_after")
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value > 0:
+                return float(value)
+        return None
 
     def get_stats(self) -> Dict[str, Any]:
         """Get retry statistics."""

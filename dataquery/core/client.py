@@ -6,7 +6,8 @@ import asyncio
 import socket
 import time
 from collections import OrderedDict
-from datetime import datetime
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Dict, List, Optional, Tuple, Union
 
@@ -109,17 +110,12 @@ class DataQueryClient(
         self.config = config
         self.session: Optional[aiohttp.ClientSession] = None
         self.auth_manager = OAuthManager(config)
-        # Synchronous wrappers share one persistent loop so the aiohttp session
-        # stays valid across sync calls (see :class:`SyncRunner`).
         self._sync_runner = SyncRunner()
 
-        # Initialize enhanced components
         self._setup_enhanced_components()
-        # Note: Config validation can be called explicitly via _validate_config() for testing
 
     def _setup_enhanced_components(self):
         """Setup enhanced components for the client."""
-        # Setup logging
         logging_config = LoggingConfig(
             level=LogLevel(self.config.log_level),
             format=(LogFormat.JSON if self.config.enable_debug_logging else LogFormat.CONSOLE),
@@ -129,7 +125,6 @@ class DataQueryClient(
         self.logging_manager = LoggingManager(logging_config)
         self.logger = self.logging_manager.get_logger(__name__)
 
-        # Setup rate limiting
         rate_limit_config = RateLimitConfig(
             requests_per_minute=self.config.requests_per_minute,
             burst_capacity=self.config.burst_capacity,
@@ -137,7 +132,6 @@ class DataQueryClient(
         )
         self.rate_limiter = TokenBucketRateLimiter(rate_limit_config)
 
-        # Setup retry logic (include common API failures)
         retry_config = RetryConfig(
             max_retries=self.config.max_retries,
             base_delay=self.config.retry_delay,
@@ -155,7 +149,6 @@ class DataQueryClient(
         )
         self.retry_manager = RetryManager(retry_config)
 
-        # Setup connection pool monitoring
         pool_config = ConnectionPoolConfig(
             max_connections=self.config.pool_maxsize,
             max_keepalive_connections=self.config.pool_connections,
@@ -164,10 +157,9 @@ class DataQueryClient(
         )
         self.pool_monitor = ConnectionPoolMonitor(pool_config)
 
-        # Initialize response cache for read-only operations
-        self._response_cache: OrderedDict[str, tuple] = OrderedDict()  # key -> (data, timestamp)
-        self._cache_ttl = 300  # 5 minutes cache TTL
-        self._cache_max_size = 256  # Maximum cache entries (LRU eviction)
+        self._response_cache: OrderedDict[str, tuple] = OrderedDict()
+        self._cache_ttl = 300
+        self._cache_max_size = 256
 
         self.logger.info(
             "Enhanced client components initialized",
@@ -181,43 +173,33 @@ class DataQueryClient(
         if not self.config.base_url:
             raise ConfigurationError("base_url is required")
 
-        # Check base URL format
         if not self.config.base_url.strip():
             raise ConfigurationError("base_url is required")
         if not (self.config.base_url.startswith("http://") or self.config.base_url.startswith("https://")):
             raise ConfigurationError("Invalid base_url format")
 
-        # OAuth validation - only when explicitly requested (for testing) or during auth
         if strict_oauth_check and self.config.oauth_enabled:
             if not self.config.client_id or not self.config.client_secret:
                 raise ConfigurationError("client_id and client_secret are required")
 
-        # Validate authentication configuration
         if not self.auth_manager.is_authenticated():
             self.logger.warning("No authentication configured - API calls may fail")
 
     def _extract_endpoint(self, url: str) -> str:
         """Extract endpoint name from URL for rate limiting."""
         try:
-            # Remove query parameters
             url = url.split("?")[0]
-            # Extract path from URL
             if self.config.base_url in url:
-                # Remove base URL to get the endpoint path
                 path = url.replace(self.config.base_url.rstrip("/"), "")
                 if not path or path == "/":
-                    # For root URL, check if it's exactly the base URL
                     if url.rstrip("/") == self.config.base_url.rstrip("/"):
                         return "/"
-                    # For other root cases, return the domain
                     from urllib.parse import urlparse
 
                     parsed = urlparse(url)
                     return parsed.netloc
-                # Return the full path for rate limiting
                 return path
             else:
-                # Fallback: get the last part of the path
                 parts = url.rstrip("/").split("/")
                 if parts:
                     return parts[-1] or "root"
@@ -241,7 +223,6 @@ class DataQueryClient(
         base_url = self.config.api_base_url.rstrip("/")
         url = f"{base_url}/{endpoint.lstrip('/')}"
 
-        # Validate URL length per DataQuery API specification
         max_url_length = 2080
         if len(url) > max_url_length:
             raise ValidationError(
@@ -270,7 +251,6 @@ class DataQueryClient(
     def _get_cache_key(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> str:
         """Generate cache key for endpoint and parameters."""
         if params:
-            # Sort params for consistent cache keys
             sorted_params = sorted(params.items())
             param_str = "&".join(f"{k}={v}" for k, v in sorted_params)
             return f"{endpoint}?{param_str}"
@@ -284,7 +264,6 @@ class DataQueryClient(
                 self._response_cache.move_to_end(cache_key)
                 return data
             else:
-                # Remove expired entry
                 del self._response_cache[cache_key]
         return None
 
@@ -303,46 +282,40 @@ class DataQueryClient(
     async def connect(self):
         """Initialize HTTP session with optimized configuration."""
         if self.session is None:
-            # Optimize timeout configuration
             timeout = aiohttp.ClientTimeout(total=self.config.timeout, connect=300.0, sock_read=self.config.timeout)
 
-            # Optimize connector configuration for better performance
             connector = aiohttp.TCPConnector(
                 limit=self.config.pool_maxsize,
                 limit_per_host=self.config.pool_connections,
-                keepalive_timeout=300,  # Increased for better connection reuse with longer timeouts
+                keepalive_timeout=300,
                 enable_cleanup_closed=True,
-                use_dns_cache=True,  # Enable DNS caching
-                ttl_dns_cache=300,  # 5 minutes DNS cache
-                family=socket.AF_UNSPEC,  # Allow both IPv4 and IPv6
-                local_addr=None,  # Let OS choose local address
-                force_close=False,  # Keep connections alive
+                use_dns_cache=True,
+                ttl_dns_cache=300,
+                family=socket.AF_UNSPEC,
+                local_addr=None,
+                force_close=False,
             )
 
-            # Start connection pool monitoring
             self.pool_monitor.start_monitoring(connector)
 
-            # Configure session with optimized settings
             try:
                 from importlib import metadata
 
                 version = metadata.version("dataquery-sdk")
             except metadata.PackageNotFoundError:
-                version = "0.0.0"  # fallback
+                version = "0.0.0"
 
             session_kwargs = {
                 "timeout": timeout,
                 "connector": connector,
                 "headers": {
                     "User-Agent": f"DATAQUERY-SDK/{version}",
-                    "Connection": "keep-alive",  # Explicit keep-alive
-                    "Accept-Encoding": "gzip, deflate",  # Enable compression
+                    "Connection": "keep-alive",
+                    "Accept-Encoding": "gzip, deflate",
                 },
-                "auto_decompress": True,  # Enable automatic decompression
-                "raise_for_status": False,  # Let our code handle status codes
+                "auto_decompress": True,
+                "raise_for_status": False,
             }
-
-            # Note: Proxy is applied per-request in _execute_request
 
             self.session = aiohttp.ClientSession(**session_kwargs)  # type: ignore[arg-type]
 
@@ -356,31 +329,25 @@ class DataQueryClient(
 
     async def close(self):
         """Close the client and cleanup resources."""
-        # Check if already closed
         if not hasattr(self, "session") or self.session is None:
             return
 
         self.logger.info("Closing DataQuery client")
 
         try:
-            # Shutdown rate limiter
             if hasattr(self, "rate_limiter"):
                 await self.rate_limiter.shutdown()
 
-            # Stop connection pool monitoring
             if hasattr(self, "pool_monitor"):
                 self.pool_monitor.stop_monitoring()
 
-            # Close session
             if self.session:
                 if hasattr(self.session, "close"):
-                    # Check if close method is a coroutine (real aiohttp session)
                     import inspect
 
                     if inspect.iscoroutinefunction(self.session.close):
                         await self.session.close()
                     else:
-                        # For mock objects, call close directly
                         self.session.close()  # type: ignore[unused-coroutine]
                 self.session = None
 
@@ -388,13 +355,11 @@ class DataQueryClient(
 
         except Exception as e:
             self.logger.error("Error closing client", error=str(e))
-            # Don't re-raise to allow graceful cleanup
 
     async def _ensure_authenticated(self):
         """Ensure client is authenticated before making requests."""
         if not self.auth_manager.is_authenticated():
             raise AuthenticationError("No authentication configured")
-        # Ensure a valid token exists without mutating session defaults
         try:
             await self.auth_manager.authenticate()
         except Exception as e:
@@ -402,24 +367,19 @@ class DataQueryClient(
 
     def _get_operation_priority(self, method: str, endpoint: str) -> QueuePriority:
         """Get priority for operation based on method and endpoint."""
-        # Critical operations (health checks, authentication)
         if endpoint in ["health", "auth", "token"]:
             return QueuePriority.CRITICAL
 
-        # High priority operations (downloads, file operations)
         if method == "GET" and endpoint in ["download", "file", "files"]:
             return QueuePriority.HIGH
 
-        # Normal priority for most operations
         if method in ["GET", "POST"]:
             return QueuePriority.NORMAL
 
-        # Low priority for other operations
         return QueuePriority.LOW
 
     def _validate_request_url(self, url: str, params: Optional[Dict[str, Any]] = None) -> None:
         """Validate complete request URL length including parameters."""
-        # Build complete URL with parameters for length check
         if params:
             param_str = "&".join(f"{k}={v}" for k, v in params.items() if v is not None)
             complete_url = f"{url}?{param_str}" if param_str else url
@@ -438,6 +398,35 @@ class DataQueryClient(
                 },
             )
 
+    @staticmethod
+    def _parse_retry_after(headers: Any) -> Optional[int]:
+        """Parse a ``Retry-After`` header into whole seconds.
+
+        Handles both supported forms — a non-negative integer count of seconds
+        and an HTTP-date — returning ``None`` when the header is absent or
+        unparseable (callers then fall back to their own backoff). The old
+        ``int(headers.get("Retry-After", 0))`` raised ``ValueError`` on the
+        HTTP-date form.
+        """
+        raw = headers.get("Retry-After")
+        if not raw:
+            return None
+        try:
+            seconds = int(float(raw))
+            return seconds if seconds >= 0 else None
+        except (ValueError, TypeError):
+            pass
+        try:
+            when = parsedate_to_datetime(raw)
+        except (TypeError, ValueError):
+            return None
+        if when is None:
+            return None
+        # RFC 7231 HTTP-dates are GMT; treat a naive datetime as UTC, not local time.
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        return max(0, int((when - datetime.now(timezone.utc)).total_seconds()))
+
     async def _make_authenticated_request(self, method: str, url: str, **kwargs) -> aiohttp.ClientResponse:
         """
         Make an authenticated HTTP request with enhanced features.
@@ -450,35 +439,28 @@ class DataQueryClient(
         Returns:
             HTTP response
         """
-        # Validate complete URL length including parameters
         params = kwargs.get("params")
         self._validate_request_url(url, params)
 
-        # Record operation start
         operation = f"{method}_{url.split('/')[-1]}"
         self.logging_manager.log_operation_start(operation, method=method, url=url)
 
         start_time = time.time()
 
         try:
-            # Ensure authentication
             await self._ensure_authenticated()
 
-            # Apply rate limiting
             async with RateLimitContext(
                 self.rate_limiter,
                 timeout=self.config.timeout,
                 priority=self._get_operation_priority(method, self._extract_endpoint(url)),
                 operation=f"{method}_{self._extract_endpoint(url)}",
             ):
-                # Execute request with retry logic
                 response = await self.retry_manager.execute_with_retry(self._execute_request, method, url, **kwargs)
 
-            # Record operation success
             duration = time.time() - start_time
             self.logging_manager.log_operation_end(operation, duration, success=True)
 
-            # Log request/response if enabled
             if self.config.enable_debug_logging:
                 self.logging_manager.log_request(method, url, kwargs.get("headers", {}))
                 self.logging_manager.log_response(response.status, dict(response.headers), duration=duration)
@@ -486,14 +468,12 @@ class DataQueryClient(
             return response
 
         except Exception as e:
-            # Record operation failure
             duration = time.time() - start_time
             self.logging_manager.log_operation_end(operation, duration, success=False, error=str(e))
             raise
 
     async def _execute_request(self, method: str, url: str, **kwargs) -> aiohttp.ClientResponse:
         """Execute a single HTTP request."""
-        # Ensure we have fresh authentication headers (prefer per-request freshness; avoid stale session headers)
         try:
             auth_headers = await self.auth_manager.get_headers()
             headers = dict(kwargs.get("headers") or {})
@@ -504,12 +484,9 @@ class DataQueryClient(
         except Exception as e:
             raise AuthenticationError(f"Failed to obtain auth headers: {e}")
 
-        # Apply proxy per-request if configured — shared helper keeps this in
-        # sync with auth.py and sse_client.py.
         for key, value in self.config.get_proxy_kwargs().items():
             kwargs.setdefault(key, value)
 
-        # Ensure session is connected
         await self._ensure_connected()
 
         if self.session is None:
@@ -518,7 +495,17 @@ class DataQueryClient(
         try:
             response = await self.session.request(method, url, **kwargs)
 
-            # Check for retryable server errors (5xx) - these should trigger retry
+            # Raise 429 inside the retry scope so the retry manager backs off and retries.
+            if response.status == 429:
+                self.rate_limiter.handle_rate_limit_response(dict(response.headers))
+                retry_after = self._parse_retry_after(response.headers)
+                # Drain body so the connection can be reused; ignore decode errors.
+                try:
+                    await response.text()
+                except (UnicodeDecodeError, aiohttp.ClientPayloadError):
+                    pass
+                raise RateLimitError(f"Rate limit exceeded: {response.status}", retry_after=retry_after)
+
             if response.status >= 500:
                 # Drain body so the connection can be reused; ignore decode errors.
                 try:
@@ -528,8 +515,7 @@ class DataQueryClient(
                 raise NetworkError(f"Server error: {response.status}", status_code=response.status)
 
             return response
-        except NetworkError:
-            # Re-raise NetworkError to trigger retry
+        except (NetworkError, RateLimitError):
             raise
         except Exception:
             raise
@@ -559,7 +545,6 @@ class DataQueryClient(
                 group_list = GroupList(**data)
                 self.logger.info("Groups listed", count=len(group_list.groups), limit=limit)
 
-                # Log performance metric
                 self.logging_manager.log_metric("groups_listed", len(group_list.groups), "count")
 
                 return group_list.groups
@@ -864,7 +849,6 @@ class DataQueryClient(
             async with await self._make_authenticated_request("GET", url, params=params) as response:
                 await self._handle_response(response)
                 data = await response.json()
-                # Extract a single availability item matching the requested datetime if present
                 items: List[Dict[str, Any]] = data.get("availability") or [] if isinstance(data, dict) else []
                 selected = None
                 for it in items:
@@ -931,11 +915,9 @@ class DataQueryClient(
         if options.destination_path:
             dest_path = Path(options.destination_path)
             if dest_path.suffix:
-                # It's a full file path
                 destination = dest_path
                 destination_dir = dest_path.parent
             else:
-                # It's a directory
                 destination_dir = dest_path
                 destination = destination_dir / (filename or f"{file_group_id}.bin")
         else:
@@ -1033,7 +1015,6 @@ class DataQueryClient(
         """
         params, options, _ = self._prepare_download_params(file_group_id, file_datetime, options)
 
-        # Add range parameters if specified
         if options.range_header:
             headers = {"Range": options.range_header}
         elif options.range_start is not None:
@@ -1044,67 +1025,54 @@ class DataQueryClient(
 
         start_time = time.time()
         bytes_downloaded = 0
-        destination = None  # Initialize destination variable
+        destination = None
 
         try:
             url = self._build_files_api_url(C.API_GROUP_FILE_DOWNLOAD)
 
-            # Support either an awaitable that yields a context manager, or a context manager directly
             async with await self._make_authenticated_request("GET", url, params=params, headers=headers) as response:
                 await self._handle_response(response)
 
-                # Extract filename from Content-Disposition header or generate one
                 filename = get_filename_from_response(response, file_group_id, file_datetime)
                 destination = self._resolve_destination(options, file_group_id, filename)
 
-                # Check if file exists and handle overwrite
                 if isinstance(destination, Path) and destination.exists() and not options.overwrite_existing:
                     raise FileExistsError(f"File already exists: {destination}")
 
-                # Get content length for progress tracking
                 content_length = response.headers.get("content-length")
                 total_bytes = int(content_length) if content_length else 0
 
-                # Initialize progress tracking
                 progress = DownloadProgress(
                     file_group_id=file_group_id,
                     total_bytes=total_bytes,
                     start_time=datetime.now(),
                 )
 
-                # Download file with optimized progress tracking
                 if not isinstance(destination, Path):
                     raise ValueError(f"Invalid destination path: {destination}")
-                # Write to a temp file first, then atomically rename upon success
                 temp_destination = destination.with_suffix(destination.suffix + C.TEMP_SUFFIX)
 
-                # Optimize chunk size based on file size
                 chunk_size = options.chunk_size or C.DEFAULT_CHUNK_SIZE
                 if total_bytes > 0:
-                    # Use larger chunks for files >= LARGE_FILE_THRESHOLD (1 GB).
                     max_chunk = (
                         C.LARGE_FILE_CHUNK_SIZE if total_bytes > C.LARGE_FILE_THRESHOLD else C.DEFAULT_CHUNK_SIZE
                     )
                     optimal_chunk_size = min(max(chunk_size, total_bytes // 1000), max_chunk)
                     chunk_size = optimal_chunk_size
 
-                # Progress update frequency optimization
-                progress_update_interval = max(1, chunk_size // 4)  # Update every 1/4 chunk
+                progress_update_interval = max(1, chunk_size // 4)
                 last_progress_update = 0
 
-                # Dynamic buffer size based on chunk size (minimum 1MB, maximum 8MB)
                 buffer_size = min(max(chunk_size, C.DEFAULT_CHUNK_SIZE), C.LARGE_FILE_CHUNK_SIZE)
                 with open(temp_destination, "wb", buffering=buffer_size) as f:
                     async for chunk in response.content.iter_chunked(chunk_size):
                         await asyncio.to_thread(f.write, chunk)
                         bytes_downloaded += len(chunk)
 
-                        # Update progress less frequently for better performance
                         if bytes_downloaded - last_progress_update >= progress_update_interval:
                             progress.update_progress(bytes_downloaded)
                             last_progress_update = bytes_downloaded
 
-                            # Call progress callback
                             if progress_callback:
                                 progress_callback(progress)
                             elif options.show_progress:
@@ -1115,10 +1083,8 @@ class DataQueryClient(
                                     downloaded=format_file_size(bytes_downloaded),
                                 )
 
-                # Final progress update
                 progress.update_progress(bytes_downloaded)
 
-                # Atomic rename to final destination after successful write
                 temp_destination.replace(destination)
 
                 return self._create_download_result(
@@ -1141,7 +1107,6 @@ class DataQueryClient(
                 e,
             )
         except Exception as e:
-            # Clean up partial file on error; filesystem errors are logged, not raised.
             try:
                 if "temp_destination" in locals() and isinstance(temp_destination, Path):
                     temp_destination.unlink(missing_ok=True)
@@ -1218,17 +1183,12 @@ class DataQueryClient(
             logger.error("Health check failed", error=str(e))
             return False
 
-    # Read-only query methods (instruments, metadata, time series, grid) live
-    # in the query mixins — see _query_mixins.py.
-
     def get_pool_stats(self) -> Dict[str, Any]:
         """Get connection pool statistics including active, idle, and total connections."""
         if hasattr(self, "_connection_pool") and self._connection_pool:
-            # For test compatibility
             return self._connection_pool.get_stats()
         elif hasattr(self, "pool_monitor"):
             stats = self.pool_monitor.get_pool_summary()
-            # Add 'idle' key if not present for backward compatibility
             if "idle" not in stats and "connections" in stats:
                 stats["idle"] = stats["connections"].get("idle", 0)
             return stats
@@ -1310,7 +1270,6 @@ class DataQueryClient(
 
     async def _handle_response(self, response: aiohttp.ClientResponse):
         """Handle HTTP response and raise appropriate exceptions."""
-        # Extract and log interaction ID for traceability
         interaction_id = response.headers.get("x-dataquery-interaction-id")
         if interaction_id:
             self.logger.info(
@@ -1320,9 +1279,6 @@ class DataQueryClient(
                 status=response.status,
             )
 
-        # For non-2xx responses, read the body once and try to parse the
-        # DataQuery v2 error envelope so the resulting exception carries the
-        # server-supplied code/description rather than a bare HTTP status.
         api_error: Optional[ErrorResponse] = None
         error_body: Optional[str] = None
         if response.status >= 400:
@@ -1367,12 +1323,11 @@ class DataQueryClient(
             err = NotFoundError("Resource", resource_id, message=_msg("Resource not found"))
             err.details.update(details)
             raise err
-        # Handle rate limit response
         if response.status == 429:
             self.rate_limiter.handle_rate_limit_response(dict(response.headers))
             rate_err = RateLimitError(
                 _msg(f"Rate limit exceeded: {response.status}"),
-                retry_after=int(response.headers.get("Retry-After", 0)),
+                retry_after=self._parse_retry_after(response.headers),
             )
             rate_err.details.update(details)
             raise rate_err
@@ -1386,7 +1341,6 @@ class DataQueryClient(
         elif response.status >= 400:
             raise ValidationError(_msg(f"Client error: {response.status}"), details=details)
 
-        # Mark successful request for adaptive backoff reset
         if response.status < 400:
             self.rate_limiter.handle_successful_request()
 
@@ -1398,19 +1352,16 @@ class DataQueryClient(
         """
         req = self._make_authenticated_request(method, url, **kwargs)
         try:
-            cm = await req  # coroutine returning CM
+            cm = await req
         except TypeError:
-            # For mocked tests that return CM directly
             cm = req  # type: ignore[assignment]  # already a CM
         return cm
 
     def _get_file_extension(self, file_group_id: str) -> str:
         """Extract file extension from file group identifier."""
-        # Validate file_group_id to prevent path traversal
         if not file_group_id or not isinstance(file_group_id, str):
             return "bin"
 
-        # Check for path traversal attempts or suspicious patterns
         suspicious_patterns = [
             "..",
             "/",
@@ -1424,26 +1375,19 @@ class DataQueryClient(
         if any(pattern in file_group_id for pattern in suspicious_patterns):
             return "bin"  # No dot for security/traversal cases
 
-        # More robust path sanitization
         from pathlib import Path
 
         try:
-            # Use pathlib to safely handle the id
-            safe_path = Path(file_group_id).name  # Get just the filename, not the path
+            safe_path = Path(file_group_id).name
             safe_file_id = str(safe_path)
 
-            # Try to extract extension
             if "." in safe_file_id:
                 ext = safe_file_id.split(".")[-1]
-                # For normal files, include the dot
                 return "." + ext
-            # For files without extensions, return with dot
             return ".bin"
         except Exception:
             # For any exceptions, return without dot for security
             return "bin"
-
-    # Auto-download is SSE-only — see auto_download_async below.
 
     async def auto_download_async(
         self,
@@ -1589,10 +1533,6 @@ class DataQueryClient(
             )
         )
 
-    # DataFrame conversion methods (to_dataframe, groups_to_dataframe, etc.)
-    # live in DataFrameMixin — see _dataframe_mixin.py.
-
-    # Synchronous wrapper methods
     def list_groups(self, limit: Optional[int] = None) -> List[Group]:
         """Synchronous wrapper for list_groups using an event-loop aware runner."""
         return self._run_sync(self.list_groups_async(limit))
@@ -1626,16 +1566,13 @@ class DataQueryClient(
         progress_callback: Optional[Callable[[DownloadProgress], None]] = None,
     ) -> DownloadResult:
         """Synchronous wrapper using an event-loop aware runner."""
-        # If destination_path is provided but options is None, create options with destination_path
         if destination_path is not None and options is None:
             from ..types.models import DownloadOptions
 
             options = DownloadOptions(destination_path=destination_path)
         elif destination_path is not None and options is not None:
-            # If both are provided, update options with destination_path
             options = options.model_copy(update={"destination_path": destination_path})
 
-        # Match async signature (file_group_id, file_datetime, options, num_parts, progress_callback)
         return self._run_sync(
             self.download_file_async(
                 file_group_id,
@@ -1660,7 +1597,6 @@ class DataQueryClient(
         """Synchronous wrapper using an event-loop aware runner."""
         return self._run_sync(self.health_check_async())
 
-    # Instrument Collection Endpoints - Synchronous wrappers
     def list_instruments(
         self,
         group_id: str,
@@ -1734,7 +1670,6 @@ class DataQueryClient(
             )
         )
 
-    # Group Collection Additional Endpoints - Synchronous wrappers
     def get_group_filters(self, group_id: str, page: Optional[str] = None) -> "FiltersResponse":
         """Synchronous wrapper using an event-loop aware runner."""
         return self._run_sync(self.get_group_filters_async(group_id, page))
@@ -1781,7 +1716,6 @@ class DataQueryClient(
             )
         )
 
-    # Grid Collection Endpoints - Synchronous wrappers
     def get_grid_data(
         self,
         expr: Optional[str] = None,

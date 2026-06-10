@@ -15,26 +15,22 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--env-file", type=str, default=None, help="Path to .env file")
     subparsers = parser.add_subparsers(dest="command")
 
-    # groups
     p_groups = subparsers.add_parser("groups", help="List or search groups")
     p_groups.add_argument("--json", action="store_true", help="Output JSON")
     p_groups.add_argument("--limit", type=int, default=None, help="Limit number of results")
     p_groups.add_argument("--search", type=str, default=None, help="Search keywords")
 
-    # files
     p_files = subparsers.add_parser("files", help="List files in a group")
     p_files.add_argument("--group-id", required=True)
     p_files.add_argument("--file-group-id", default=None)
     p_files.add_argument("--limit", type=int, default=None)
     p_files.add_argument("--json", action="store_true")
 
-    # availability
     p_avail = subparsers.add_parser("availability", help="Check file availability")
     p_avail.add_argument("--file-group-id", required=True)
     p_avail.add_argument("--file-datetime", required=True)
     p_avail.add_argument("--json", action="store_true")
 
-    # download
     p_dl = subparsers.add_parser(
         "download",
         help="Download a single file, or with --watch subscribe to the SSE notification stream",
@@ -83,7 +79,6 @@ def create_parser() -> argparse.ArgumentParser:
         ),
     )
 
-    # download-group
     p_dlg = subparsers.add_parser(
         "download-group",
         help="Download files in a group for a date range (optionally filtered to one file-group-id)",
@@ -104,7 +99,6 @@ def create_parser() -> argparse.ArgumentParser:
     p_dlg.add_argument("--num-parts", type=int, default=5)
     p_dlg.add_argument("--json", action="store_true")
 
-    # config
     p_cfg = subparsers.add_parser("config", help="Config utilities")
     cfg_sub = p_cfg.add_subparsers(dest="config_command")
     _ = cfg_sub.add_parser("show", help="Show resolved config")
@@ -112,7 +106,6 @@ def create_parser() -> argparse.ArgumentParser:
     p_tmpl = cfg_sub.add_parser("template", help="Write .env template")
     p_tmpl.add_argument("--output", type=str, required=True)
 
-    # auth
     p_auth = subparsers.add_parser("auth", help="Auth utilities")
     auth_sub = p_auth.add_subparsers(dest="auth_command")
     _ = auth_sub.add_parser("test", help="Test authentication by listing groups")
@@ -189,7 +182,6 @@ async def cmd_download(args: argparse.Namespace) -> int:
             print("--file-group-id is required for a single-file download")
             return 1
 
-    # argparse gives a list (nargs="+"). In single-file mode we need exactly one.
     file_group_id = args.file_group_id
     if not args.watch and isinstance(file_group_id, list):
         if len(file_group_id) != 1:
@@ -199,15 +191,8 @@ async def cmd_download(args: argparse.Namespace) -> int:
 
     async with DataQuery(args.env_file) as dq:
         if args.watch:
-            # SSE-driven: subscribe to /events/notification with group-id
-            # (and optionally file-group-id) as query parameters so the server
-            # filters events. An initial availability check covers anything
-            # published before the subscription started (only used on the very
-            # first run; subsequent runs replay missed events via last-event-id).
             destination_dir = args.destination or "./downloads"
             if getattr(args, "reset_event_id", False):
-                # Resolve the store directly so we can clear it before any
-                # connection is made.
                 from .sse.event_store import Subscription, build_event_id_store
 
                 client = dq._ensure_client()
@@ -224,8 +209,6 @@ async def cmd_download(args: argparse.Namespace) -> int:
                 enable_event_replay=not getattr(args, "no_event_replay", False),
             )
             try:
-                # Stay connected until interrupted. Sleeping in short slices
-                # keeps the loop responsive to Ctrl+C on all platforms.
                 while True:
                     await asyncio.sleep(60)
             except (KeyboardInterrupt, asyncio.CancelledError):
@@ -239,7 +222,6 @@ async def cmd_download(args: argparse.Namespace) -> int:
             print(json.dumps(stats))
             return 0
 
-        # Single-file download path.
         dest_path = Path(args.destination) if args.destination else None
 
         from dataquery.types.models import DownloadOptions
@@ -308,7 +290,6 @@ def cmd_config_validate(args: argparse.Namespace) -> int:
 
 
 def cmd_config_template(args: argparse.Namespace) -> int:
-    # Import inside function to allow monkeypatch of dataquery.utils.create_env_template
     import dataquery.utils as utils
 
     out = utils.create_env_template(Path(args.output))
@@ -340,7 +321,6 @@ def main() -> int:
     if not args.command:
         parser.print_help()
         return 1
-    # Dispatch
     if args.command == "groups":
         return asyncio.run(cmd_groups(args))
     if args.command == "files":

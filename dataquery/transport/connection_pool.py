@@ -38,16 +38,16 @@ class ConnectionPoolConfig:
     """Configuration for connection pool monitoring."""
 
     max_connections: int = 64
-    max_keepalive_connections: int = 16  # Renamed for test compatibility; tuned for high parallelism
+    max_keepalive_connections: int = 16
     keepalive_timeout: int = 300
-    connection_timeout: int = 300  # Increased for better reliability
+    connection_timeout: int = 300
     enable_cleanup: bool = True
-    cleanup_interval: int = 300  # 5 minutes
-    max_idle_time: int = 60  # 1 minute
-    health_check_interval: int = 60  # 1 minute
+    cleanup_interval: int = 300
+    max_idle_time: int = 60
+    health_check_interval: int = 60
     enable_metrics: bool = True
     log_connection_events: bool = True
-    enable_monitoring: bool = True  # Added for test compatibility
+    enable_monitoring: bool = True
 
     def __post_init__(self):
         """Validate configuration parameters."""
@@ -76,7 +76,7 @@ class ConnectionPoolMonitor:
         self._cleanup_task: Optional[asyncio.Task] = None
         self._health_check_task: Optional[asyncio.Task] = None
         self._running = False
-        self._shutdown_event: Optional[asyncio.Event] = None  # Added for test compatibility
+        self._shutdown_event: Optional[asyncio.Event] = None
 
         logger.info(
             "Connection pool monitor initialized",
@@ -98,7 +98,6 @@ class ConnectionPoolMonitor:
         self._running = True
         self.connector = connector
 
-        # Start background tasks only if we have an event loop
         try:
             loop = asyncio.get_running_loop()
             if self.config.enable_cleanup:
@@ -107,7 +106,6 @@ class ConnectionPoolMonitor:
             if self.config.health_check_interval > 0:
                 self._health_check_task = loop.create_task(self._health_check_loop())
         except RuntimeError:
-            # No event loop running, tasks will be started later if needed
             logger.debug("No event loop running, deferring task creation")
 
         logger.info("Connection pool monitoring started")
@@ -119,7 +117,6 @@ class ConnectionPoolMonitor:
 
         self._running = False
 
-        # Cancel background tasks
         if self._cleanup_task:
             self._cleanup_task.cancel()
             self._cleanup_task = None
@@ -141,7 +138,6 @@ class ConnectionPoolMonitor:
                 break
             except Exception as e:
                 logger.error("Error in cleanup loop", error=str(e))
-                # Continue running despite errors
                 continue
 
     async def _health_check_loop(self) -> None:
@@ -155,7 +151,6 @@ class ConnectionPoolMonitor:
                 break
             except Exception as e:
                 logger.error("Error in health check loop", error=str(e))
-                # Continue running despite errors
                 continue
 
     async def cleanup_idle_connections(self) -> None:
@@ -166,7 +161,6 @@ class ConnectionPoolMonitor:
         try:
             pool_stats = self._get_pool_stats()
 
-            # Update stats
             self.stats.last_cleanup = datetime.now()
             self.stats.cleanup_count += 1
 
@@ -190,7 +184,6 @@ class ConnectionPoolMonitor:
         try:
             pool_stats = self._get_pool_stats()
 
-            # Check for potential issues
             issues = []
 
             if pool_stats.get("active_connections", 0) > self.config.max_connections * 0.8:
@@ -202,7 +195,6 @@ class ConnectionPoolMonitor:
             if pool_stats.get("idle_connections", 0) > self.config.max_connections * 0.5:
                 issues.append("Many idle connections")
 
-            # Log health status with simplified logging
             if issues:
                 logger.warning(
                     "Connection pool health issues detected",
@@ -253,7 +245,6 @@ class ConnectionPoolMonitor:
                 return connector_stats
 
             total_connections = 0
-            # _conns is an aiohttp internal; degrade gracefully if absent
             conns_map = getattr(self.connector, "_conns", None)
             if conns_map is not None:
                 try:
@@ -264,7 +255,7 @@ class ConnectionPoolMonitor:
                     total_connections = 0
 
             self.stats.total_connections = total_connections
-            self.stats.idle_connections = total_connections  # best approximation
+            self.stats.idle_connections = total_connections
             self.stats.active_connections = 0
 
             connector_stats.update(
@@ -290,7 +281,6 @@ class ConnectionPoolMonitor:
 
         if event_type == "connection_created":
             self.connection_times.append(duration)
-            # Keep only last 100 connection times
             if len(self.connection_times) > 100:
                 self.connection_times.pop(0)
 
@@ -307,7 +297,6 @@ class ConnectionPoolMonitor:
             self.stats.max_connections_reached += 1
 
         if self.config.log_connection_events:
-            # Log with simple values to avoid structlog formatting issues
             logger.debug(
                 "Connection event",
                 event_type=event_type,
@@ -319,14 +308,11 @@ class ConnectionPoolMonitor:
 
     def _cleanup_idle_connections(self) -> None:
         """Clean up idle connections."""
-        # Implementation for cleaning up idle connections
         current_time = time.time()
-        # This would normally clean up actual connections
         logger.debug("Cleaning up idle connections", timestamp=current_time)
 
     def _perform_health_checks(self) -> None:
         """Perform health checks on connections."""
-        # Implementation for performing health checks
         self.last_health_check = time.time()
         logger.debug("Performing health checks", timestamp=self.last_health_check)
 
@@ -428,7 +414,6 @@ def create_connection_pool_config(
     Returns:
         Connection pool configuration
     """
-    # Map legacy arg max_connections_per_host to our config.max_keepalive_connections
     cfg = ConnectionPoolConfig(
         max_connections=max_connections,
         enable_cleanup=enable_cleanup,

@@ -35,8 +35,6 @@ from .types.models import (
     TimeSeriesResponse,
 )
 
-# Note: load_dotenv() is called inside DataQuery.__init__() to avoid module-level side effects
-
 logger = structlog.get_logger(__name__)
 
 
@@ -62,7 +60,6 @@ class ConfigManager:
     def get_client_config(self) -> ClientConfig:
         """Get client configuration from environment variables."""
         try:
-            # Pass env_file as keyword argument to match expected signature
             config = EnvConfig.create_client_config(env_file=self.env_file)
             EnvConfig.validate_config(config)
             return config
@@ -74,9 +71,7 @@ class ConfigManager:
         """Get default configuration for examples."""
         return ClientConfig(
             base_url="https://api.dataquery.com",
-            # Set oauth_enabled False by default for fallback to satisfy tests
             oauth_enabled=False,
-            # All other fields will use their default values from the model
         )
 
 
@@ -172,20 +167,15 @@ class DataQuery:
         """
         load_dotenv()
 
-        # Handle different input types
         if isinstance(config_or_env_file, ClientConfig):
-            # Direct ClientConfig provided
             self.client_config = config_or_env_file
         else:
-            # env_file provided (Path, str, or None)
             env_file = None
             if isinstance(config_or_env_file, (str, Path)):
                 env_file = Path(config_or_env_file)
             config_manager = ConfigManager(env_file)
             self.client_config = config_manager.get_client_config()
 
-        # Apply default-first initialization pattern with optional overrides.
-        # Credentials are never defaulted; if provided, enable OAuth and set them.
         if client_id or client_secret:
             if client_id and not isinstance(client_id, str):
                 raise ConfigurationError("client_id must be a string")
@@ -197,11 +187,9 @@ class DataQuery:
                 self.client_config.client_id = client_id
             if client_secret:
                 self.client_config.client_secret = client_secret
-            # Auto-derive token URL if missing
             if not self.client_config.oauth_token_url and self.client_config.base_url:
                 self.client_config.oauth_token_url = f"{self.client_config.base_url.rstrip('/')}/oauth/token"
 
-        # Apply any non-credential overrides (e.g., base_url, context_path, files_base_url, etc.)
         for key, value in (overrides or {}).items():
             if key in {"client_id", "client_secret"}:
                 continue
@@ -211,7 +199,6 @@ class DataQuery:
                 except (TypeError, ValueError) as e:
                     logger.warning("Override ignored", key=key, error=str(e))
 
-        # Validate configuration
         try:
             EnvConfig.validate_config(self.client_config)
         except Exception as e:
@@ -220,8 +207,6 @@ class DataQuery:
 
         self._client: Optional[DataQueryClient] = None
         self._sync_proxy: Optional[_SyncProxy] = None
-        # All synchronous calls share one persistent loop so the aiohttp
-        # session stays valid across calls (see :class:`SyncRunner`).
         self._sync_runner = SyncRunner()
 
     @property
@@ -296,8 +281,6 @@ class DataQuery:
         """
         return self._sync_runner.run(coro)
 
-    # Core API Methods
-
     async def list_groups_async(self, limit: Optional[int] = 100) -> List[Group]:
         """
         List all available data groups with pagination support.
@@ -312,10 +295,8 @@ class DataQuery:
 
         client = self._ensure_client()
         if limit is None:
-            # Fetch all groups using pagination
             return await client.list_all_groups_async()
         else:
-            # Fetch limited number of groups
             return await client.list_groups_async(limit=limit)
 
     async def search_groups_async(
@@ -454,8 +435,6 @@ class DataQuery:
             )
 
         client = self._ensure_client()
-        # Pass parameters in correct order: file_group_id, file_datetime, options, num_parts, progress_callback
-        # Use default num_parts=1
         return await client.download_file_async(file_group_id, file_datetime, options, num_parts, progress_callback)
 
     async def list_available_files_async(
@@ -492,7 +471,6 @@ class DataQuery:
         client = self._ensure_client()
         return await client.health_check_async()
 
-    # Instrument Collection Endpoints
     async def list_instruments_async(
         self,
         group_id: str,
@@ -627,7 +605,6 @@ class DataQuery:
             page,
         )
 
-    # Group Collection Additional Endpoints
     async def get_group_filters_async(self, group_id: str, page: Optional[str] = None) -> "FiltersResponse":
         """
         Request the unique list of filter dimensions that are available for a given dataset.
@@ -716,7 +693,6 @@ class DataQuery:
             page,
         )
 
-    # Grid Collection Endpoints
     async def get_grid_data_async(
         self,
         expr: Optional[str] = None,
@@ -740,8 +716,6 @@ class DataQuery:
         await self.connect_async()
         client = self._ensure_client()
         return await client.get_grid_data_async(expr, grid_id, date)
-
-    # Workflow Methods
 
     async def run_groups_async(self, max_concurrent: int = 5) -> OperationReport:
         """Run complete operation for listing all groups."""
@@ -790,7 +764,6 @@ class DataQuery:
                     error="No files found",
                 )
 
-            # Collect file types robustly (handles str or List[str])
             collected_types: List[str] = []
             for f in files:
                 ft = getattr(f, "file_type", None)
@@ -915,10 +888,10 @@ class DataQuery:
         start_date: str,
         end_date: str,
         destination_dir: Path = Path("./downloads"),
-        max_concurrent: int = 5,  # Conservative 5 TPS default
+        max_concurrent: int = 5,
         num_parts: int = 1,
         progress_callback: Optional[Callable] = None,
-        delay_between_downloads: float = 0.2,  # 5 TPS (1/5 = 0.2s)
+        delay_between_downloads: float = 0.2,
         max_retries: int = 3,
         file_group_id: Optional[Union[str, List[str]]] = None,
     ) -> OperationReport:
@@ -947,7 +920,6 @@ class DataQuery:
         Returns:
             Dictionary with download results and statistics
         """
-        # Record start time for total operation timing
         operation_start_time = time.time()
 
         logger.info(
@@ -965,10 +937,6 @@ class DataQuery:
         self._ensure_client()
 
         try:
-            # Step 1: Get available files for the date range.
-            # If the caller supplied a list of file-group-ids, query each one in
-            # parallel and merge the results; otherwise issue a single request
-            # (either unfiltered or filtered to the one id).
             logger.info("Step 1: Getting Available Files for Date Range")
             if isinstance(file_group_id, (list, tuple, set)):
                 id_list = [fg for fg in file_group_id if fg]
@@ -990,7 +958,6 @@ class DataQuery:
                             for fg in id_list
                         )
                     )
-                    # Merge while de-duplicating on (file-group-id, file-datetime).
                     seen: set = set()
                     available_files = []
                     for batch in per_id_results:
@@ -1011,7 +978,6 @@ class DataQuery:
                     end_date=end_date,
                 )
 
-            # Filter to only files explicitly marked available
             try:
                 filtered_files = [
                     f
@@ -1022,7 +988,6 @@ class DataQuery:
                 filtered_files = []
 
             if not filtered_files:
-                # Calculate timing even when no files are found
                 operation_end_time = time.time()
                 total_time_seconds = operation_end_time - operation_start_time
                 total_time_minutes = total_time_seconds / 60.0
@@ -1049,23 +1014,18 @@ class DataQuery:
 
             logger.info("Found available files", count=len(filtered_files))
 
-            # Step 2: Download all available files using parallel range requests
             logger.info("Step 2: Downloading Available Files with parallel range requests")
 
-            # Create destination directory
             dest_dir = destination_dir / group_id
             dest_dir.mkdir(parents=True, exist_ok=True)
 
-            # Rate-limit-aware concurrency with delay-based protection
             total_concurrent_requests = max_concurrent * num_parts
 
-            # Use full concurrency but with intelligent delay calculation
             rate_limit_capacity = self._calculate_rate_limit_capacity()
             intelligent_delay = self._calculate_intelligent_delay(
                 total_concurrent_requests, rate_limit_capacity, delay_between_downloads
             )
 
-            # Use full concurrency - delays will manage rate limiting
             global_semaphore = asyncio.Semaphore(total_concurrent_requests)
 
             logger.info(
@@ -1100,15 +1060,12 @@ class DataQuery:
                 progress_callback=progress_callback,
             )
 
-            # Calculate total operation time
             operation_end_time = time.time()
             total_time_seconds = operation_end_time - operation_start_time
             total_time_minutes = total_time_seconds / 60.0
 
-            # Generate rate limit recommendations
             recommendations = self._get_rate_limit_recommendations(total_concurrent_requests)
 
-            # Calculate per-file timing statistics
             file_times: List[Dict[str, Any]] = []
             total_download_time = 0.0
             for result in successful:
@@ -1123,7 +1080,6 @@ class DataQuery:
                     )
                     total_download_time += result.download_time
 
-            # Calculate timing statistics
             avg_file_time = total_download_time / len(successful) if successful else 0.0
             file_time_values: List[float] = [float(ft["download_time_seconds"]) for ft in file_times]
             min_file_time = min(file_time_values) if file_time_values else 0.0
@@ -1347,7 +1303,6 @@ class DataQuery:
                     }
                 )
 
-            # Delay between chunks to let rate limits recover
             if i < len(monthly_ranges) - 1:
                 await asyncio.sleep(chunk_delay)
 
@@ -1415,9 +1370,7 @@ class DataQuery:
             requests_per_minute = rate_config.requests_per_minute
             burst_capacity = rate_config.burst_capacity
 
-            # Calculate safe interval between requests to stay within rate limits
-            # This ensures we don't exceed the per-minute limit
-            safe_interval = 60.0 / requests_per_minute  # seconds between requests
+            safe_interval = 60.0 / requests_per_minute
 
             return {
                 "requests_per_minute": requests_per_minute,
@@ -1459,25 +1412,15 @@ class DataQuery:
         """
         try:
             requests_per_minute = rate_limit_capacity["requests_per_minute"]
-            burst_capacity = rate_limit_capacity["burst_capacity"]  # Absolute number of immediate requests
+            burst_capacity = rate_limit_capacity["burst_capacity"]
             safe_interval = rate_limit_capacity["safe_interval"]
 
-            # Calculate minimum delay needed to stay within rate limits
-            # We need to ensure that even with full concurrency, we don't exceed RPM
             min_delay_for_rpm = safe_interval
 
-            # Calculate delay needed for burst capacity
-            # Burst capacity is the absolute number of requests that can be made immediately
-            # If we have more concurrent requests than burst capacity, we need to spread them over time
             if total_concurrent_requests > burst_capacity:
-                # Calculate delay to spread the excess requests over time
-                # The excess requests need to be spread out to avoid exceeding burst capacity
                 excess_requests = total_concurrent_requests - burst_capacity
 
-                # Calculate how much time we need to spread the excess requests
-                # We want to spread them over a reasonable time window based on the excess
-                # More excess requests = longer time window to spread them out
-                time_window = max(5.0, excess_requests * 0.1)  # At least 5s, or 0.1s per excess request
+                time_window = max(5.0, excess_requests * 0.1)
                 min_delay_for_burst = time_window / excess_requests if excess_requests > 0 else 0.0
 
                 logger.debug(
@@ -1491,10 +1434,8 @@ class DataQuery:
             else:
                 min_delay_for_burst = 0.0
 
-            # Use the maximum of user's base delay and calculated minimum delays
             intelligent_delay = max(base_delay, min_delay_for_rpm, min_delay_for_burst)
 
-            # Log the calculation details for debugging
             logger.debug(
                 "Intelligent delay calculation details",
                 base_delay=base_delay,
@@ -1502,8 +1443,6 @@ class DataQuery:
                 min_delay_for_burst=min_delay_for_burst,
                 final_intelligent_delay=intelligent_delay,
             )
-
-            # No safety margin - use full configured TPS capacity
 
             logger.info(
                 "Calculated intelligent delay for rate limit protection",
@@ -1540,10 +1479,8 @@ class DataQuery:
             return requested_concurrency
 
         try:
-            # Get rate limiter configuration
             rate_config = self._client.rate_limiter.config
 
-            # If rate limiting is disabled, use requested concurrency
             if not rate_config.enable_rate_limiting:
                 logger.info(
                     "Rate limiting disabled, using requested concurrency",
@@ -1551,26 +1488,18 @@ class DataQuery:
                 )
                 return requested_concurrency
 
-            # Calculate safe limits based on rate limiter configuration
             requests_per_minute = rate_config.requests_per_minute
             burst_capacity = rate_config.burst_capacity
             queue_size = rate_config.max_queue_size if rate_config.enable_queuing else 0
 
-            # Conservative calculation:
-            # - Don't exceed burst capacity for immediate requests
-            # - Consider queue capacity for sustained load
-            # - Leave some headroom for other operations
-
             immediate_capacity = burst_capacity
             sustained_capacity = min(
-                requests_per_minute // 4,  # Quarter of per-minute limit for sustained load
-                (queue_size // 2 if queue_size > 0 else immediate_capacity),  # Half queue size
+                requests_per_minute // 4,
+                (queue_size // 2 if queue_size > 0 else immediate_capacity),
             )
 
-            # Use the more conservative of immediate or sustained capacity
             safe_limit = max(1, min(immediate_capacity, sustained_capacity, requested_concurrency))
 
-            # Add warning if we're significantly reducing concurrency
             if safe_limit < requested_concurrency * 0.5:
                 logger.warning(
                     "Significantly reducing concurrency due to rate limits",
@@ -1598,7 +1527,6 @@ class DataQuery:
                 error=str(e),
                 requested=requested_concurrency,
             )
-            # Conservative fallback: use a small fraction of requested
             return max(1, min(10, requested_concurrency // 4))
 
     def _get_rate_limit_recommendations(self, requested_concurrency: int) -> Dict[str, Any]:
@@ -1628,7 +1556,6 @@ class DataQuery:
                 "recommendations": [],
             }
 
-            # Recommend burst capacity increase if needed
             if requested_concurrency > rate_config.burst_capacity:
                 recommendations["recommendations"].append(
                     {
@@ -1639,8 +1566,7 @@ class DataQuery:
                     }
                 )
 
-            # Recommend requests per minute increase for sustained load
-            sustained_rpm_needed = requested_concurrency * 15  # Assume 15 requests per minute per concurrent slot
+            sustained_rpm_needed = requested_concurrency * 15
             if sustained_rpm_needed > rate_config.requests_per_minute:
                 recommendations["recommendations"].append(
                     {
@@ -1651,7 +1577,6 @@ class DataQuery:
                     }
                 )
 
-            # Recommend enabling queuing if not enabled
             if not rate_config.enable_queuing and requested_concurrency > rate_config.burst_capacity:
                 recommendations["recommendations"].append(
                     {
@@ -1668,8 +1593,6 @@ class DataQuery:
             logger.warning("Failed to generate rate limit recommendations", error=str(e))
             return {}
 
-    # Utility Methods
-
     def get_pool_stats(self) -> Dict[str, Any]:
         """Get connection pool statistics including active, idle, and total connections."""
         if self._client:
@@ -1680,7 +1603,6 @@ class DataQuery:
         """Get comprehensive client statistics."""
         if self._client:
             stats = self._client.get_stats()
-            # Add context path information
             stats["api_config"] = {
                 "base_url": self.client_config.base_url,
                 "context_path": self.client_config.context_path,
@@ -1744,14 +1666,11 @@ class DataQuery:
         safe_concurrency = self._calculate_safe_concurrency_limit(requested_concurrency)
         recommendations = self._get_rate_limit_recommendations(requested_concurrency)
 
-        # Calculate optimal max_concurrent and num_parts that fit within safe limits
         if safe_concurrency < requested_concurrency:
-            # Try to maintain the ratio but reduce total
             ratio = safe_concurrency / requested_concurrency
             optimal_max_concurrent = max(1, int(max_concurrent * ratio))
             optimal_num_parts = max(1, int(num_parts * ratio))
 
-            # Ensure we don't exceed safe limits
             while optimal_max_concurrent * optimal_num_parts > safe_concurrency:
                 if optimal_num_parts > optimal_max_concurrent:
                     optimal_num_parts -= 1
@@ -1777,8 +1696,6 @@ class DataQuery:
             "recommendations": recommendations,
         }
 
-    # Synchronous Wrapper Methods
-
     def connect(self):
         """Connect to the API."""
         return self._run_sync(self.connect_async())
@@ -1789,7 +1706,6 @@ class DataQuery:
             if self._client:
                 self._run_sync(self.close_async())
         finally:
-            # Stop the background loop so the daemon thread doesn't linger.
             # The runner lazily restarts if the client is reused afterwards.
             self._sync_runner.close()
 
@@ -1884,7 +1800,6 @@ class DataQuery:
         """Synchronous wrapper for health_check."""
         return self._run_sync(self.health_check_async())
 
-    # Instrument Collection Endpoints - Synchronous wrappers
     def list_instruments(
         self,
         group_id: str,
@@ -2013,7 +1928,6 @@ class DataQuery:
             )
         )
 
-    # Group Collection Additional Endpoints - Synchronous wrappers
     def get_group_filters(self, group_id: str, page: Optional[str] = None) -> "FiltersResponse":
         """
         Request the unique list of filter dimensions that are available for a given dataset.
@@ -2098,7 +2012,6 @@ class DataQuery:
             )
         )
 
-    # Grid Collection Endpoints - Synchronous wrappers
     def get_grid_data(
         self,
         expr: Optional[str] = None,
@@ -2208,11 +2121,6 @@ class DataQuery:
         finally:
             self._sync_runner.close()
 
-    # Sync wrapper methods with _sync suffix for testing compatibility
-
-    # SSE notification-driven download (the only watch path) — see
-    # auto_download_async below.
-
     async def auto_download_async(
         self,
         group_id: str,
@@ -2295,7 +2203,6 @@ class DataQuery:
             )
         )
 
-    # DataFrame conversion proxies
     def to_dataframe(
         self,
         response_data,
@@ -2307,7 +2214,6 @@ class DataQuery:
     ):
         """Proxy to client's to_dataframe utility."""
         if self._client is None:
-            # Use a temporary client for utilities if not connected yet
             self._client = DataQueryClient(self.client_config)
         return self._client.to_dataframe(
             response_data,

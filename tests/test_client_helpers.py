@@ -291,7 +291,10 @@ def test_dataframe_conversion_paths(monkeypatch):
 
     import sys
 
-    sys.modules["pandas"] = _PandasStub()
+    # Use monkeypatch.setitem so the real pandas module is restored after this
+    # test — a raw ``sys.modules["pandas"] = ...`` leaks the stub into every
+    # later test that imports pandas (e.g. test_dataframe_mixin).
+    monkeypatch.setitem(sys.modules, "pandas", _PandasStub())
 
     df = client.to_dataframe(data, date_columns=["created_date"], numeric_columns=["value"])
     assert set(df.columns) >= {"id", "value", "created_date"}

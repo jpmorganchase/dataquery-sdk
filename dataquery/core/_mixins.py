@@ -80,11 +80,6 @@ PAGINATION_DEFAULT_MAX_PAGES = 1000
 P = TypeVar("P", bound=Paginated)
 
 
-# ---------------------------------------------------------------------------
-# Typing shim — methods provided by the concrete client
-# ---------------------------------------------------------------------------
-
-
 class _RequestProto:
     """Static typing shim for HTTP helpers the query mixins call on ``self``.
 
@@ -105,11 +100,6 @@ class _RequestProto:
         self, response: aiohttp.ClientResponse
     ) -> None:
         raise NotImplementedError
-
-
-# ---------------------------------------------------------------------------
-# Shared pagination
-# ---------------------------------------------------------------------------
 
 
 class PaginationMixin(_RequestProto):
@@ -196,11 +186,6 @@ def _page_item_count(page: Paginated) -> int:
         if isinstance(value, list):
             return len(value)
     return 0
-
-
-# ---------------------------------------------------------------------------
-# Read-only query mixins
-# ---------------------------------------------------------------------------
 
 
 class InstrumentsMixin(PaginationMixin):
@@ -620,11 +605,6 @@ class GridMixin(_RequestProto):
             return GridDataResponse(**payload)
 
 
-# ---------------------------------------------------------------------------
-# Pure transformation mixin (no HTTP)
-# ---------------------------------------------------------------------------
-
-
 class DataFrameMixin:
     """Pandas conversion methods for API response objects.
 
@@ -634,10 +614,6 @@ class DataFrameMixin:
     """
 
     logger: "structlog.BoundLogger"
-
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
 
     def to_dataframe(
         self,
@@ -741,10 +717,6 @@ class DataFrameMixin:
             ],
         )
 
-    # ------------------------------------------------------------------
-    # Internals
-    # ------------------------------------------------------------------
-
     def _convert_to_dataframe(
         self,
         data: Any,
@@ -839,8 +811,6 @@ class DataFrameMixin:
 
             elif isinstance(value, (list, tuple)) and flatten_nested:
                 if value and isinstance(value[0], dict):
-                    # Capture structure from the first few entries — long arrays
-                    # create runaway column counts otherwise.
                     for i, list_item in enumerate(value[:5]):
                         if isinstance(list_item, dict):
                             for nested_key, nested_value in list_item.items():
@@ -928,7 +898,9 @@ class DataFrameMixin:
         )
 
         for column in df.columns:
-            if df[column].dtype != "object":
+            # pandas >= 3.0 stores text as the "str" dtype, not object — accept both.
+            col_dtype = df[column].dtype
+            if not (col_dtype == "object" or pd.api.types.is_string_dtype(col_dtype)):
                 continue
 
             column_lower = column.lower()
@@ -937,7 +909,7 @@ class DataFrameMixin:
                 try:
                     sample_values = df[column].dropna().head(3)
                     if len(sample_values) > 0:
-                        pd.to_datetime(sample_values.iloc[0])  # probe
+                        pd.to_datetime(sample_values.iloc[0])
                         df[column] = pd.to_datetime(df[column], errors="coerce")
                         continue
                 except (ValueError, TypeError, AttributeError):
