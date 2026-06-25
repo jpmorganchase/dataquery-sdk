@@ -40,8 +40,28 @@ async def test_more_async_endpoints(monkeypatch):
         assert await dq.get_grid_data_async(expr="x") == {"grid": {}}
 
 
+@pytest.mark.asyncio
+async def test_text_search_async_endpoint(monkeypatch):
+    dq = _dq(monkeypatch)
+    with patch("dataquery.dataquery.DataQueryClient") as Fake:
+        inst = Fake.return_value
+        inst.connect = AsyncMock()
+        inst.close = AsyncMock()
+        await dq.connect_async()
+        inst.text_search_async = AsyncMock(return_value={"results": []})
+        assert await dq.text_search_async("10y yield") == {"results": []}
+        inst.text_search_async.assert_awaited_once_with("10y yield")
+
+
 def test_sync_proxies_more(monkeypatch):
     dq = _dq(monkeypatch)
     with patch("dataquery.dataquery.DataQuery._run_sync", return_value={"ok": True}) as ra:
         assert dq.get_grid_data(expr="x") == {"ok": True}
+        assert ra.called
+
+
+def test_text_search_sync_proxy(monkeypatch):
+    dq = _dq(monkeypatch)
+    with patch("dataquery.dataquery.DataQuery._run_sync", return_value={"ok": True}) as ra:
+        assert dq.text_search("q") == {"ok": True}
         assert ra.called

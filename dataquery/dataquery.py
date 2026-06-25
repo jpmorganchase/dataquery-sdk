@@ -717,6 +717,19 @@ class DataQuery:
         client = self._ensure_client()
         return await client.get_grid_data_async(expr, grid_id, date)
 
+    async def text_search_async(self, query: str) -> Dict[str, Any]:
+        """Search the DataQuery catalog using a natural-language query.
+
+        Args:
+            query: Free-text query (e.g. "10-year US treasury yield").
+
+        Returns:
+            Parsed JSON response from POST ``/search``.
+        """
+        await self.connect_async()
+        client = self._ensure_client()
+        return await client.text_search_async(query)
+
     async def run_groups_async(self, max_concurrent: int = 5) -> OperationReport:
         """Run complete operation for listing all groups."""
         logger.info("Starting groups operation")
@@ -2033,6 +2046,10 @@ class DataQuery:
             ValueError: If both expr and grid_id are provided or neither is provided
         """
         return self._run_sync(self.get_grid_data_async(expr, grid_id, date))
+
+    def text_search(self, query: str) -> Dict[str, Any]:
+        """Synchronous wrapper for :meth:`text_search_async`."""
+        return self._run_sync(self.text_search_async(query))
 
     def run_groups(self, max_concurrent: int = 5) -> OperationReport:
         """Synchronous wrapper for run_groups_async."""

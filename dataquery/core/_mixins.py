@@ -71,6 +71,7 @@ __all__ = [
     "MetadataMixin",
     "PAGINATION_DEFAULT_MAX_PAGES",
     "PaginationMixin",
+    "SearchMixin",
     "TimeSeriesMixin",
 ]
 
@@ -603,6 +604,25 @@ class GridMixin(_RequestProto):
             await self._handle_response(response)
             payload = await response.json()
             return GridDataResponse(**payload)
+
+
+class SearchMixin(_RequestProto):
+    """Natural-language catalog search via POST /search."""
+
+    async def text_search_async(self, query: str) -> Dict[str, Any]:
+        """Search the DataQuery catalog using a natural-language query.
+
+        POSTs ``{"query": query}`` to ``/search`` and returns the parsed JSON body.
+        """
+        if not query or not query.strip():
+            raise ValueError("query must be a non-empty string")
+
+        url = self._build_api_url(C.API_SEARCH)
+        async with await self._enter_request_cm(
+            "POST", url, json={"query": query},
+        ) as response:
+            await self._handle_response(response)
+            return await response.json()
 
 
 class DataFrameMixin:

@@ -23,6 +23,14 @@ __url__ = "https://github.com/jpmorganchase/dataquery-sdk"
 from .config import EnvConfig
 from .core import DataQueryClient
 from .dataquery import DataQuery
+from .function_registry import (
+    format_function_syntax,
+    get_function_categories,
+    get_function_param_counts,
+    get_function_registry,
+    list_functions_by_category,
+    lookup_function,
+)
 from .sse.client import SSEClient, SSEEvent
 from .sse.subscriber import NotificationDownloadManager
 from .types.exceptions import (
@@ -89,6 +97,12 @@ __all__ = [
     "NotificationDownloadManager",
     "SSEClient",
     "SSEEvent",
+    "format_function_syntax",
+    "get_function_categories",
+    "get_function_param_counts",
+    "get_function_registry",
+    "list_functions_by_category",
+    "lookup_function",
 ]
 
 __version_info__ = tuple(int(x) for x in __version__.split("."))

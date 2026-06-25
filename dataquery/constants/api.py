@@ -17,6 +17,7 @@ API_EXPRESSIONS_TIME_SERIES = "expressions/time-series"
 API_GROUP_TIME_SERIES = "group/time-series"
 API_GRID_DATA = "grid-data"
 API_HEARTBEAT = "services/heartbeat"
+API_SEARCH = "search"
 
 
 API_GROUP_FILES = "group/files"

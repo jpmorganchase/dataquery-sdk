@@ -5,8 +5,80 @@ import asyncio
 import json
 import sys
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from dataquery import DataQuery
+from dataquery.types.exceptions import DataQueryError
+
+# ── Output helpers (legacy-CLI "summary + --- JSON ---" format) ────────────
+
+
+def _to_dict(payload: Any) -> Dict[str, Any]:
+    """Normalize a Pydantic model or dict into a plain dict for JSON dump."""
+    if payload is None:
+        return {}
+    if hasattr(payload, "model_dump"):
+        return payload.model_dump(by_alias=True)
+    if isinstance(payload, dict):
+        return payload
+    return {"value": payload}
+
+
+def _split_csv_list(value: Optional[str]) -> Optional[List[str]]:
+    """Split a comma-separated string into a clean list, or return None."""
+    if value is None:
+        return None
+    items = [v.strip() for v in value.split(",") if v.strip()]
+    return items or None
+
+
+def _count_timeseries(data: Dict[str, Any]) -> tuple[int, int, str, str]:
+    """Return (instrument_count, data_point_count, first_date, last_date)."""
+    instruments = data.get("instruments", []) or []
+    total = 0
+    first = ""
+    last = ""
+    for inst in instruments:
+        for attr in inst.get("attributes", []) or []:
+            ts = attr.get("time-series") or attr.get("time_series") or []
+            total += len(ts)
+            for point in ts:
+                if isinstance(point, list) and point:
+                    d = str(point[0])
+                    if not first or d < first:
+                        first = d
+                    if not last or d > last:
+                        last = d
+    return len(instruments), total, first, last
+
+
+def _print_endpoint_result(
+    summary: str,
+    payload: Any,
+    *,
+    csv_info: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Print summary line(s) followed by ``--- JSON ---`` + raw JSON payload."""
+    data = _to_dict(payload)
+    envelope: Dict[str, Any] = {"status": "success", "data": data}
+    if csv_info:
+        envelope["csv_exported"] = csv_info.get("path", "stdout")
+        envelope["csv_rows"] = csv_info.get("rows", 0)
+
+    print(summary)
+    if csv_info:
+        print(f"CSV exported: {envelope['csv_exported']} ({envelope['csv_rows']} rows)")
+    print("\n--- JSON ---")
+    print(json.dumps(envelope, indent=2, default=str))
+
+
+def _print_error(message: str, *, suggestion: Optional[str] = None) -> None:
+    envelope: Dict[str, Any] = {"status": "error", "error_description": message}
+    if suggestion:
+        envelope["suggestion"] = suggestion
+    print(message, file=sys.stderr)
+    print("\n--- JSON ---")
+    print(json.dumps(envelope, indent=2))
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -109,6 +181,115 @@ def create_parser() -> argparse.ArgumentParser:
     p_auth = subparsers.add_parser("auth", help="Auth utilities")
     auth_sub = p_auth.add_subparsers(dest="auth_command")
     _ = auth_sub.add_parser("test", help="Test authentication by listing groups")
+
+    p_search = subparsers.add_parser(
+        "text-search",
+        help="Search the DataQuery catalog using a natural-language query (POST /search)",
+    )
+    p_search.add_argument("--query", required=True, help="Free-text search query")
+    p_search.add_argument("--json", action="store_true", help="Output raw JSON")
+
+    p_fn = subparsers.add_parser(
+        "function-help",
+        help="Look up DQ function syntax from the local reference (no API call)",
+    )
+    p_fn.add_argument("--name", help="Function name (e.g. VOL, MOVAVG, BETA)")
+    p_fn.add_argument(
+        "--category",
+        help=(
+            "Filter by category (e.g. STATISTICAL, MATHEMATICAL, AGGREGATE, "
+            "CALENDAR, MISCELLANEOUS, 'F&O SPECIFIC')"
+        ),
+    )
+    p_fn.add_argument("--list", action="store_true", help="List all available functions")
+    p_fn.add_argument("--json", action="store_true", help="Output raw JSON")
+
+    # ── DataQuery API v2 endpoints (skill-facing surface) ────────────────
+
+    def _ts_args(p: argparse.ArgumentParser) -> None:
+        p.add_argument("--data", choices=["REFERENCE_DATA", "NO_REFERENCE_DATA", "ALL"], default=None)
+        p.add_argument("--start-date", help="YYYYMMDD or TODAY-Nx (x=D/W/M/Y). Default: TODAY-1D")
+        p.add_argument("--end-date", help="YYYYMMDD or TODAY-Nx. Default: TODAY")
+        p.add_argument("--calendar", default=None, help="Default: CAL_USBANK")
+        p.add_argument(
+            "--frequency",
+            choices=["FREQ_INTRA", "FREQ_DAY", "FREQ_WEEK", "FREQ_MONTH", "FREQ_QUARTER", "FREQ_ANN"],
+            default=None,
+        )
+        p.add_argument("--conversion", default=None, help="Default: CONV_LASTBUS_ABS")
+        p.add_argument(
+            "--nan-treatment",
+            choices=["NA_NOTHING", "NA_LAST", "NA_NEXT", "NA_INTERP"],
+            default=None,
+        )
+        p.add_argument("--page", default=None)
+        p.add_argument(
+            "--output-csv",
+            metavar="FILE",
+            default=None,
+            help="Export time-series results to CSV (use '-' for stdout)",
+        )
+
+    p_gsearch = subparsers.add_parser("groups-search", help="Search datasets by keyword")
+    p_gsearch.add_argument("--keywords", required=True)
+    p_gsearch.add_argument("--page", default=None)
+
+    p_insts = subparsers.add_parser("instruments", help="List instruments for a dataset")
+    p_insts.add_argument("--group-id", required=True)
+    p_insts.add_argument("--instrument-id", default=None, help="Optional instrument ID filter")
+    p_insts.add_argument("--page", default=None)
+
+    p_isrch = subparsers.add_parser("instruments-search", help="Keyword-search instruments within a dataset")
+    p_isrch.add_argument("--group-id", required=True)
+    p_isrch.add_argument("--keywords", required=True)
+    p_isrch.add_argument("--page", default=None)
+
+    p_filt = subparsers.add_parser("filters", help="Get filter dimensions for a dataset")
+    p_filt.add_argument("--group-id", required=True)
+    p_filt.add_argument("--page", default=None)
+
+    p_attr = subparsers.add_parser("attributes", help="Get analytic attributes for a dataset")
+    p_attr.add_argument("--group-id", required=True)
+    p_attr.add_argument("--instrument-id", default=None)
+    p_attr.add_argument("--page", default=None)
+
+    p_gts = subparsers.add_parser("group-timeseries", help="Bulk time-series for a group")
+    p_gts.add_argument("--group-id", required=True)
+    p_gts.add_argument("--attributes", required=True, help="Comma-separated attribute IDs (e.g. TR,YTDR)")
+    p_gts.add_argument("--filter", default=None, help='Filter string (e.g. "currency(USD)")')
+    _ts_args(p_gts)
+
+    p_its = subparsers.add_parser("instrument-timeseries", help="Time-series by instrument IDs")
+    p_its.add_argument(
+        "--instruments",
+        required=True,
+        action="append",
+        help="Instrument ID (repeat for multiple, max 20)",
+    )
+    p_its.add_argument("--attributes", required=True, help="Comma-separated attribute IDs")
+    _ts_args(p_its)
+
+    p_ets = subparsers.add_parser("expression-timeseries", help="Time-series by DQ expressions")
+    p_ets.add_argument(
+        "--expressions",
+        required=True,
+        action="append",
+        help="DQ expression (repeat for multiple)",
+    )
+    _ts_args(p_ets)
+
+    p_grid = subparsers.add_parser("grid-data", help="Grid data by expression or grid ID")
+    p_grid.add_argument("--expr", default=None)
+    p_grid.add_argument("--grid-id", default=None)
+    p_grid.add_argument("--date", default=None)
+    p_grid.add_argument(
+        "--output-csv",
+        metavar="FILE",
+        default=None,
+        help="Export grid results to CSV (use '-' for stdout)",
+    )
+
+    subparsers.add_parser("heartbeat", help="Check if DataQuery is running")
 
     return parser
 
@@ -303,6 +484,236 @@ async def cmd_auth_test(args: argparse.Namespace) -> int:
     return 0
 
 
+async def cmd_text_search(args: argparse.Namespace) -> int:
+    async with DataQuery(args.env_file) as dq:
+        result = await dq.text_search_async(args.query)
+
+    if args.json:
+        print(json.dumps(result, indent=2))
+        return 0
+
+    results: list = []
+    if isinstance(result, dict):
+        for key in ("results", "groups", "items"):
+            value = result.get(key)
+            if isinstance(value, list):
+                results = value
+                break
+    summary = f"Search returned {len(results)} result(s) for: {args.query}"
+    _print_endpoint_result(summary, result)
+    return 0
+
+
+# ── DataQuery API v2 command handlers ────────────────────────────────────
+
+
+async def cmd_groups_search(args: argparse.Namespace) -> int:
+    async with DataQuery(args.env_file) as dq:
+        items = await dq.search_groups_async(args.keywords, page=args.page)
+    summary = f"Found {len(items)} dataset(s) matching '{args.keywords}'"
+    _print_endpoint_result(summary, {"groups": [_to_dict(g) for g in items]})
+    return 0
+
+
+async def cmd_instruments(args: argparse.Namespace) -> int:
+    async with DataQuery(args.env_file) as dq:
+        resp = await dq.list_instruments_async(args.group_id, args.instrument_id, args.page)
+    data = _to_dict(resp)
+    n = len(data.get("instruments", []) or [])
+    summary = f"Found {n} instrument(s) in {args.group_id}"
+    _print_endpoint_result(summary, resp)
+    return 0
+
+
+async def cmd_instruments_search(args: argparse.Namespace) -> int:
+    async with DataQuery(args.env_file) as dq:
+        resp = await dq.search_instruments_async(args.group_id, args.keywords, args.page)
+    data = _to_dict(resp)
+    n = len(data.get("instruments", []) or [])
+    summary = f"Found {n} instrument(s) in {args.group_id} matching '{args.keywords}'"
+    _print_endpoint_result(summary, resp)
+    return 0
+
+
+async def cmd_filters(args: argparse.Namespace) -> int:
+    async with DataQuery(args.env_file) as dq:
+        resp = await dq.get_group_filters_async(args.group_id, args.page)
+    data = _to_dict(resp)
+    n = len(data.get("filters", []) or [])
+    summary = f"Found {n} filter dimension(s) for {args.group_id}"
+    _print_endpoint_result(summary, resp)
+    return 0
+
+
+async def cmd_attributes(args: argparse.Namespace) -> int:
+    async with DataQuery(args.env_file) as dq:
+        resp = await dq.get_group_attributes_async(args.group_id, args.instrument_id, args.page)
+    data = _to_dict(resp)
+    n = len(data.get("instruments", []) or [])
+    summary = f"Attributes for {n} instrument(s) in {args.group_id}"
+    _print_endpoint_result(summary, resp)
+    return 0
+
+
+def _ts_kwargs(args: argparse.Namespace) -> Dict[str, Any]:
+    """Map shared time-series CLI args to SDK keyword arguments, skipping None."""
+    kwargs: Dict[str, Any] = {}
+    if args.data is not None:
+        kwargs["data"] = args.data
+    if args.start_date is not None:
+        kwargs["start_date"] = args.start_date
+    if args.end_date is not None:
+        kwargs["end_date"] = args.end_date
+    if args.calendar is not None:
+        kwargs["calendar"] = args.calendar
+    if args.frequency is not None:
+        kwargs["frequency"] = args.frequency
+    if args.conversion is not None:
+        kwargs["conversion"] = args.conversion
+    if args.nan_treatment is not None:
+        kwargs["nan_treatment"] = args.nan_treatment
+    if args.page is not None:
+        kwargs["page"] = args.page
+    return kwargs
+
+
+def _timeseries_summary(label: str, resp: Any) -> str:
+    data = _to_dict(resp)
+    n_inst, n_pts, first, last = _count_timeseries(data)
+    date_range = f"{first} to {last}" if first and last else "no dates"
+    return f"{label}: {n_inst} instrument(s), {n_pts} data point(s) ({date_range})"
+
+
+def _maybe_export_csv(resp: Any, output_csv: Optional[str], is_grid: bool = False) -> Optional[Dict[str, Any]]:
+    if not output_csv:
+        return None
+    from .export import export_grid_csv, export_timeseries_csv
+
+    exporter = export_grid_csv if is_grid else export_timeseries_csv
+    info = exporter(resp, output_csv)
+    if info.get("content"):
+        print(info["content"])
+    return info
+
+
+async def cmd_group_timeseries(args: argparse.Namespace) -> int:
+    attributes = _split_csv_list(args.attributes) or []
+    async with DataQuery(args.env_file) as dq:
+        resp = await dq.get_group_time_series_async(
+            args.group_id, attributes, filter=args.filter, **_ts_kwargs(args),
+        )
+    csv_info = _maybe_export_csv(resp, args.output_csv)
+    _print_endpoint_result(_timeseries_summary("Group time-series", resp), resp, csv_info=csv_info)
+    return 0
+
+
+async def cmd_instrument_timeseries(args: argparse.Namespace) -> int:
+    attributes = _split_csv_list(args.attributes) or []
+    async with DataQuery(args.env_file) as dq:
+        resp = await dq.get_instrument_time_series_async(
+            args.instruments, attributes, **_ts_kwargs(args),
+        )
+    csv_info = _maybe_export_csv(resp, args.output_csv)
+    _print_endpoint_result(_timeseries_summary("Instrument time-series", resp), resp, csv_info=csv_info)
+    return 0
+
+
+async def cmd_expression_timeseries(args: argparse.Namespace) -> int:
+    async with DataQuery(args.env_file) as dq:
+        resp = await dq.get_expressions_time_series_async(
+            args.expressions, **_ts_kwargs(args),
+        )
+    csv_info = _maybe_export_csv(resp, args.output_csv)
+    _print_endpoint_result(_timeseries_summary("Expression time-series", resp), resp, csv_info=csv_info)
+    return 0
+
+
+async def cmd_grid_data(args: argparse.Namespace) -> int:
+    if not args.expr and not args.grid_id:
+        _print_error(
+            "Provide --expr or --grid-id for grid data.",
+            suggestion="Example: --expr 'DBGRID(EQTY,2823 HK,ABS_REL,ATMF,CLOSE,VOL)'",
+        )
+        return 1
+    async with DataQuery(args.env_file) as dq:
+        resp = await dq.get_grid_data_async(expr=args.expr, grid_id=args.grid_id, date=args.date)
+    data = _to_dict(resp)
+    series = data.get("series", []) or []
+    total_records = sum(len(s.get("records", []) or []) for s in series)
+    summary = f"Grid: {len(series)} series, {total_records} record(s)"
+    csv_info = _maybe_export_csv(resp, args.output_csv, is_grid=True)
+    _print_endpoint_result(summary, resp, csv_info=csv_info)
+    return 0
+
+
+async def cmd_heartbeat(args: argparse.Namespace) -> int:
+    async with DataQuery(args.env_file) as dq:
+        ok = await dq.health_check_async()
+    summary = "DataQuery is UP" if ok else "DataQuery is DOWN"
+    _print_endpoint_result(summary, {"status": "ok" if ok else "down"})
+    return 0 if ok else 1
+
+
+def cmd_function_help(args: argparse.Namespace) -> int:
+    from .function_registry import (
+        format_function_syntax,
+        list_functions_by_category,
+        lookup_function,
+    )
+
+    if not args.name and not args.list and not args.category:
+        print("Provide --name NAME, --list, or --category CATEGORY")
+        return 1
+
+    if args.name:
+        spec = lookup_function(args.name)
+        if not spec:
+            error_payload: dict = {
+                "status": "error",
+                "error_description": f"Unknown function: {args.name.upper()}",
+                "suggestion": "Use --list to see all available functions.",
+            }
+            if args.json:
+                print(json.dumps(error_payload, indent=2))
+            else:
+                print(error_payload["error_description"])
+                print(error_payload["suggestion"])
+            return 1
+        payload: dict = {
+            "function": spec["name"],
+            "syntax": format_function_syntax(args.name),
+            "category": spec["category"],
+            "description": spec["description"],
+            "parameters": spec["params"],
+        }
+        if args.json:
+            print(json.dumps(payload, indent=2))
+        else:
+            print(f"{payload['syntax']} [{payload['category']}]")
+            if payload["description"]:
+                print(f"  {payload['description']}")
+            if payload["parameters"]:
+                print("  Parameters:")
+                for p in payload["parameters"]:
+                    optional = " (optional)" if p["type"] == "OPTIONAL" else ""
+                    varargs = ", ..." if p["kind"] == "PARAMETERLIST" else ""
+                    print(f"    - {p['name']}{varargs}{optional}")
+        return 0
+
+    funcs = list_functions_by_category(args.category)
+    items = [
+        {"name": f["name"], "syntax": format_function_syntax(f["name"]), "category": f["category"]}
+        for f in funcs
+    ]
+    if args.json:
+        print(json.dumps({"functions": items, "count": len(items)}, indent=2))
+    else:
+        print(f"Available functions: {len(items)}")
+        for it in items:
+            print(f"{it['syntax']}\t[{it['category']}]")
+    return 0
+
+
 def main_sync(ns: argparse.Namespace) -> int:
     if ns.command == "config":
         if ns.config_command == "show":
@@ -315,28 +726,48 @@ def main_sync(ns: argparse.Namespace) -> int:
     return 0
 
 
+_ASYNC_COMMANDS = {
+    "groups": cmd_groups,
+    "files": cmd_files,
+    "availability": cmd_availability,
+    "download": cmd_download,
+    "download-group": cmd_download_group,
+    "text-search": cmd_text_search,
+    "groups-search": cmd_groups_search,
+    "instruments": cmd_instruments,
+    "instruments-search": cmd_instruments_search,
+    "filters": cmd_filters,
+    "attributes": cmd_attributes,
+    "group-timeseries": cmd_group_timeseries,
+    "instrument-timeseries": cmd_instrument_timeseries,
+    "expression-timeseries": cmd_expression_timeseries,
+    "grid-data": cmd_grid_data,
+    "heartbeat": cmd_heartbeat,
+}
+
+
 def main() -> int:
     parser = create_parser()
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
         return 1
-    if args.command == "groups":
-        return asyncio.run(cmd_groups(args))
-    if args.command == "files":
-        return asyncio.run(cmd_files(args))
-    if args.command == "availability":
-        return asyncio.run(cmd_availability(args))
-    if args.command == "download":
-        return asyncio.run(cmd_download(args))
-    if args.command == "download-group":
-        return asyncio.run(cmd_download_group(args))
     if args.command == "config":
         return main_sync(args)
     if args.command == "auth" and args.auth_command == "test":
         return asyncio.run(cmd_auth_test(args))
-    parser.print_help()
-    return 1
+    if args.command == "function-help":
+        return cmd_function_help(args)
+
+    handler = _ASYNC_COMMANDS.get(args.command)
+    if handler is None:
+        parser.print_help()
+        return 1
+    try:
+        return asyncio.run(handler(args))
+    except DataQueryError as exc:
+        _print_error(str(exc), suggestion=getattr(exc, "suggestion", None))
+        return 1
 
 
 if __name__ == "__main__":

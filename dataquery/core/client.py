@@ -69,6 +69,7 @@ from ._mixins import (
     GridMixin,
     InstrumentsMixin,
     MetadataMixin,
+    SearchMixin,
     TimeSeriesMixin,
 )
 from ._sync import SyncRunner
@@ -91,6 +92,7 @@ class DataQueryClient(
     MetadataMixin,
     TimeSeriesMixin,
     GridMixin,
+    SearchMixin,
 ):
     """
     High-level client for the DATAQUERY Data API.

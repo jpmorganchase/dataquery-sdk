@@ -501,6 +501,38 @@ async def test_grid_api(monkeypatch):
     assert isinstance(gr.series, list)
 
 
+@pytest.mark.asyncio
+async def test_text_search_api(monkeypatch):
+    client = make_client(monkeypatch)
+
+    with pytest.raises(ValueError):
+        await client.text_search_async("")
+    with pytest.raises(ValueError):
+        await client.text_search_async("   ")
+
+    captured: dict = {}
+
+    def cm_search(method, url, **kwargs):
+        captured["method"] = method
+        captured["url"] = url
+        captured["json"] = kwargs.get("json")
+        data = {"results": [{"id": "G1", "name": "Group One"}]}
+        r = DummyResponse()
+
+        async def json():
+            return data
+
+        r.json = json
+        return FakeCtx(r)
+
+    monkeypatch.setattr(client, "_make_authenticated_request", cm_search)
+    result = await client.text_search_async("10y treasury")
+    assert result == {"results": [{"id": "G1", "name": "Group One"}]}
+    assert captured["method"] == "POST"
+    assert captured["json"] == {"query": "10y treasury"}
+    assert captured["url"].endswith("/search")
+
+
 # ---------------------------------------------------------------------------
 # Validation symmetry — non-file query endpoints
 # ---------------------------------------------------------------------------
