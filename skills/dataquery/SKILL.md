@@ -9,7 +9,7 @@ description: >-
   Also use for File API operations: listing published files, checking file availability,
   downloading individual files, bulk date-range downloads, and live SSE file-watch.
   Trigger phrases: "dataquery", "DQ", "pull time-series", "fetch yields", "get bond data",
-  "search datasets", "list instruments", "export to csv", "grid data", "grid-data",
+  "search datasets", "list instruments", "export to csv", "grid data",
   "heartbeat", "moving average", "volatility", "correlation", "beta", "z-score",
   "regression", "spread", "RSI", "function help", "list functions", "treasury rate",
   "swap rate", "download file", "download catalog", "bulk download",
@@ -224,7 +224,7 @@ dataquery expression-timeseries --expressions "FUNCTION(params, DB(...))" --star
 
 Full function reference: see `references/functions.md` for all available functions, parameters, and formulas.
 
-Quick syntax lookup: use `function-help --name VOL` to look up a function's exact syntax, or `function-help --list` to see all 159 available functions. This command runs locally and requires no API call.
+Quick syntax lookup: use `function-help --name VOL` to look up a function's exact syntax, or `function-help --list` to see all 158 available functions. This command runs locally and requires no API call.
 
 ### When to Use Functions
 
@@ -243,7 +243,7 @@ Match user requests to the appropriate DQ function and infer it from context rat
 | Spread | arithmetic | `DB(...series1...) - DB(...series2...)` |
 | Treasury rate | `TSYRATE(Fwd, Tenor)` | `TSYRATE(0Y, 10Y)` |
 
-For the full 159-function mapping (EWMA, percentile, skew, kurtosis, DV01, YTM, MODDUR, ROLLING, RESIDUAL, etc.), see `references/functions.md` or run `function-help --name <FUNC>`.
+For the full 158-function mapping (EWMA, percentile, skew, kurtosis, DV01, YTM, MODDUR, ROLLING, RESIDUAL, etc.), see `references/functions.md` or run `function-help --name <FUNC>`.
 
 ### Advanced Expression Features
 
