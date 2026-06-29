@@ -53,19 +53,21 @@ def export_timeseries_csv(response: Any, output_path: str) -> Dict[str, Any]:
             ts = attr.get("time-series") or attr.get("time_series") or []
             for point in ts:
                 if isinstance(point, list) and len(point) >= 2:
-                    rows.append({
-                        "date": point[0],
-                        "value": point[1],
-                        "instrument_id": inst_id,
-                        "instrument_name": inst_name,
-                        "attribute_id": attr_id,
-                        "attribute_name": attr_name,
-                        "expression": expression,
-                        "label": label,
-                        "last_published": last_pub,
-                        "group_id": group_id,
-                        "group_name": group_name,
-                    })
+                    rows.append(
+                        {
+                            "date": point[0],
+                            "value": point[1],
+                            "instrument_id": inst_id,
+                            "instrument_name": inst_name,
+                            "attribute_id": attr_id,
+                            "attribute_name": attr_name,
+                            "expression": expression,
+                            "label": label,
+                            "last_published": last_pub,
+                            "group_id": group_id,
+                            "group_name": group_name,
+                        }
+                    )
 
     if not rows:
         raise DataQueryError(
@@ -73,9 +75,17 @@ def export_timeseries_csv(response: Any, output_path: str) -> Dict[str, Any]:
         )
 
     fieldnames = [
-        "date", "value", "instrument_id", "instrument_name",
-        "attribute_id", "attribute_name", "expression", "label",
-        "last_published", "group_id", "group_name",
+        "date",
+        "value",
+        "instrument_id",
+        "instrument_name",
+        "attribute_id",
+        "attribute_name",
+        "expression",
+        "label",
+        "last_published",
+        "group_id",
+        "group_name",
     ]
 
     if output_path == "-":

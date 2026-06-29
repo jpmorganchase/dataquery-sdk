@@ -197,8 +197,7 @@ def create_parser() -> argparse.ArgumentParser:
     p_fn.add_argument(
         "--category",
         help=(
-            "Filter by category (e.g. STATISTICAL, MATHEMATICAL, AGGREGATE, "
-            "CALENDAR, MISCELLANEOUS, 'F&O SPECIFIC')"
+            "Filter by category (e.g. STATISTICAL, MATHEMATICAL, AGGREGATE, CALENDAR, MISCELLANEOUS, 'F&O SPECIFIC')"
         ),
     )
     p_fn.add_argument("--list", action="store_true", help="List all available functions")
@@ -600,7 +599,10 @@ async def cmd_group_timeseries(args: argparse.Namespace) -> int:
     attributes = _split_csv_list(args.attributes) or []
     async with DataQuery(args.env_file) as dq:
         resp = await dq.get_group_time_series_async(
-            args.group_id, attributes, filter=args.filter, **_ts_kwargs(args),
+            args.group_id,
+            attributes,
+            filter=args.filter,
+            **_ts_kwargs(args),
         )
     csv_info = _maybe_export_csv(resp, args.output_csv)
     _print_endpoint_result(_timeseries_summary("Group time-series", resp), resp, csv_info=csv_info)
@@ -611,7 +613,9 @@ async def cmd_instrument_timeseries(args: argparse.Namespace) -> int:
     attributes = _split_csv_list(args.attributes) or []
     async with DataQuery(args.env_file) as dq:
         resp = await dq.get_instrument_time_series_async(
-            args.instruments, attributes, **_ts_kwargs(args),
+            args.instruments,
+            attributes,
+            **_ts_kwargs(args),
         )
     csv_info = _maybe_export_csv(resp, args.output_csv)
     _print_endpoint_result(_timeseries_summary("Instrument time-series", resp), resp, csv_info=csv_info)
@@ -621,7 +625,8 @@ async def cmd_instrument_timeseries(args: argparse.Namespace) -> int:
 async def cmd_expression_timeseries(args: argparse.Namespace) -> int:
     async with DataQuery(args.env_file) as dq:
         resp = await dq.get_expressions_time_series_async(
-            args.expressions, **_ts_kwargs(args),
+            args.expressions,
+            **_ts_kwargs(args),
         )
     csv_info = _maybe_export_csv(resp, args.output_csv)
     _print_endpoint_result(_timeseries_summary("Expression time-series", resp), resp, csv_info=csv_info)
@@ -701,10 +706,7 @@ def cmd_function_help(args: argparse.Namespace) -> int:
         return 0
 
     funcs = list_functions_by_category(args.category)
-    items = [
-        {"name": f["name"], "syntax": format_function_syntax(f["name"]), "category": f["category"]}
-        for f in funcs
-    ]
+    items = [{"name": f["name"], "syntax": format_function_syntax(f["name"]), "category": f["category"]} for f in funcs]
     if args.json:
         print(json.dumps({"functions": items, "count": len(items)}, indent=2))
     else:

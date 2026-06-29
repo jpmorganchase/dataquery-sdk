@@ -28,7 +28,6 @@ sys.path.append(str(Path(__file__).parent.parent.parent))
 
 from dataquery import DataQuery  # noqa: E402
 
-
 # All groups to download
 GROUPS = [
     "SPECIALIST_SALES",
@@ -65,10 +64,7 @@ async def download_one_group(dq, group_id, args, dest_root):
         total = counts.get("total_files", 0)
         success = counts.get("successful_downloads", 0)
         failed = counts.get("failed_downloads", 0)
-        print(
-            f"  [Done] total={total} success={success} failed={failed} "
-            f"time={elapsed:.1f}s"
-        )
+        print(f"  [Done] total={total} success={success} failed={failed} time={elapsed:.1f}s")
         return {
             "group_id": group_id,
             "status": "ok",
@@ -115,11 +111,7 @@ async def main():
     dest_root = Path(args.destination)
     dest_root.mkdir(parents=True, exist_ok=True)
 
-    groups = (
-        [g.strip() for g in args.groups.split(",") if g.strip()]
-        if args.groups
-        else GROUPS
-    )
+    groups = [g.strip() for g in args.groups.split(",") if g.strip()] if args.groups else GROUPS
 
     print("=" * 60)
     print("Multi-Group Download")

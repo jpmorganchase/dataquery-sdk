@@ -51,8 +51,7 @@ async def main():
         groups = await dq.list_groups_async(limit=None)
         delivery_groups = [g for g in groups if is_delivery_enabled(g)]
         print(
-            f"{len(delivery_groups)}/{len(groups)} groups have file delivery enabled "
-            f"— pulling {START_DATE}..{END_DATE}"
+            f"{len(delivery_groups)}/{len(groups)} groups have file delivery enabled — pulling {START_DATE}..{END_DATE}"
         )
 
         for group in delivery_groups:
@@ -67,15 +66,21 @@ async def main():
                 )
             except Exception as exc:  # group-level availability lookup failed
                 missing[gid].append(
-                    {"file_group_id": "*", "file_datetime": f"{START_DATE}..{END_DATE}",
-                     "reason": f"availability lookup failed: {exc}"}
+                    {
+                        "file_group_id": "*",
+                        "file_datetime": f"{START_DATE}..{END_DATE}",
+                        "reason": f"availability lookup failed: {exc}",
+                    }
                 )
                 continue
 
             if not entries:
                 missing[gid].append(
-                    {"file_group_id": "*", "file_datetime": f"{START_DATE}..{END_DATE}",
-                     "reason": "no files returned for date range"}
+                    {
+                        "file_group_id": "*",
+                        "file_datetime": f"{START_DATE}..{END_DATE}",
+                        "reason": "no files returned for date range",
+                    }
                 )
                 continue
 
@@ -85,9 +90,7 @@ async def main():
 
                 if not entry.get("is-available"):
                     # 5. published-but-not-available == missing data
-                    missing[gid].append(
-                        {"file_group_id": fgid, "file_datetime": fdate, "reason": "is-available=false"}
-                    )
+                    missing[gid].append({"file_group_id": fgid, "file_datetime": fdate, "reason": "is-available=false"})
                     continue
 
                 # 4. download every available file

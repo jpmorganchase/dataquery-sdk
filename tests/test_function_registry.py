@@ -5,8 +5,8 @@ import json
 
 import pytest
 
-from dataquery import function_registry as fr
 from dataquery import cli
+from dataquery import function_registry as fr
 
 
 def test_registry_loads_and_is_cached():
@@ -69,9 +69,7 @@ def test_list_functions_by_category():
 def test_list_functions_by_category_is_case_insensitive():
     cats = fr.get_function_categories()
     cat = cats[0]
-    assert fr.list_functions_by_category(cat.lower()) == fr.list_functions_by_category(
-        cat.upper()
-    )
+    assert fr.list_functions_by_category(cat.lower()) == fr.list_functions_by_category(cat.upper())
 
 
 def test_get_function_param_counts():

@@ -619,7 +619,9 @@ class SearchMixin(_RequestProto):
 
         url = self._build_api_url(C.API_SEARCH)
         async with await self._enter_request_cm(
-            "POST", url, json={"query": query},
+            "POST",
+            url,
+            json={"query": query},
         ) as response:
             await self._handle_response(response)
             return await response.json()

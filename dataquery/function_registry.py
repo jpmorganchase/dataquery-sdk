@@ -31,11 +31,13 @@ def _parse_function_params(func: Dict[str, Any]) -> List[Dict[str, str]]:
             string_display = value.get("name", "")
             continue
         if key in ("PARAMETER", "PARAMETERLIST"):
-            real_params.append({
-                "name": value.get("name", "?"),
-                "type": value.get("type", "REQUIRED"),
-                "kind": key,
-            })
+            real_params.append(
+                {
+                    "name": value.get("name", "?"),
+                    "type": value.get("type", "REQUIRED"),
+                    "kind": key,
+                }
+            )
 
     if real_params:
         return real_params
@@ -48,11 +50,13 @@ def _parse_function_params(func: Dict[str, Any]) -> List[Dict[str, str]]:
                 if name:
                     is_opt = name.startswith("[") and name.endswith("]")
                     clean_name = name.strip("[] ")
-                    real_params.append({
-                        "name": clean_name,
-                        "type": "OPTIONAL" if is_opt else "REQUIRED",
-                        "kind": "PARAMETER",
-                    })
+                    real_params.append(
+                        {
+                            "name": clean_name,
+                            "type": "OPTIONAL" if is_opt else "REQUIRED",
+                            "kind": "PARAMETER",
+                        }
+                    )
 
     return real_params
 
