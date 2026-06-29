@@ -18,7 +18,6 @@ from .types.models import ClientConfig
 
 if TYPE_CHECKING:
     from .dataquery import DataQuery
-    from .types.models import OperationReport
 
 logger = structlog.get_logger(__name__)
 
