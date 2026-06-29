@@ -158,6 +158,56 @@ def test_time_series_to_dataframe_reads_data_attr(df):
     assert pd.api.types.is_numeric_dtype(out["value"])
 
 
+def _nested_ts_response():
+    return {
+        "instruments": [
+            {
+                "instrument-id": "I1",
+                "instrument-name": "Bond A",
+                "instrument-cusip": "C1",
+                "group": {"group-id": "G1", "group-name": "Govt"},
+                "attributes": [
+                    {
+                        "attribute-id": "TR",
+                        "attribute-name": "Total Return",
+                        "expression": "DB(...)",
+                        "label": "lbl",
+                        "last-published": "20240117",
+                        "time-series": [["20240115", 10.5], ["20240116", 11.0], ["20240117", None]],
+                    }
+                ],
+            }
+        ]
+    }
+
+
+def test_time_series_nested_response_is_tidy(df):
+    out = df.time_series_to_dataframe(_nested_ts_response())
+    # One row per observation, in the canonical column order.
+    assert list(out.columns) == DataFrameMixin._TS_CORE_COLUMNS
+    assert len(out) == 3
+    assert pd.api.types.is_datetime64_any_dtype(out["date"])
+    assert pd.api.types.is_numeric_dtype(out["value"])
+    # Identifiers are broadcast across every observation of the attribute.
+    assert set(out["instrument_id"]) == {"I1"}
+    assert set(out["attribute_id"]) == {"TR"}
+    # Missing observation becomes NaN rather than being dropped.
+    assert out["value"].isna().sum() == 1
+
+
+def test_time_series_include_metadata_adds_columns(df):
+    out = df.time_series_to_dataframe(_nested_ts_response(), include_metadata=True)
+    for col in ("instrument_cusip", "group_id", "group_name", "last_published"):
+        assert col in out.columns
+    assert set(out["group_id"]) == {"G1"}
+
+
+def test_time_series_empty_returns_typed_columns(df):
+    out = df.time_series_to_dataframe({"instruments": []})
+    assert len(out) == 0
+    assert list(out.columns) == DataFrameMixin._TS_CORE_COLUMNS
+
+
 def test_files_to_dataframe_unwraps_container(df):
     container = SimpleNamespace(file_group_ids=[{"file_group_id": "f1", "file_size": "100"}])
     out = df.files_to_dataframe(container)
