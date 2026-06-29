@@ -38,5 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reliability: 429 responses are now retried instead of surfaced immediately; the server `Retry-After` is honored when timing retry backoff; adaptive rate-limit backoff now engages instead of staying at zero
 - Auth: OAuth token-fetch network/timeout failures now raise `NetworkError` (previously `AuthenticationError`); token acquisition is single-flight so concurrent callers don't stampede the token endpoint
 - SSE: jittered reconnect backoff to avoid synchronized reconnect storms; stop reconnecting on fatal 403/404 and bound retries on 401; idle `sock_read` timeout distinguished from the heartbeat watchdog; honor the server `retry:` hint; strip a leading UTF-8 BOM; larger read buffer guards against `LineTooLong`; `stop()` is await-safe under concurrent callers
-- Fixed: pandas 3.0 DataFrame auto-conversion (new `str` dtype); robust `Retry-After` parsing (integer seconds and HTTP-date)
-- Packaging: switched to setuptools package discovery (`packages.find`); cleaned up `MANIFEST.in`
+## [1.2.0] - 2026-06-29
+- DataQuery functions: new `function-help` command for local lookup of all 158 DQ function syntaxes, parameters, and categories (no API call); backed by a static, frozen `dataquery/data/function.json` dataset
+
+

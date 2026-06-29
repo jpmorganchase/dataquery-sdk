@@ -169,8 +169,8 @@ DATAQUERY_DEFAULT_DIR=files
 # =============================================================================
 
 # User agent string for HTTP requests
-# Default: DATAQUERY-SDK/1.1.0
-DATAQUERY_USER_AGENT=DATAQUERY-SDK/1.1.0
+# Default: DATAQUERY-SDK/1.2.0
+DATAQUERY_USER_AGENT=DATAQUERY-SDK/1.2.0
 
 # Enable HTTP/2 support (true/false)
 # Default: true

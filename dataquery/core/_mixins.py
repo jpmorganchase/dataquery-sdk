@@ -71,6 +71,7 @@ __all__ = [
     "MetadataMixin",
     "PAGINATION_DEFAULT_MAX_PAGES",
     "PaginationMixin",
+    "SearchMixin",
     "TimeSeriesMixin",
 ]
 
@@ -605,6 +606,27 @@ class GridMixin(_RequestProto):
             return GridDataResponse(**payload)
 
 
+class SearchMixin(_RequestProto):
+    """Natural-language catalog search via POST /search."""
+
+    async def text_search_async(self, query: str) -> Dict[str, Any]:
+        """Search the DataQuery catalog using a natural-language query.
+
+        POSTs ``{"query": query}`` to ``/search`` and returns the parsed JSON body.
+        """
+        if not query or not query.strip():
+            raise ValueError("query must be a non-empty string")
+
+        url = self._build_api_url(C.API_SEARCH)
+        async with await self._enter_request_cm(
+            "POST",
+            url,
+            json={"query": query},
+        ) as response:
+            await self._handle_response(response)
+            return await response.json()
+
+
 class DataFrameMixin:
     """Pandas conversion methods for API response objects.
 
@@ -614,6 +636,26 @@ class DataFrameMixin:
     """
 
     logger: "structlog.BoundLogger"
+
+    # Canonical column order for the tidy (long-format) time-series frame.
+    _TS_CORE_COLUMNS = [
+        "date",
+        "value",
+        "instrument_id",
+        "instrument_name",
+        "attribute_id",
+        "attribute_name",
+        "expression",
+        "label",
+    ]
+    _TS_METADATA_COLUMNS = [
+        "instrument_cusip",
+        "instrument_isin",
+        "group_id",
+        "group_name",
+        "last_published",
+        "message",
+    ]
 
     def to_dataframe(
         self,
@@ -691,31 +733,151 @@ class DataFrameMixin:
         )
 
     def time_series_to_dataframe(self, time_series: Any, include_metadata: bool = False) -> "pd.DataFrame":
-        """Convert a time-series response to a DataFrame."""
-        if hasattr(time_series, "data"):
-            data = time_series.data
-        elif hasattr(time_series, "series"):
-            data = time_series.series
-        elif hasattr(time_series, "time_series"):
-            data = time_series.time_series
-        else:
-            data = time_series
+        """Convert a time-series response into a tidy (long-format) DataFrame.
 
-        return self.to_dataframe(
-            data,
-            flatten_nested=True,
-            include_metadata=include_metadata,
-            date_columns=["date", "timestamp", "observation_date"],
-            numeric_columns=[
-                "value",
-                "price",
-                "volume",
-                "open",
-                "high",
-                "low",
-                "close",
-            ],
+        Produces one row per (instrument, attribute, observation) with a parsed
+        datetime ``date`` and numeric ``value``, plus the instrument and
+        attribute identifiers needed to disambiguate rows. With
+        ``include_metadata=True`` additional columns (CUSIP/ISIN, group,
+        last-published, message) are added.
+
+        Handles the nested ``TimeSeriesResponse`` shape
+        (``instruments -> attributes -> time_series``) whether passed as a
+        Pydantic model, an aliased dict, or a snake_case dict. A flat list of
+        ``{"date": ..., "value": ...}`` records is also accepted. An empty
+        response yields an empty DataFrame with the expected columns.
+        """
+        if not HAS_PANDAS:
+            raise ImportError("pandas is required for DataFrame conversion. Install it with: pip install pandas")
+
+        import pandas as pd
+
+        payload = self._unwrap_time_series(time_series)
+        instruments = self._as_instrument_list(payload)
+
+        if instruments is not None:
+            rows = self._build_time_series_rows(instruments, include_metadata)
+            if rows:
+                df = pd.DataFrame(rows)
+            else:
+                columns = list(self._TS_CORE_COLUMNS)
+                if include_metadata:
+                    columns += self._TS_METADATA_COLUMNS
+                df = pd.DataFrame(columns=columns)
+        else:
+            records = list(payload) if isinstance(payload, (list, tuple)) else [payload]
+            df = pd.DataFrame(records)
+
+        if "date" in df.columns:
+            df["date"] = pd.to_datetime(df["date"], errors="coerce")
+        if "value" in df.columns:
+            df["value"] = pd.to_numeric(df["value"], errors="coerce")
+        return df
+
+    @staticmethod
+    def _ts_get(obj: Any, *names: str) -> Any:
+        """Read the first present field from a model or dict, trying each name."""
+        for name in names:
+            if isinstance(obj, dict):
+                if name in obj:
+                    return obj[name]
+            elif hasattr(obj, name):
+                return getattr(obj, name)
+        return None
+
+    def _unwrap_time_series(self, time_series: Any) -> Any:
+        """Pull the data payload out of a response wrapper.
+
+        Prefers the nested ``instruments`` container; otherwise unwraps the
+        legacy ``data``/``series``/``time_series`` carriers.
+        """
+        instruments = self._ts_get(time_series, "instruments")
+        if instruments is not None:
+            return instruments
+        for attr in ("data", "series", "time_series"):
+            value = self._ts_get(time_series, attr)
+            if value is not None:
+                return value
+        return time_series
+
+    def _as_instrument_list(self, payload: Any) -> Optional[List[Any]]:
+        """Return the payload as a list of instruments, or ``None`` if it is flat.
+
+        Instruments are recognised by carrying an ``attributes`` member; a flat
+        list of observation records (no ``attributes``) returns ``None`` so the
+        caller builds the frame directly.
+        """
+        if payload is None:
+            return []
+        items = list(payload) if isinstance(payload, (list, tuple)) else [payload]
+        if not items:
+            return []
+        first = items[0]
+        has_attributes = (isinstance(first, dict) and "attributes" in first) or (
+            not isinstance(first, dict) and hasattr(first, "attributes")
         )
+        return items if has_attributes else None
+
+    def _build_time_series_rows(self, instruments: List[Any], include_metadata: bool) -> List[Dict[str, Any]]:
+        """Flatten instruments -> attributes -> observations into tidy rows."""
+        rows: List[Dict[str, Any]] = []
+        for inst in instruments:
+            inst_id = self._ts_get(inst, "instrument_id", "instrument-id")
+            inst_name = self._ts_get(inst, "instrument_name", "instrument-name")
+            group = self._ts_get(inst, "group") or {}
+            group_id = self._ts_get(group, "group_id", "group-id")
+            group_name = self._ts_get(group, "group_name", "group-name")
+            cusip = self._ts_get(inst, "instrument_cusip", "instrument-cusip")
+            isin = self._ts_get(inst, "instrument_isin", "instrument-isin")
+
+            for attr in self._ts_get(inst, "attributes") or []:
+                attr_id = self._ts_get(attr, "attribute_id", "attribute-id")
+                attr_name = self._ts_get(attr, "attribute_name", "attribute-name")
+                expression = self._ts_get(attr, "expression")
+                label = self._ts_get(attr, "label")
+                last_published = self._ts_get(attr, "last_published", "last-published")
+                message = self._ts_get(attr, "message")
+
+                for point in self._ts_get(attr, "time_series", "time-series") or []:
+                    date, value = self._split_point(point)
+                    row: Dict[str, Any] = {
+                        "date": date,
+                        "value": value,
+                        "instrument_id": inst_id,
+                        "instrument_name": inst_name,
+                        "attribute_id": attr_id,
+                        "attribute_name": attr_name,
+                        "expression": expression,
+                        "label": label,
+                    }
+                    if include_metadata:
+                        row.update(
+                            {
+                                "instrument_cusip": cusip,
+                                "instrument_isin": isin,
+                                "group_id": group_id,
+                                "group_name": group_name,
+                                "last_published": last_published,
+                                "message": message,
+                            }
+                        )
+                    rows.append(row)
+        return rows
+
+    @staticmethod
+    def _split_point(point: Any) -> tuple:
+        """Split a single observation into ``(date, value)``.
+
+        Accepts ``[date, value]`` pairs, ``{"date": ..., "value": ...}`` dicts,
+        and ``TimeSeriesDataPoint`` models.
+        """
+        if isinstance(point, (list, tuple)):
+            date = point[0] if len(point) > 0 else None
+            value = point[1] if len(point) > 1 else None
+            return date, value
+        if isinstance(point, dict):
+            return point.get("date"), point.get("value")
+        return getattr(point, "date", None), getattr(point, "value", None)
 
     def _convert_to_dataframe(
         self,

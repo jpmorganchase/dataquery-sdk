@@ -9,9 +9,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # noqa: E402
 
 from dataquery import DataQuery  # noqa: E402
 
-GROUP_ID = "JPMAQS_GENERIC_RETURNS"
-START_DATE = "20250101"
-END_DATE = "20250131"
+GROUP_ID = "BULL_BEAR_BUZZ"
+START_DATE = "20260603"
+END_DATE = "20260603"
 
 
 async def main():

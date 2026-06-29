@@ -1,0 +1,1024 @@
+{
+  "functions": [
+    {
+      "name": "AGAVG",
+      "category": "Aggregate",
+      "description": "Returns an average of time series. `(Expr1 + Expr2 + ... + ExprN)/N`. If Expr[I] value for a day J is NA, doesn't include value[I,J] in the average."
+    },
+    {
+      "name": "AGMAX",
+      "category": "Aggregate",
+      "description": "Returns a maximum of time series Expr1 to ExprN. If ExprI value for a day J is NA, doesn't include value[I,J] while calculating max."
+    },
+    {
+      "name": "AGMIN",
+      "category": "Aggregate",
+      "description": "Returns a minimum of time series Expr1 to ExprN. If ExprI value for a day J is NA, doesn't include value[I,J] while calculating min."
+    },
+    {
+      "name": "AGMUL",
+      "category": "Aggregate",
+      "description": "Returns a product of time series Expr1 to ExprN. `Expr1 * Expr2 * ... * ExprN`. If Expr[I] value for a day J is NA, doesn't include value[I,J] in the product."
+    },
+    {
+      "name": "AGNUMVALID",
+      "category": "Aggregate",
+      "description": "Calculates a number of valid values of time series 1-N on the given day."
+    },
+    {
+      "name": "AGSUM",
+      "category": "Aggregate",
+      "description": "Returns a sum of time series Expr1 to ExprN. `Expr1 + Expr2 + ... + ExprN`. If Expr[I] value for a day J is NA, doesn't include value[I,J] in the sum."
+    },
+    {
+      "name": "BDINM",
+      "category": "Calendar",
+      "description": "Returns the number of business days in the month of the current query date."
+    },
+    {
+      "name": "BDINY",
+      "category": "Calendar",
+      "description": "Returns the number of business days in the year of the current query date."
+    },
+    {
+      "name": "BDTODT",
+      "category": "Calendar",
+      "description": "Returns the number of business days from the current query date to the given date, given in mm/dd/yy format."
+    },
+    {
+      "name": "DATE",
+      "category": "Calendar",
+      "description": "Returns the current date in the evaluation as a number in yyyymmdd format."
+    },
+    {
+      "name": "DAY",
+      "category": "Calendar",
+      "description": "Returns the weekday of the current query date (Mon=1, Sun=7)."
+    },
+    {
+      "name": "DOFM",
+      "category": "Calendar",
+      "description": "Returns the day number of the month in the current query date."
+    },
+    {
+      "name": "DOFY",
+      "category": "Calendar",
+      "description": "Returns the day number of the year in the current query date."
+    },
+    {
+      "name": "DINM",
+      "category": "Calendar",
+      "description": "Returns the number of days in the current query date's month."
+    },
+    {
+      "name": "DINY",
+      "category": "Calendar",
+      "description": "Returns the number of days in the current query date's year."
+    },
+    {
+      "name": "ENDDT",
+      "category": "Calendar",
+      "description": "Returns the end date of the query (as a number in yyyymmdd format) for each day in the query period."
+    },
+    {
+      "name": "DTODT",
+      "category": "Calendar",
+      "description": "Returns the number of days from the current query date to the given date, given in mm/dd/yy form."
+    },
+    {
+      "name": "JDAYS",
+      "category": "Calendar",
+      "description": "Without an argument, returns the Julian day offset (days from January 1, 1970) of the current day in the query. You may also specify a date argument, such as a particular date or the results of another function that returns a series of dates."
+    },
+    {
+      "name": "MONTH",
+      "category": "Calendar",
+      "description": "Returns the month of the current query date."
+    },
+    {
+      "name": "NBDAYS",
+      "category": "Calendar",
+      "description": "Returns the number of business days between the two given dates."
+    },
+    {
+      "name": "NDAYS",
+      "category": "Calendar",
+      "description": "Returns the number of days between the two given dates. Syntax: `NDAYS(dt1, dt2)` where both dates are required (mm/dd/yy format).",
+      "functionExpression": {
+        "functionExpressionPairs": [
+          {
+            "key": "STRING",
+            "value": {
+              "name": "NDAYS(dt1, dt2)"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "STARTDT",
+      "category": "Calendar",
+      "description": "Returns the start date of the query (as a number in yyyymmdd format) for each day in the query period."
+    },
+    {
+      "name": "YEAR",
+      "category": "Calendar",
+      "description": "Returns the year of the current day in the query date range."
+    },
+    {
+      "name": "ACCRUED",
+      "category": "Futures & Options",
+      "description": "Returns accrued interest for the given ETP bond symbol. Accrued is calculated as of regular settlement for the given trade (query) date. *Only works with government bonds from the ETP Database.*"
+    },
+    {
+      "name": "BASIS",
+      "category": "Futures & Options",
+      "description": "Cash-futures basis. `Basis = BondPrice - FuturesPrice * ConvFactor`"
+    },
+    {
+      "name": "BDTODELIV",
+      "category": "Futures & Options",
+      "description": "Returns the number of business days from the current query date to delivery of the given futures contract. Optional DelivCode (FIRST or LAST) specifies delivery at beginning or end of the delivery period. Default: end."
+    },
+    {
+      "name": "BDTOEXPN",
+      "category": "Futures & Options",
+      "description": "Returns the number of business days to (listed) option expiration."
+    },
+    {
+      "name": "BDTOLTD",
+      "category": "Futures & Options",
+      "description": "Returns the number of business days to the last trading day of the given futures contract."
+    },
+    {
+      "name": "BIMPVOL",
+      "category": "Futures & Options",
+      "description": "Business day implied volatility for the given options position. Example: `BIMPVOL(ed95z, (ATM CALL, ATM PUT))`",
+      "functionExpression": {
+        "functionExpressionPairs": [
+          {
+            "key": "STRING",
+            "value": {
+              "name": "BIMPVOL(ed95z, (ATM CALL, ATM PUT))"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "BNOC",
+      "category": "Futures & Options",
+      "description": "Basis Net of Carry. Optional DelivCode (FIRST or LAST). Default: end. `BNOC = basis + coupon income - financing cost`"
+    },
+    {
+      "name": "BNOCRP",
+      "category": "Futures & Options",
+      "description": "Basis Net of Carry using a term repo rate to delivery. Optional DelivCode (FIRST or LAST). Default: end."
+    },
+    {
+      "name": "CALIRP",
+      "category": "Futures & Options",
+      "description": "Repo rate implied by the spread between two futures positions, or between a cash and a futures position. Optional DelivCode (FIRST or LAST). Default: end."
+    },
+    {
+      "name": "CASHROLL",
+      "category": "Futures & Options",
+      "description": "Returns the rolling cash yield or price for hot-run bonds."
+    },
+    {
+      "name": "DELIV",
+      "category": "Futures & Options",
+      "description": "Returns the delivery date (yyyymmdd) of the given futures contract. DelivCode may be FIRST or LAST."
+    },
+    {
+      "name": "DTODELIV",
+      "category": "Futures & Options",
+      "description": "Returns the number of days from the current query date to delivery of the given futures contract. Specify FIRST or LAST for DelivCode."
+    },
+    {
+      "name": "DTOEXPN",
+      "category": "Futures & Options",
+      "description": "Returns the number of days from the current query date to the expiration of the given options contract."
+    },
+    {
+      "name": "DTOLTD",
+      "category": "Futures & Options",
+      "description": "Returns the number of days from the current query date to the last trading day of the given futures contract."
+    },
+    {
+      "name": "DTOMAT",
+      "category": "Futures & Options",
+      "description": "Returns the number of days from the current query date to the maturity of the given ETP bond."
+    },
+    {
+      "name": "DV01",
+      "category": "Futures & Options",
+      "description": "Returns the price value of a basis point for the given ETP bond. (Same as PVBP.)"
+    },
+    {
+      "name": "EXPN",
+      "category": "Futures & Options",
+      "description": "Returns the expiration date (yyyymmdd) of the given futures options contract."
+    },
+    {
+      "name": "FACTOR",
+      "category": "Futures & Options",
+      "description": "Returns the conversion factor for the given deliverable bond and futures contract. *Bond must be an ETP bond symbol.*"
+    },
+    {
+      "name": "FWD",
+      "category": "Futures & Options",
+      "description": "Returns the forward rate implied by the given ETP yield series. YSeries form: `[ticker]Ynn` (e.g. US, FG + term in years like 02, 05, 10, 30)."
+    },
+    {
+      "name": "FWDPRICE",
+      "category": "Futures & Options",
+      "description": "Returns the forward price of a bond. BondSymbol is an ETP bond symbol. FwdDateIndicator can be a date (mm/dd/yy), 3B/3D/3M/3Y, or FIRST/LAST. Carry rate indicator: REPO, GC, or LIBOR."
+    },
+    {
+      "name": "FWSP",
+      "category": "Futures & Options",
+      "description": "Returns the forward weighted spread (duration weighted difference) between the forward strip yield and the forward yield implied by the given short and long maturity bond."
+    },
+    {
+      "name": "IMPREPO",
+      "category": "Futures & Options",
+      "description": "Returns the repo rate implied by the basis between the given ETP bond and futures series. Optional DelivCode (FIRST or LAST). Default: end."
+    },
+    {
+      "name": "IMPVOL",
+      "category": "Futures & Options",
+      "description": "Returns the implied volatility for the given options position. Example: `IMPVOL(ed95z, (ATM CALL, ATM PUT))`",
+      "functionExpression": {
+        "functionExpressionPairs": [
+          {
+            "key": "STRING",
+            "value": {
+              "name": "IMPVOL(ed95z, (ATM CALL, ATM PUT))"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "IMPVOLF",
+      "category": "Futures & Options",
+      "description": "Returns implied volatility on an option position for a fixed period (months). Example: `IMPVOLF(2, SERIAL, ft, option 5, (ATM CALL, ATM PUT))`. SERIAL keyword and SwitchCode are optional.",
+      "functionExpression": {
+        "functionExpressionPairs": [
+          {
+            "key": "STRING",
+            "value": {
+              "name": "IMPVOLF(2, SERIAL, ft, option 5, (ATM CALL, ATM PUT))"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "LTD",
+      "category": "Futures & Options",
+      "description": "Returns the last trading date (yyyymmdd) of the given futures contract."
+    },
+    {
+      "name": "MATDT",
+      "category": "Futures & Options",
+      "description": "Returns the maturity date (yyyymmdd) of a bond or T-bill. *Only works on ETP bond or T-bill symbols.*"
+    },
+    {
+      "name": "MODDUR",
+      "category": "Futures & Options",
+      "description": "Returns the modified duration for the given bond. *Only works for ETP database bond symbols.*"
+    },
+    {
+      "name": "PREMIUM",
+      "category": "Futures & Options",
+      "description": "Returns the net premium for the given options position. Example: `PREMIUM(ed95z, (ATM CALL))`",
+      "functionExpression": {
+        "functionExpressionPairs": [
+          {
+            "key": "STRING",
+            "value": {
+              "name": "PREMIUM(ed95z, (ATM CALL))"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "PRICE",
+      "category": "Futures & Options",
+      "description": "Returns the price of the given ETP yield series."
+    },
+    {
+      "name": "PVBP",
+      "category": "Futures & Options",
+      "description": "Returns the price value of a basis point for the given ETP bond. (Same as DV01.)"
+    },
+    {
+      "name": "RATE",
+      "category": "Futures & Options",
+      "description": "Returns rate values and properties given a curve, forward start, and tenor. Curve is defined as `<ccy><sector>`. Available curves include: \"usdagency\", \"usdswap\", \"usdtreas\". Syntax: `RATE(<curve>, ForwardStart, Tenor)`. Example: `RATE(usdtreas, 0Y, 10Y)`",
+      "functionExpression": {
+        "functionExpressionPairs": [
+          {
+            "key": "STRING",
+            "value": {
+              "name": "RATE(<curve>, ForwardStart, Tenor)"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "ROLLING",
+      "category": "Futures & Options",
+      "description": "Returns the price (or data attribute) of the given futures ticker. RollCode: front, back, back2, etc. Optional SwitchCode for roll behavior. Examples: `ROLLING(front, ed)`, `ROLLING(back2, us, option,.iv)`",
+      "functionExpression": {
+        "functionExpressionPairs": [
+          {
+            "key": "STRING",
+            "value": {
+              "name": "ROLLING(front, ed)"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "STOCHASTIC",
+      "category": "Futures & Options",
+      "description": "Contact ETP Research for details."
+    },
+    {
+      "name": "STRIKE",
+      "category": "Futures & Options",
+      "description": "Returns the strike for the given options position. Example: `STRIKE(rolling front ed, (ATM CALL))`",
+      "functionExpression": {
+        "functionExpressionPairs": [
+          {
+            "key": "STRING",
+            "value": {
+              "name": "STRIKE(rolling front ed, (ATM CALL))"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "TSYRATE",
+      "category": "Futures & Options",
+      "description": "Returns swap rates and properties for a given forward start and tenor. Syntax: `TSYRATE(ForwardStart, Tenor)`. Example: `TSYRATE(0Y, 10Y)`",
+      "functionExpression": {
+        "functionExpressionPairs": [
+          {
+            "key": "STRING",
+            "value": {
+              "name": "TSYRATE(ForwardStart, Tenor)"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "WSP",
+      "category": "Futures & Options",
+      "description": "Returns the weighted spread (duration weighted difference) between the money market strip and bond yields."
+    },
+    {
+      "name": "YIELD",
+      "category": "Futures & Options",
+      "description": "Returns the yield to worst for the given ETP bond series. For T-Bills, specify MMKT or BEY as 2nd argument. Use GADJ flag for Gross Adjusted Yield on Italian government bonds."
+    },
+    {
+      "name": "YTC",
+      "category": "Futures & Options",
+      "description": "Yield to 1st call for the given ETP bond series."
+    },
+    {
+      "name": "YTM",
+      "category": "Futures & Options",
+      "description": "Yield to maturity for the given ETP bond series."
+    },
+    {
+      "name": "ABS",
+      "category": "Mathematical",
+      "description": "Returns the absolute value of a given expression."
+    },
+    {
+      "name": "CEIL",
+      "category": "Mathematical",
+      "description": "Returns the least integral value >= expression."
+    },
+    {
+      "name": "EXP",
+      "category": "Mathematical",
+      "description": "Returns e (2.71828) raised to a given expression's value."
+    },
+    {
+      "name": "EXP10",
+      "category": "Mathematical",
+      "description": "Returns 10 raised to a given expression's value."
+    },
+    {
+      "name": "FLOOR",
+      "category": "Mathematical",
+      "description": "Returns the greatest integral value <= expression."
+    },
+    {
+      "name": "LN",
+      "category": "Mathematical",
+      "description": "Returns the natural logarithm of a given expression."
+    },
+    {
+      "name": "LOG",
+      "category": "Mathematical",
+      "description": "Returns the natural logarithm of a given expression."
+    },
+    {
+      "name": "LOG10",
+      "category": "Mathematical",
+      "description": "Returns the Base10 logarithm of a given expression."
+    },
+    {
+      "name": "ROUND",
+      "category": "Mathematical",
+      "description": "Returns the value of a given expression rounded to nearest integral value."
+    },
+    {
+      "name": "SQRT",
+      "category": "Mathematical",
+      "description": "Returns the square root for a given expression."
+    },
+    {
+      "name": "BOFM",
+      "category": "Miscellaneous",
+      "description": "Returns the first valid observation of the month for the rest of the month. If range does not include beginning of the month, the rest of the first month values set to NA."
+    },
+    {
+      "name": "BOFW",
+      "category": "Miscellaneous",
+      "description": "Returns the first valid observation of the week for the rest of week. If range does not include beginning of the week, the rest of the first week values set to NA."
+    },
+    {
+      "name": "BOFY",
+      "category": "Miscellaneous",
+      "description": "Returns the first valid observation of the year for the rest of year. If range does not include beginning of the year, the rest of the first year values set to NA."
+    },
+    {
+      "name": "EOFM",
+      "category": "Miscellaneous",
+      "description": "Returns the last valid observation of the month for the rest of the month. If range does not include end of the month, the rest of the last month values set to NA."
+    },
+    {
+      "name": "EOFW",
+      "category": "Miscellaneous",
+      "description": "Returns the last valid observation of the week for the rest of week. If range does not include end of the week, the rest of the last week values set to NA."
+    },
+    {
+      "name": "EOFY",
+      "category": "Miscellaneous",
+      "description": "Returns the last valid observation of the year for the rest of year. If range does not include end of the year, the rest of the last (current) year values set to NA."
+    },
+    {
+      "name": "FALSE",
+      "category": "Miscellaneous",
+      "description": "Returns the number 0, representing logical FALSE."
+    },
+    {
+      "name": "IF",
+      "category": "Miscellaneous",
+      "description": "If Expr1 is True (not zero), result of Expr2 is returned. If Expr1 is False (zero), result of Expr3 is returned. Arguments are evaluated for each day in the query date range."
+    },
+    {
+      "name": "ISNA",
+      "category": "Miscellaneous",
+      "description": "Returns True (1) if a given expression is N/A, or False (0) if valid."
+    },
+    {
+      "name": "ISVALID",
+      "category": "Miscellaneous",
+      "description": "Returns True (1) if a given expression is valid, or False (0) if N/A."
+    },
+    {
+      "name": "MONTHLY",
+      "category": "Miscellaneous",
+      "description": "Prunes the data into monthly frequency. Frequency conversion is based on the context setting."
+    },
+    {
+      "name": "NA",
+      "category": "Miscellaneous",
+      "description": "Returns N/A for every day in the query date range."
+    },
+    {
+      "name": "NAIFZERO",
+      "category": "Miscellaneous",
+      "description": "Returns N/A when a given expression equals zero."
+    },
+    {
+      "name": "NEXTVALID",
+      "category": "Miscellaneous",
+      "description": "Fill in missing points in the series with the next closest day's value. Will not look forward beyond the end date of the query."
+    },
+    {
+      "name": "ORDINATE",
+      "category": "Miscellaneous",
+      "description": "Returns the daily offset of each day in the query period."
+    },
+    {
+      "name": "PERFIRST",
+      "category": "Miscellaneous",
+      "description": "Returns the first valid observation for all days in the range."
+    },
+    {
+      "name": "PERLAST",
+      "category": "Miscellaneous",
+      "description": "Returns the last valid observation for all days in the range."
+    },
+    {
+      "name": "PREVVALID",
+      "category": "Miscellaneous",
+      "description": "Returns the most recent valid value for a day when the expression is NA. Will not look back prior to the start date. Optional date parameter for checking last valid value in a given range. Example: `PREVVALID(N10.Y, DATE=[1Y,])`",
+      "functionExpression": {
+        "functionExpressionPairs": [
+          {
+            "key": "STRING",
+            "value": {
+              "name": "PREVVALID(N10.Y, DATE=[1Y,])"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "QUARTERLY",
+      "category": "Miscellaneous",
+      "description": "Prunes the data into quarterly frequency. Frequency conversion is based on the context setting."
+    },
+    {
+      "name": "RAND",
+      "category": "Miscellaneous",
+      "description": "Returns a random number between 0 and 1. Optional seed parameter."
+    },
+    {
+      "name": "SIGN",
+      "category": "Miscellaneous",
+      "description": "Returns the sign of a given expression. -1 for negative, 1 for positive, 0 for zero."
+    },
+    {
+      "name": "SORT",
+      "category": "Miscellaneous",
+      "description": "Returns the results of a given expression as a sorted list of values, placing NAs at the bottom. Results are not related to the dates on which they appear."
+    },
+    {
+      "name": "TRUE",
+      "category": "Miscellaneous",
+      "description": "Returns the number 1, representing logical TRUE."
+    },
+    {
+      "name": "WEEKLY",
+      "category": "Miscellaneous",
+      "description": "Prunes the data into weekly frequency. Frequency conversion is based on the context setting."
+    },
+    {
+      "name": "YEARLY",
+      "category": "Miscellaneous",
+      "description": "Prunes the data into Annual frequency. Frequency conversion is based on the context setting."
+    },
+    {
+      "name": "ZEROIFNA",
+      "category": "Miscellaneous",
+      "description": "Returns zero if a given expression equals N/A."
+    },
+    {
+      "name": "ADJRSQR",
+      "category": "Statistical",
+      "description": "Returns the adjusted R-squared from the regression of ExprY vs one or more ExprX over the previous NDays. Takes into account degrees of freedom."
+    },
+    {
+      "name": "ARVOL",
+      "category": "Statistical",
+      "description": "Returns NDays historical arithmetic volatility. `chg = X[n] - X[n-1]`, `mean = (sum of chg)/npoints`, `sumsqr = sum of (chg * chg)`, `vol = SQRT((sumsqr - npoints*mean*mean) / (npoints-1)) * SQRT(251)`"
+    },
+    {
+      "name": "BETA",
+      "category": "Statistical",
+      "description": "Returns the coefficient of the 1st independent variable from linear regression of ExprY vs ExprX over the last NDays. NDays can be NYears (e.g. `1y`), NMonths (`1m`), or NWeeks (`3w`).",
+      "functionExpression": {
+        "functionExpressionPairs": [
+          {
+            "key": "STRING",
+            "value": {
+              "name": "BETA(NDays, ExprY, ExprX)"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "CHG",
+      "category": "Statistical",
+      "description": "Returns the change in value of expression from NDays back to current day. Default NDays = 1."
+    },
+    {
+      "name": "CORR",
+      "category": "Statistical",
+      "description": "Returns the correlation between ExprY and ExprX over the previous NDays.",
+      "functionExpression": {
+        "functionExpressionPairs": [
+          {
+            "key": "STRING",
+            "value": {
+              "name": "CORR(NDays, ExprY, ExprX)"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "COVA",
+      "category": "Statistical",
+      "description": "Returns the covariance of ExprY versus ExprX over the previous NDays."
+    },
+    {
+      "name": "ERF",
+      "category": "Statistical",
+      "description": "Returns the error function of UpperLimit for a normal distribution. Optional Mu, Sigma, LowerLimit. Defaults: Mu=0, Sigma=1/sqrt(2), LowerLimit=0."
+    },
+    {
+      "name": "ERFC",
+      "category": "Statistical",
+      "description": "Returns the error function complement of UpperLimit for a normal distribution. Optional Mu, Sigma, LowerLimit. Defaults: Mu=0, Sigma=1/sqrt(2), LowerLimit=0."
+    },
+    {
+      "name": "ESS",
+      "category": "Statistical",
+      "description": "Returns the error sum of squares (residual variation of ExprY) for the given variables."
+    },
+    {
+      "name": "EWMAAVG",
+      "category": "Statistical",
+      "description": "Returns NDays exponentially weighted moving average. Syntax: `EWMAAVG(NDays, Expr, Factor)`. `EWMAAVG(1) = Y(1)`. For t > 1: `EWMAAVG(t) = Factor * Y(t) + (1 - Factor) * EWMAAVG(t-1)`. Factor is smoothing factor between 0 and 1.",
+      "functionExpression": {
+        "functionExpressionPairs": [
+          {
+            "key": "STRING",
+            "value": {
+              "name": "EWMAAVG(NDays, Expr, Factor)"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "EWMACORR",
+      "category": "Statistical",
+      "description": "Returns NDays exponentially weighted moving average correlation. Syntax: `EWMACORR(NDays, Expr1, Expr2, Factor)`. Factor is a decay factor (0-1). Uses weighted covariance divided by weighted standard deviations.",
+      "functionExpression": {
+        "functionExpressionPairs": [
+          {
+            "key": "STRING",
+            "value": {
+              "name": "EWMACORR(NDays, Expr1, Expr2, Factor)"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "EWMAVOL",
+      "category": "Statistical",
+      "description": "Returns NDays exponentially weighted moving average volatility. Syntax: `EWMAVOL(NDays, Expr, Factor)`. Factor is a decay factor (0-1). `chg = X[n] - X[n-1]`, `vol = SQRT(weighted_sumsq/accumulated_factor) * SQRT(251) * 100`",
+      "functionExpression": {
+        "functionExpressionPairs": [
+          {
+            "key": "STRING",
+            "value": {
+              "name": "EWMAVOL(NDays, Expr, Factor)"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "FSTAT",
+      "category": "Statistical",
+      "description": "Returns the F-statistic from linear regression of ExprY vs ExprX over the last NDays. Tests significance of R-squared."
+    },
+    {
+      "name": "INDEX",
+      "category": "Statistical",
+      "description": "Returns the indexed value of a given expression (1st day in date range = 100).",
+      "functionExpression": {
+        "functionExpressionPairs": [
+          {
+            "key": "STRING",
+            "value": {
+              "name": "INDEX(Expr)"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "INTERCEPT",
+      "category": "Statistical",
+      "description": "Returns the intercept (constant) from linear regression of ExprY vs ExprX over the last NDays."
+    },
+    {
+      "name": "IQR",
+      "category": "Statistical",
+      "description": "Returns the interquartile range over the last NDays."
+    },
+    {
+      "name": "KURTOSIS",
+      "category": "Statistical",
+      "description": "Returns NDays excess kurtosis of a given expression for each day in the query date range."
+    },
+    {
+      "name": "LAG",
+      "category": "Statistical",
+      "description": "Returns the result of a given expression from NDays ago. Default NDays = 1."
+    },
+    {
+      "name": "LOGCHG",
+      "category": "Statistical",
+      "description": "Returns the logarithmic change from the previous day: `LOG(Val[x]/Val[x-1])`"
+    },
+    {
+      "name": "LOGNORMCDF",
+      "category": "Statistical",
+      "description": "Returns CDF of a lognormal distribution with Mu, Sigma, optional UpperLimit and LowerLimit. Defaults: UpperLimit=0, LowerLimit=0."
+    },
+    {
+      "name": "LOGNORMCDFC",
+      "category": "Statistical",
+      "description": "Returns CDF complement of a lognormal distribution. Defaults: UpperLimit=0, LowerLimit=0."
+    },
+    {
+      "name": "LOGNORMPDF",
+      "category": "Statistical",
+      "description": "Returns PDF of X for a lognormal distribution. Defaults: Mu=0, Sigma=1."
+    },
+    {
+      "name": "MAX",
+      "category": "Statistical",
+      "description": "Returns the maximum value of a given expression over the last NDays."
+    },
+    {
+      "name": "MEDIAN",
+      "category": "Statistical",
+      "description": "Returns NDays median of a given expression on each date. For even observations, middle two values are averaged."
+    },
+    {
+      "name": "MIN",
+      "category": "Statistical",
+      "description": "Returns the minimum value of a given expression over the last NDays."
+    },
+    {
+      "name": "MODEL",
+      "category": "Statistical",
+      "description": "Returns the linear regression model for ExprY (dependent) vs ExprX1, ExprX2, etc. (independent)."
+    },
+    {
+      "name": "MOVAVG",
+      "category": "Statistical",
+      "description": "Returns NDays average of a given expression on each date. Optional Type (1=sigma trim, 2=winsorized) and Threshold for outlier rejection.",
+      "functionExpression": {
+        "functionExpressionPairs": [
+          {
+            "key": "STRING",
+            "value": {
+              "name": "MOVAVG(NDays, Expr)"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "MUL",
+      "category": "Statistical",
+      "description": "Returns the product over the last NDays. If 1st argument missing, returns total product from start date. Returns value if at least 1 valid observation present."
+    },
+    {
+      "name": "NDEVS",
+      "category": "Statistical",
+      "description": "Returns the number of standard deviations that a given expression deviates from its NDays mean."
+    },
+    {
+      "name": "NORMCDF",
+      "category": "Statistical",
+      "description": "Returns CDF of a normal distribution. Defaults: UpperLimit=0, LowerLimit=-infinity."
+    },
+    {
+      "name": "NORMCDFC",
+      "category": "Statistical",
+      "description": "Returns CDF complement of a normal distribution. Defaults: UpperLimit=0, LowerLimit=-infinity."
+    },
+    {
+      "name": "NORMPDF",
+      "category": "Statistical",
+      "description": "Returns PDF of X for a normal distribution. Defaults: Mu=0, Sigma=1."
+    },
+    {
+      "name": "OBS",
+      "category": "Statistical",
+      "description": "Returns the observation number for a given expression. Counts only valid observations. Use ORDINATE() for absolute day count."
+    },
+    {
+      "name": "PCTCHG",
+      "category": "Statistical",
+      "description": "Returns percent change for NDays: `((Val[x]/Val[x-NDays]) - 1) * 100`. Default NDays = 1.",
+      "functionExpression": {
+        "functionExpressionPairs": [
+          {
+            "key": "STRING",
+            "value": {
+              "name": "PCTCHG(NDays, Expr)"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "PERAVG",
+      "category": "Statistical",
+      "description": "Returns periodic average over the query date range. Same value returned for all days."
+    },
+    {
+      "name": "PERCENTILE",
+      "category": "Statistical",
+      "description": "Returns percentile rank. Syntax variants: `PERCENTILE(Expr)` \u2014 rank of each observation over entire period. `PERCENTILE(NDays, Expr)` \u2014 rank in rolling window. `PERCENTILE(NDays, Expr, Rank)` \u2014 value at given percentile rank in rolling window.",
+      "functionExpression": {
+        "functionExpressionPairs": [
+          {
+            "key": "STRING",
+            "value": {
+              "name": "PERCENTILE(Expr)"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "PERHIGH",
+      "category": "Statistical",
+      "description": "Returns periodic high over the query date range. Same value for all days."
+    },
+    {
+      "name": "PERLOW",
+      "category": "Statistical",
+      "description": "Returns periodic low over the query date range. Same value for all days."
+    },
+    {
+      "name": "PERMEDIAN",
+      "category": "Statistical",
+      "description": "Returns periodic median over the query date range. Same value for all days."
+    },
+    {
+      "name": "PERSTD",
+      "category": "Statistical",
+      "description": "Returns periodic standard deviation over the query date range. Same value for all days."
+    },
+    {
+      "name": "PNL",
+      "category": "Statistical",
+      "description": "Returns the change in value from the first day in the query date range."
+    },
+    {
+      "name": "RANK",
+      "category": "Statistical",
+      "description": "Returns the ordered rank for each observation in a given expression."
+    },
+    {
+      "name": "RESIDUAL",
+      "category": "Statistical",
+      "description": "Returns residual value from regression. Syntax: `RESIDUAL([NDays], ExprY, ExprX1 [, Expr2,...])`. ExprY is the dependent variable, ExprX1 (and optional Expr2,...) are independent variables. Without NDays: each day in query period. With NDays: last day of each rolling period. NDays can be NYears/NMonths/NWeeks (e.g. `1y`, `1m`, `3w`).",
+      "functionExpression": {
+        "functionExpressionPairs": [
+          {
+            "key": "STRING",
+            "value": {
+              "name": "RESIDUAL([NDays], ExprY, ExprX1 [, Expr2,...])"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "RMS",
+      "category": "Statistical",
+      "description": "Returns NDays Root Mean Square. `sumsqr = sum of X[n]*X[n]`, `RMS = SQRT(sumsqr/npts)`"
+    },
+    {
+      "name": "RMSVOL",
+      "category": "Statistical",
+      "description": "Returns NDays Root Mean Square Volatility. `pctchg = log(X[n]/X[n-1])`, `RMSVOL = SQRT(sumsqr/npts) * SQRT(251) * 100`"
+    },
+    {
+      "name": "RSI",
+      "category": "Statistical",
+      "description": "Computes the Relative Strength Index. Default NDays = 14.",
+      "functionExpression": {
+        "functionExpressionPairs": [
+          {
+            "key": "STRING",
+            "value": {
+              "name": "RSI(NDays, Expr)"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "RSQR",
+      "category": "Statistical",
+      "description": "Returns R-squared from regression \u2014 proportion of total variation in ExprY explained by regression vs ExprX."
+    },
+    {
+      "name": "RSS",
+      "category": "Statistical",
+      "description": "Returns regression sum of squares (explained variation of ExprY)."
+    },
+    {
+      "name": "SKEW",
+      "category": "Statistical",
+      "description": "Returns NDays skew of a given expression for each day in the query date range."
+    },
+    {
+      "name": "SEALPHA",
+      "category": "Statistical",
+      "description": "Returns standard error of the constant term from linear regression of ExprY vs ExprX over last NDays."
+    },
+    {
+      "name": "SEBETA",
+      "category": "Statistical",
+      "description": "Returns standard error of the 1st independent variable from linear regression over last NDays."
+    },
+    {
+      "name": "SEREG",
+      "category": "Statistical",
+      "description": "Returns standard error from linear regression of ExprY vs ExprX over last NDays."
+    },
+    {
+      "name": "STDDEV",
+      "category": "Statistical",
+      "description": "Returns NDays standard deviation. `meansqr = (mean^2)/npts`, `STDDEV = SQRT((sumsqr - meansqr) / (npts - 1))`"
+    },
+    {
+      "name": "SUM",
+      "category": "Statistical",
+      "description": "Returns sum over last NDays. If 1st argument missing, returns running total from start date. Returns value if at least 1 valid observation present. Note: `SUM(NDays, Expr)/NDays` may not equal `MOVAVG(NDays, Expr)`."
+    },
+    {
+      "name": "TSALPHA",
+      "category": "Statistical",
+      "description": "Returns T-statistic for the constant term from regression. Magnitude >= 2 often indicates statistical significance. Equal to term value / standard error."
+    },
+    {
+      "name": "TSBETA",
+      "category": "Statistical",
+      "description": "Returns T-statistic for the 1st independent variable from regression. Magnitude >= 2 often indicates significance. Equal to coefficient / standard error."
+    },
+    {
+      "name": "TSS",
+      "category": "Statistical",
+      "description": "Returns total regression sum of squares (ESS + RSS)."
+    },
+    {
+      "name": "VAR",
+      "category": "Statistical",
+      "description": "Returns NDays variance. `meansqr = (mean^2)/npts`, `VAR = (sumsqr - meansqr) / (npts - 1)`"
+    },
+    {
+      "name": "VOL",
+      "category": "Statistical",
+      "description": "Returns NDays historical volatility. `pctchg = LOG(X[n]/X[n-1])`, `vol = SQRT((sumsqr - npoints*mean*mean) / (npoints-1)) * SQRT(251)`",
+      "functionExpression": {
+        "functionExpressionPairs": [
+          {
+            "key": "STRING",
+            "value": {
+              "name": "VOL(NDays, Expr)"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "ZSCORE",
+      "category": "Statistical",
+      "description": "Without NDays: returns zscore for each observation (deviation from mean / stddev). With NDays: zscore of last observation in rolling periods. Multiple expressions supported (uses regression standard error).",
+      "functionExpression": {
+        "functionExpressionPairs": [
+          {
+            "key": "STRING",
+            "value": {
+              "name": "ZSCORE(NDays, Expr)"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
