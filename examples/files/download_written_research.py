@@ -12,7 +12,7 @@ from dataquery import DataQuery  # noqa: E402
 from dataquery.utils import run_group_download_chunked_async  # noqa: E402
 
 GROUP_ID = "RESEARCH_EQUITY_ALL"
-START_DATE = "20260616" # 14 days before current date
+START_DATE = "20260616"  # 14 days before current date
 END_DATE = "20260629"
 
 
