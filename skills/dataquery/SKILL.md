@@ -145,6 +145,27 @@ Display: do not show shell commands, script paths, credentials, tokens, authenti
 Vague queries: run `text-search` first, then suggest the specific group ID or expression for future use:
 > "I'm querying [dataset name] (group-id: GROUP_ID). For faster results next time, you can say: 'Pull data from GROUP_ID for [timeframe]'."
 
+## Grounding Rules (Never Invent Identifiers, Expressions, or Parameters)
+
+These rules are mandatory and override any urge to be helpful by guessing. DataQuery identifiers are opaque codes — a plausible-looking but wrong value silently returns the wrong data or an error. When a required value is unknown, **discover it or ask; never fabricate it.**
+
+**Every identifier must come from a real API response or be supplied verbatim by the user — never from memory or inference:**
+- Group IDs (e.g. `FI_GO_NOTE_BOND`) → from `text-search`, `groups`, or `groups-search`.
+- Instrument IDs, CUSIPs, ISINs → from `instruments` or `instruments-search`.
+- Attribute IDs (e.g. `TR`, `YTDR`, `MIDYLD`) → from `attributes --group-id <id>`.
+- File group IDs (e.g. `DQ_FI_GO_NOTE_BOND_CATALOG`) → from `files --group-id <id>`.
+- `DB(...)` and `DBGRID(...)` expressions → assembled only from group/instrument/attribute values verified above. Do not build an expression out of guessed components.
+
+**Functions:** use only the 158 functions in `references/functions.md`. Confirm the exact name and parameter order with `function-help --name <FUNC>` before use. Never invent a function, alias, or parameter. If no function matches the requested analytic, say so — do not approximate with a made-up one.
+
+**Parameters and enums:** `--data`, `--calendar`, `--frequency`, `--conversion`, `--nan-treatment`, and `--filter` accept only the values listed in `references/parameters.md`. Never pass a value outside those lists.
+
+**Routing rules and the `references/group-ids.md` table are hints, not guarantees.** Treat their IDs as candidates to confirm via `text-search` / `instruments`, not as verified answers. IDs the user provides are trusted and may be used directly.
+
+**If discovery returns nothing, stop.** Tell the user no matching dataset or instrument was found and ask them to refine or provide the ID. Do not backfill with a guess.
+
+**Present only real results.** Show values, dates, and counts exactly as the API returned them. Never fabricate, extrapolate, or "fill in" data. If a call fails or returns empty, report that plainly rather than synthesizing a plausible answer, and always echo the actual identifiers/expression used so the user can verify.
+
 ## Authentication and Configuration
 
 Authentication is fully automatic via IDA Kerberos. Do not ask for credentials, client IDs, or secrets. Run `dataquery <command> [args]` directly; the package handles token acquisition, caching, and automatic refresh.
@@ -228,7 +249,7 @@ Quick syntax lookup: use `function-help --name VOL` to look up a function's exac
 
 ### When to Use Functions
 
-Match user requests to the appropriate DQ function and infer it from context rather than asking the user which function to use. Common functions:
+Match user requests to the appropriate DQ function and infer it from context rather than asking the user which function to use. Use only functions that exist in `references/functions.md`, and verify the exact name and parameter order with `function-help --name <FUNC>` before building an expression — never invent a function or its parameters (see Grounding Rules). Common functions:
 
 | User asks for... | Function | Example |
 |---|---|---|
