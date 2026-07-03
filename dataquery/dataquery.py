@@ -14,6 +14,7 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
 
 import structlog
 from dotenv import load_dotenv
+from pydantic import SecretStr
 
 from .config import EnvConfig
 from .core._sync import SyncRunner
@@ -186,7 +187,7 @@ class DataQuery:
             if client_id:
                 self.client_config.client_id = client_id
             if client_secret:
-                self.client_config.client_secret = client_secret
+                self.client_config.client_secret = SecretStr(client_secret)
             if not self.client_config.oauth_token_url and self.client_config.base_url:
                 self.client_config.oauth_token_url = f"{self.client_config.base_url.rstrip('/')}/oauth/token"
 

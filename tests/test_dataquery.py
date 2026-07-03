@@ -133,7 +133,7 @@ class TestConfigManager:
         assert config.base_url == "https://api.dataquery.com"
         assert config.oauth_enabled is False
         # The bearer_token might be None in the actual implementation
-        assert config.bearer_token in [None, "your_bearer_token_here"]
+        assert config.get_bearer_token() in [None, "your_bearer_token_here"]
 
 
 class TestProgressTracker:

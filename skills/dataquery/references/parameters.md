@@ -1,4 +1,4 @@
-# DataQuery API v2 - Parameter Reference (Trading Desk)
+# DataQuery API v2 - Parameter Reference 
 
 > **Grounding:** These enum tables are exhaustive. Pass only values listed here — do not invent or guess parameter values, calendars, frequencies, or filter names.
 

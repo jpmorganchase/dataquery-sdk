@@ -5,14 +5,28 @@ Data models for the DATAQUERY SDK based on the OpenAPI specification.
 import asyncio
 import base64
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Union, cast
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from .. import constants as C
+
+
+def _reveal_secret(value: Union[str, SecretStr, None]) -> Optional[str]:
+    """Return the plain-text value of a secret field, or ``None``.
+
+    Accepts a ``SecretStr`` (the normal case), a bare ``str`` (e.g. assigned
+    directly to a config attribute, which bypasses pydantic's coercion), or
+    ``None`` — so callers never have to care which form is stored.
+    """
+    if value is None:
+        return None
+    if isinstance(value, SecretStr):
+        return value.get_secret_value()
+    return value
 
 
 class DownloadStatus(str, Enum):
@@ -59,14 +73,14 @@ class ClientConfig(BaseModel):
         description="OAuth token endpoint URL",
     )
     client_id: Optional[str] = Field(default=None, description="OAuth client ID")
-    client_secret: Optional[str] = Field(default=None, description="OAuth client secret")
+    client_secret: Optional[SecretStr] = Field(default=None, description="OAuth client secret")
     aud: Optional[str] = Field(
         default="JPMC:URI:RS-06785-DataQueryExternalApi-PROD",
         description="OAuth audience (aud)",
     )
     grant_type: str = Field(default="client_credentials", description="OAuth grant type")
 
-    bearer_token: Optional[str] = Field(default=None, description="Bearer token for API access")
+    bearer_token: Optional[SecretStr] = Field(default=None, description="Bearer token for API access")
     token_refresh_threshold: int = Field(default=300, description="Seconds before expiry to refresh token")
 
     timeout: float = Field(default=600.0, description="Default request timeout in seconds")
@@ -86,7 +100,7 @@ class ClientConfig(BaseModel):
         description="Proxy URL (e.g., http://proxy:8080, socks5://proxy:1080)",
     )
     proxy_username: Optional[str] = Field(default="", description="Proxy username for authentication")
-    proxy_password: Optional[str] = Field(default="", description="Proxy password for authentication")
+    proxy_password: Optional[SecretStr] = Field(default=None, description="Proxy password for authentication")
     proxy_verify_ssl: bool = Field(default=True, description="Verify SSL certificates for proxy connections")
 
     log_level: str = Field(default="INFO", description="Logging level")
@@ -205,12 +219,25 @@ class ClientConfig(BaseModel):
     @property
     def has_bearer_token(self) -> bool:
         """Check if bearer token is configured."""
-        return self.bearer_token is not None and self.bearer_token.strip() != ""
+        token = self.get_bearer_token()
+        return bool(token and token.strip())
 
     @property
     def has_proxy_credentials(self) -> bool:
         """Check if proxy credentials are configured."""
-        return bool(self.proxy_username) and bool(self.proxy_password)
+        return bool(self.proxy_username) and bool(self.get_proxy_password())
+
+    def get_client_secret(self) -> Optional[str]:
+        """Return the plain-text OAuth client secret, or ``None``."""
+        return _reveal_secret(self.client_secret)
+
+    def get_bearer_token(self) -> Optional[str]:
+        """Return the plain-text bearer token, or ``None``."""
+        return _reveal_secret(self.bearer_token)
+
+    def get_proxy_password(self) -> Optional[str]:
+        """Return the plain-text proxy password, or ``None``."""
+        return _reveal_secret(self.proxy_password)
 
     def get_proxy_kwargs(self) -> Dict[str, Any]:
         """Return aiohttp request/session kwargs for proxy routing.
@@ -227,7 +254,7 @@ class ClientConfig(BaseModel):
         kwargs: Dict[str, Any] = {"proxy": self.proxy_url}
         if self.has_proxy_credentials:
             # Encode Basic proxy auth ourselves: aiohttp.BasicAuth is removed in 4.0 (latin1).
-            raw = f"{self.proxy_username or ''}:{self.proxy_password or ''}".encode("latin1")
+            raw = f"{self.proxy_username or ''}:{self.get_proxy_password() or ''}".encode("latin1")
             token = base64.b64encode(raw).decode("ascii")
             kwargs["proxy_headers"] = {"Proxy-Authorization": f"Basic {token}"}
         return kwargs
@@ -263,9 +290,14 @@ class OAuthToken(BaseModel):
 
     @property
     def expires_at(self) -> Optional[datetime]:
-        """Get token expiry time."""
+        """Get token expiry time (timezone-aware, UTC)."""
         if self.expires_in and self.issued_at:
-            return self.issued_at + timedelta(seconds=self.expires_in)
+            issued = self.issued_at
+            if issued.tzinfo is None:
+                # Older SDK versions persisted naive local timestamps; interpret
+                # them in the system timezone before normalizing to UTC.
+                issued = issued.astimezone(timezone.utc)
+            return issued + timedelta(seconds=self.expires_in)
         return None
 
     @property
@@ -273,13 +305,13 @@ class OAuthToken(BaseModel):
         """Check if token is expired."""
         if not self.expires_at:
             return False
-        return datetime.now() >= self.expires_at
+        return datetime.now(timezone.utc) >= self.expires_at
 
     def is_expiring_soon(self, threshold: int = 300) -> bool:
         """Check if token is expiring soon."""
         if not self.expires_at:
             return False
-        remaining_time = (self.expires_at - datetime.now()).total_seconds()
+        remaining_time = (self.expires_at - datetime.now(timezone.utc)).total_seconds()
         if self.expires_in and threshold > self.expires_in:
             return False
         return remaining_time < threshold
@@ -301,7 +333,7 @@ class TokenRequest(BaseModel):
 
     grant_type: str = Field("client_credentials", description="OAuth grant type")
     client_id: Optional[str] = Field(None, description="OAuth client ID")
-    client_secret: Optional[str] = Field(None, description="OAuth client secret")
+    client_secret: Optional[SecretStr] = Field(None, description="OAuth client secret")
     aud: Optional[str] = Field(None, description="OAuth audience (aud)")
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
@@ -314,7 +346,7 @@ class TokenRequest(BaseModel):
         if self.client_id:
             data["client_id"] = cast(str, self.client_id)
         if self.client_secret:
-            data["client_secret"] = cast(str, self.client_secret)
+            data["client_secret"] = self.client_secret.get_secret_value()
         if getattr(self, "aud", None):
             data["aud"] = cast(str, self.aud)
         return data
@@ -337,7 +369,7 @@ class TokenResponse(BaseModel):
             token_type=(self.token_type or "Bearer"),
             expires_in=self.expires_in,
             refresh_token=self.refresh_token,
-            issued_at=datetime.now(),
+            issued_at=datetime.now(timezone.utc),
         )
 
 

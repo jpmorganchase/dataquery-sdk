@@ -127,7 +127,7 @@ class TestEnvConfig:
             assert config.base_url == "https://api.example.com"
             assert config.oauth_enabled is True
             assert config.client_id == "test_client"
-            assert config.client_secret == "test_secret"
+            assert config.get_client_secret() == "test_secret"
 
     def test_env_config_create_client_config_uses_defaults(self):
         """Test create_client_config method uses default values when no env vars set."""
