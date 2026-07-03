@@ -2,7 +2,7 @@
 
 Invocation: `dataquery <command> [args]`
 
-Authentication is automatic via IDA Kerberos — no auth flags needed.
+Authentication is automatic via OAuth — no auth flags needed.
 
 ---
 

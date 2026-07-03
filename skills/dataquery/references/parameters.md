@@ -133,7 +133,7 @@
 
 ## Environment
 
-The base URL and IDA client credentials are read from environment variables (or a `.env`
+The base URL and OAuth client credentials are read from environment variables (or a `.env`
 file passed via `--env-file`). Run `dataquery config template` to generate a `.env.template`
 listing every supported variable, then copy it to `.env` and fill in the values. Built-in
 defaults target the production DataQuery kong proxy, so no configuration is required for

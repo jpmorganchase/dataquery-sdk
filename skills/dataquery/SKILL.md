@@ -89,13 +89,13 @@ dataquery --help | head -1
   If installation fails with index or network errors, the user may need to add `--index-url` for the corporate registry.
 
 ### Check 4: Service heartbeat
-This confirms IDA authentication works and the API is reachable end to end.
+This confirms OAuth authentication works and the API is reachable end to end.
 ```bash
 dataquery heartbeat
 ```
 - If the summary line reads `DataQuery is UP`, the preflight is complete. Proceed to text-search.
 - If it reads `DataQuery is DOWN` or returns a non-zero exit code, inspect the JSON envelope:
-  - `401`: Kerberos ticket expired. Run `kinit` (or refresh via the user's standard SSO flow) and retry.
+  - `401`: Authentication token expired or invalid. Re-run the command to refresh the token; if it persists, verify the OAuth credentials in the `.env` file.
   - `403`: Account lacks DataQuery entitlement. Contact `DataQuery_Sales@jpmorgan.com`.
   - `503`: DataQuery maintenance window. Retry later and do not proceed.
   - Network or DNS error: verify VPN and corporate network connectivity.
@@ -112,7 +112,7 @@ dataquery text-search --query "<user's natural language query>"
 
 API details:
 - Endpoint: `POST <api_base_url>/search`, where `<api_base_url>` is the configured DataQuery API base URL.
-- Authentication: IDA, applied automatically as with all other DataQuery calls.
+- Authentication: OAuth, applied automatically as with all other DataQuery calls.
 - Request body: `{"query": "<natural language search text>"}`
 
 Workflow:
@@ -168,7 +168,7 @@ These rules are mandatory and override any urge to be helpful by guessing. DataQ
 
 ## Authentication and Configuration
 
-Authentication is fully automatic via IDA Kerberos. Do not ask for credentials, client IDs, or secrets. Run `dataquery <command> [args]` directly; the package handles token acquisition, caching, and automatic refresh.
+Authentication is fully automatic via OAuth. Do not ask for credentials, client IDs, or secrets. Run `dataquery <command> [args]` directly; the package handles token acquisition, caching, and automatic refresh.
 
 Output format: a summary line first, then `--- JSON ---` followed by the raw JSON. Parse the JSON block for structured data.
 
@@ -459,7 +459,7 @@ Always include the data source identifier (expression, or instrument and attribu
 | HTTP Status | Meaning | Suggested action |
 |---|---|---|
 | 400 | Bad Request | Check parameter values and format |
-| 401 | Authentication Error | Kerberos ticket may have expired; re-run to refresh the token |
+| 401 | Authentication Error | Auth token may have expired; re-run to refresh the token |
 | 403 | Forbidden | Premium dataset; contact DataQuery_Sales@jpmorgan.com |
 | 404 | Not Found | Verify the group ID or instrument ID exists |
 | 500 | Server Error | Retry in a few minutes |
