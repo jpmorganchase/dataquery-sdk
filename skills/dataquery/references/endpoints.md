@@ -1,4 +1,4 @@
-# DataQuery API v2 - Endpoint Reference (Trading Desk)
+# DataQuery API v2 - Endpoint Reference 
 
 Invocation: `dataquery <command> [args]`
 
