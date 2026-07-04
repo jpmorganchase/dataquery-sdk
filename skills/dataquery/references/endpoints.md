@@ -8,12 +8,12 @@ Authentication is automatic via OAuth — no auth flags needed.
 
 ## Dataset Discovery
 
-### 0. Text Search (MANDATORY FIRST STEP)
+### 0. Search (MANDATORY FIRST STEP)
 Natural-language dataset discovery — use before any data pull when group IDs are not already known.
 ```bash
-dataquery text-search --query "usd treasury to eur german bund parity"
-dataquery text-search --query "emerging market interest rate swaps"
-dataquery text-search --query "ABS index total return USD"
+dataquery search --query "usd treasury to eur german bund parity"
+dataquery search --query "emerging market interest rate swaps"
+dataquery search --query "ABS index total return USD"
 ```
 Returns: matching group IDs, instrument IDs, and expressions ranked by relevance.
 
@@ -30,7 +30,7 @@ dataquery groups-search --keywords treasury
 dataquery groups-search --keywords "credit default"
 dataquery groups-search --keywords 912810QK7    # search by CUSIP
 ```
-Tip: Prefer `text-search` (command 0) — use `groups-search` only as a fallback when text-search returns no results.
+Tip: Prefer `search` (command 0) — use `groups-search` only as a fallback when search returns no results.
 
 ### 3. List Instruments
 ```bash

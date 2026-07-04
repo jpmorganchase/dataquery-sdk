@@ -50,7 +50,7 @@ For best results, include specific group IDs (e.g., `FI_GO_NOTE_BOND`), instrume
 
 ## Preflight Checks (Run Once Per Session, Before Any Other Command)
 
-Verify the environment is ready before running any DataQuery command, including `text-search`. Run this preflight once at the start of a session, and re-run it only if a later command surfaces an environment-related error (authentication failure, command-not-found, and similar). Do not re-run the preflight before every command.
+Verify the environment is ready before running any DataQuery command, including `search`. Run this preflight once at the start of a session, and re-run it only if a later command surfaces an environment-related error (authentication failure, command-not-found, and similar). Do not re-run the preflight before every command.
 
 Run the four checks below in order. If any check fails, resolve it before proceeding.
 
@@ -93,21 +93,21 @@ This confirms OAuth authentication works and the API is reachable end to end.
 ```bash
 dataquery heartbeat
 ```
-- If the summary line reads `DataQuery is UP`, the preflight is complete. Proceed to text-search.
+- If the summary line reads `DataQuery is UP`, the preflight is complete. Proceed to search.
 - If it reads `DataQuery is DOWN` or returns a non-zero exit code, inspect the JSON envelope:
   - `401`: Authentication token expired or invalid. Re-run the command to refresh the token; if it persists, verify the OAuth credentials in the `.env` file.
   - `403`: Account lacks DataQuery entitlement. Contact `DataQuery_Sales@jpmorgan.com`.
   - `503`: DataQuery maintenance window. Retry later and do not proceed.
   - Network or DNS error: verify VPN and corporate network connectivity.
 
-After all four checks pass, proceed to the text-search step below. Treat the preflight as session state. Once it passes, do not run it again unless a later command surfaces an environment-related error.
+After all four checks pass, proceed to the search step below. Treat the preflight as session state. Once it passes, do not run it again unless a later command surfaces an environment-related error.
 
-## First Step: Text Search for Dataset Discovery
+## First Step: Search for Dataset Discovery
 
-For any user query about data, begin by calling `text-search` to identify the relevant datasets, group IDs, and instruments. This uses the DataQuery search API to interpret natural-language queries and return matching datasets.
+For any user query about data, begin by calling `search` to identify the relevant datasets, group IDs, and instruments. This uses the DataQuery search API to interpret natural-language queries and return matching datasets.
 
 ```bash
-dataquery text-search --query "<user's natural language query>"
+dataquery search --query "<user's natural language query>"
 ```
 
 API details:
@@ -117,17 +117,17 @@ API details:
 
 Workflow:
 1. The user asks a question (for example, "usd treasury to eur german bund parity").
-2. Run `text-search --query "usd treasury to eur german bund parity"`.
+2. Run `search --query "usd treasury to eur german bund parity"`.
 3. Parse the response to identify relevant group IDs, instruments, and expressions.
 4. Use those identifiers to call the specific data endpoints (time-series, and similar).
 
 Text search replaces manual guessing of group IDs. Even when the routing rules below suggest a group, prefer the search result for accuracy. Fall back to routing rules only when search returns no results.
 
 When the user asks something like:
-- "Pull data for any series": run `text-search` first, then `group-timeseries` or `expression-timeseries`
-- "Search for ABS index datasets": `text-search --query "ABS index datasets"`
+- "Pull data for any series": run `search` first, then `group-timeseries` or `expression-timeseries`
+- "Search for ABS index datasets": `search --query "ABS index datasets"`
 - "What instruments are in FI_GO_NOTE_BOND?": `instruments --group-id FI_GO_NOTE_BOND`
-- "Export credit index data to CSV": run `text-search` first, then a data endpoint with `--output-csv`
+- "Export credit index data to CSV": run `search` first, then a data endpoint with `--output-csv`
 - "Is DQ up?": `heartbeat`
 - "What files does this group publish?": `files --group-id <id>`
 - "Download yesterday's catalog for FI_GO_NOTE_BOND": `availability`, then `download`
@@ -142,7 +142,7 @@ Execution: all `dataquery` calls are pre-authorized. Execute them immediately wi
 
 Display: do not show shell commands, script paths, credentials, tokens, authentication details, or "Executing..." messages. Present only clean, formatted data results. The user should experience DataQuery as a seamless data service.
 
-Vague queries: run `text-search` first, then suggest the specific group ID or expression for future use:
+Vague queries: run `search` first, then suggest the specific group ID or expression for future use:
 > "I'm querying [dataset name] (group-id: GROUP_ID). For faster results next time, you can say: 'Pull data from GROUP_ID for [timeframe]'."
 
 ## Grounding Rules (Never Invent Identifiers, Expressions, or Parameters)
@@ -150,7 +150,7 @@ Vague queries: run `text-search` first, then suggest the specific group ID or ex
 These rules are mandatory and override any urge to be helpful by guessing. DataQuery identifiers are opaque codes — a plausible-looking but wrong value silently returns the wrong data or an error. When a required value is unknown, **discover it or ask; never fabricate it.**
 
 **Every identifier must come from a real API response or be supplied verbatim by the user — never from memory or inference:**
-- Group IDs (e.g. `FI_GO_NOTE_BOND`) → from `text-search`, `groups`, or `groups-search`.
+- Group IDs (e.g. `FI_GO_NOTE_BOND`) → from `search`, `groups`, or `groups-search`.
 - Instrument IDs, CUSIPs, ISINs → from `instruments` or `instruments-search`.
 - Attribute IDs (e.g. `TR`, `YTDR`, `MIDYLD`) → from `attributes --group-id <id>`.
 - File group IDs (e.g. `DQ_FI_GO_NOTE_BOND_CATALOG`) → from `files --group-id <id>`.
@@ -160,7 +160,7 @@ These rules are mandatory and override any urge to be helpful by guessing. DataQ
 
 **Parameters and enums:** `--data`, `--calendar`, `--frequency`, `--conversion`, `--nan-treatment`, and `--filter` accept only the values listed in `references/parameters.md`. Never pass a value outside those lists.
 
-**Routing rules and the `references/group-ids.md` table are hints, not guarantees.** Treat their IDs as candidates to confirm via `text-search` / `instruments`, not as verified answers. IDs the user provides are trusted and may be used directly.
+**Routing rules and the `references/group-ids.md` table are hints, not guarantees.** Treat their IDs as candidates to confirm via `search` / `instruments`, not as verified answers. IDs the user provides are trusted and may be used directly.
 
 **If discovery returns nothing, stop.** Tell the user no matching dataset or instrument was found and ask them to refine or provide the ID. Do not backfill with a guess.
 
@@ -280,9 +280,9 @@ Key operational note: functions execute server-side, and `--start-date` should b
 ## Workflows
 
 ### Workflow 1: Discovery (find what data exists)
-Step 1: use text search to identify datasets from the user's natural-language query:
+Step 1: use `search` to identify datasets from the user's natural-language query:
 ```bash
-dataquery text-search --query "<user query>"
+dataquery search --query "<user query>"
 ```
 Step 2: drill into specifics using the group IDs and instruments returned:
 1. `instruments --group-id <id>`: list instruments in the identified dataset
@@ -313,7 +313,7 @@ dataquery expression-timeseries --expressions "DB(BIGI,ABS,Q10,TR,YTDR,LOC)" --s
 ### Workflow 3: Computed Analytics (Functions)
 Use this workflow when the user asks for analytics such as moving averages, volatility, correlations, spreads, or z-scores.
 
-Step 1: identify the underlying data source. Use `text-search` if the user provides a natural-language description, or construct the `DB()` expression from a known group, instrument, and attribute.
+Step 1: identify the underlying data source. Use `search` if the user provides a natural-language description, or construct the `DB()` expression from a known group, instrument, and attribute.
 
 Step 2: wrap the `DB()` expression with the appropriate function or functions from `references/functions.md`.
 
@@ -421,7 +421,7 @@ Common File API parameters:
 
 | # | Command | What it does | Key params |
 |---|---------|-------------|------------|
-| 0 | `text-search` | Dataset discovery (use first) | `--query` |
+| 0 | `search` | Dataset discovery (use first) | `--query` |
 | 1 | `groups` | List all datasets | `--limit --search` |
 | 2 | `groups-search` | Search datasets (legacy keyword search) | `--keywords` |
 | 3 | `instruments` | List instruments in a group | `--group-id` |

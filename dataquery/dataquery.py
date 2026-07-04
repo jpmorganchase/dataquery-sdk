@@ -718,7 +718,7 @@ class DataQuery:
         client = self._ensure_client()
         return await client.get_grid_data_async(expr, grid_id, date)
 
-    async def text_search_async(self, query: str) -> Dict[str, Any]:
+    async def search_async(self, query: str) -> Dict[str, Any]:
         """Search the DataQuery catalog using a natural-language query.
 
         Args:
@@ -729,7 +729,7 @@ class DataQuery:
         """
         await self.connect_async()
         client = self._ensure_client()
-        return await client.text_search_async(query)
+        return await client.search_async(query)
 
     async def run_groups_async(self, max_concurrent: int = 5) -> OperationReport:
         """Run complete operation for listing all groups."""
@@ -2048,9 +2048,9 @@ class DataQuery:
         """
         return self._run_sync(self.get_grid_data_async(expr, grid_id, date))
 
-    def text_search(self, query: str) -> Dict[str, Any]:
-        """Synchronous wrapper for :meth:`text_search_async`."""
-        return self._run_sync(self.text_search_async(query))
+    def search(self, query: str) -> Dict[str, Any]:
+        """Synchronous wrapper for :meth:`search_async`."""
+        return self._run_sync(self.search_async(query))
 
     def run_groups(self, max_concurrent: int = 5) -> OperationReport:
         """Synchronous wrapper for run_groups_async."""

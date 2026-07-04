@@ -502,13 +502,13 @@ async def test_grid_api(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_text_search_api(monkeypatch):
+async def test_search_api(monkeypatch):
     client = make_client(monkeypatch)
 
     with pytest.raises(ValueError):
-        await client.text_search_async("")
+        await client.search_async("")
     with pytest.raises(ValueError):
-        await client.text_search_async("   ")
+        await client.search_async("   ")
 
     captured: dict = {}
 
@@ -526,7 +526,7 @@ async def test_text_search_api(monkeypatch):
         return FakeCtx(r)
 
     monkeypatch.setattr(client, "_make_authenticated_request", cm_search)
-    result = await client.text_search_async("10y treasury")
+    result = await client.search_async("10y treasury")
     assert result == {"results": [{"id": "G1", "name": "Group One"}]}
     assert captured["method"] == "POST"
     assert captured["json"] == {"query": "10y treasury"}
