@@ -136,8 +136,11 @@ class EnhancedTokenBucketRateLimiter:
 
         start_time = time.time()
 
-        async with self._get_lock():
-            while True:
+        while True:
+            # Hold the lock only to check/consume tokens; sleeping happens
+            # outside it so other callers (short timeouts, reset/shutdown)
+            # aren't serialized behind a waiter.
+            async with self._get_lock():
                 self._refill_tokens()
 
                 if self.state.tokens >= 1.0:
@@ -148,12 +151,12 @@ class EnhancedTokenBucketRateLimiter:
 
                 wait_time = self._calculate_wait_time()
 
-                if timeout is not None:
-                    elapsed = time.time() - start_time
-                    if elapsed + wait_time > timeout:
-                        return False
+            if timeout is not None:
+                elapsed = time.time() - start_time
+                if elapsed + wait_time > timeout:
+                    return False
 
-                await asyncio.sleep(min(wait_time, 0.1))
+            await asyncio.sleep(min(wait_time, 0.1))
 
     def _refill_tokens(self):
         """Refill tokens based on time elapsed."""

@@ -453,3 +453,23 @@ class TestRateLimiterEdgeCases:
             # Simulate some work
             await asyncio.sleep(0.01)
             return operation_id
+
+
+@pytest.mark.asyncio
+async def test_short_timeout_not_blocked_behind_sleeping_waiter():
+    # Regression: acquire() used to sleep while holding the lock, so a caller
+    # with a short timeout was stuck behind a waiter until a token appeared.
+    rl = _make_rate_limiter(requests_per_minute=60, burst_capacity=1, adaptive_rate_limiting=False)
+    assert await rl.acquire(timeout=0.1)  # drain the only token
+
+    waiter = asyncio.create_task(rl.acquire(timeout=5.0, operation="long-waiter"))
+    await asyncio.sleep(0.05)  # let the waiter enter its sleep loop
+
+    start = time.time()
+    got = await rl.acquire(timeout=0.01, operation="fail-fast")
+    elapsed = time.time() - start
+
+    assert got is False
+    assert elapsed < 0.5  # previously ~1s: blocked until the waiter got a token
+
+    assert await waiter is True  # the patient waiter still succeeds
