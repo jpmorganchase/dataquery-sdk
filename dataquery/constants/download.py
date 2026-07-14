@@ -28,6 +28,13 @@ MBPS_TO_BYTES_PER_SECOND = 125_000
 
 # Default size, in days, of each chunk when splitting a date range so that
 # the available-files endpoint is queried over a smaller window per call.
-# Used by ``run_group_download_chunked_async`` to honour group-level
-# date-range limits (e.g. RESEARCH_EQUITY_ALL is restricted to 14 days).
+# Used by ``split_date_range_into_chunks``. The endpoint caps each call at
+# one calendar month; smaller windows just keep responses lighter. (The old
+# group-level limits, e.g. 14 days for RESEARCH_EQUITY_ALL, were lifted
+# server-side.)
 DEFAULT_WRITTEN_RESEARCH_CHUNK_DAYS: int = 7
+
+# Error string set on the OperationReport when the available-files endpoint
+# returns nothing for a date window. Chunked workflows match on it to tell
+# a quiet window apart from a real failure.
+NO_FILES_FOUND_ERROR: str = "No available files found for date range"

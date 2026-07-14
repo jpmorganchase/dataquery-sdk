@@ -1,24 +1,27 @@
 #!/usr/bin/env python3
-"""Download every file in a group between two dates, chunking calls to the
-available-files endpoint by ``DEFAULT_WRITTEN_RESEARCH_CHUNK_DAYS`` days."""
+"""Download every file in a group between two dates and unzip any ZIP archives
+as they are downloaded."""
 
 import asyncio
 import sys
+from datetime import date, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # noqa: E402
 
 from dataquery import DataQuery  # noqa: E402
-from dataquery.utils import run_group_download_chunked_async  # noqa: E402
+from dataquery.utils import download_zip_async  # noqa: E402
 
 GROUP_ID = "RESEARCH_EQUITY_ALL"
-START_DATE = "20260616"  # 14 days before current date
-END_DATE = "20260629"
+# Trailing two weeks up to yesterday. Current-day archives are skipped by the
+# unzip step anyway, since their content may still be updating.
+END_DATE = (date.today() - timedelta(days=1)).strftime("%Y%m%d")
+START_DATE = (date.today() - timedelta(days=14)).strftime("%Y%m%d")
 
 
 async def main():
     async with DataQuery() as dq:
-        result = await run_group_download_chunked_async(
+        result = await download_zip_async(
             dq,
             group_id=GROUP_ID,
             start_date=START_DATE,

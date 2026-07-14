@@ -231,6 +231,78 @@ async def test_stagger_swallows_exception(monkeypatch):
     assert out is None
 
 
+@pytest.mark.asyncio
+async def test_stagger_awaits_on_file_complete_for_success(monkeypatch):
+    async def fake_parallel(**kwargs):
+        return SimpleNamespace(status=DownloadStatus.COMPLETED, file_group_id=kwargs["file_group_id"])
+
+    monkeypatch.setattr(parallel, "download_file_parallel", fake_parallel)
+    seen: list = []
+
+    async def on_done(result):
+        seen.append(result.file_group_id)
+
+    out = await parallel._download_one_with_stagger(
+        client=object(),
+        file_info={"file-group-id": "fg"},
+        destination_dir=Path("/tmp"),
+        num_parts=2,
+        global_semaphore=asyncio.Semaphore(1),
+        delay_seconds=0.0,
+        progress_callback=None,
+        on_file_complete=on_done,
+    )
+    assert out.file_group_id == "fg"
+    assert seen == ["fg"]
+
+
+@pytest.mark.asyncio
+async def test_stagger_skips_on_file_complete_for_failure(monkeypatch):
+    async def fake_parallel(**kwargs):
+        return SimpleNamespace(status=DownloadStatus.FAILED, file_group_id=kwargs["file_group_id"])
+
+    monkeypatch.setattr(parallel, "download_file_parallel", fake_parallel)
+    seen: list = []
+
+    async def on_done(result):
+        seen.append(result.file_group_id)
+
+    await parallel._download_one_with_stagger(
+        client=object(),
+        file_info={"file-group-id": "fg"},
+        destination_dir=Path("/tmp"),
+        num_parts=2,
+        global_semaphore=asyncio.Semaphore(1),
+        delay_seconds=0.0,
+        progress_callback=None,
+        on_file_complete=on_done,
+    )
+    assert seen == []
+
+
+@pytest.mark.asyncio
+async def test_stagger_on_file_complete_error_does_not_fail_download(monkeypatch):
+    async def fake_parallel(**kwargs):
+        return SimpleNamespace(status=DownloadStatus.COMPLETED, file_group_id=kwargs["file_group_id"])
+
+    monkeypatch.setattr(parallel, "download_file_parallel", fake_parallel)
+
+    async def on_done(result):
+        raise RuntimeError("unzip blew up")
+
+    out = await parallel._download_one_with_stagger(
+        client=object(),
+        file_info={"file-group-id": "fg"},
+        destination_dir=Path("/tmp"),
+        num_parts=2,
+        global_semaphore=asyncio.Semaphore(1),
+        delay_seconds=0.0,
+        progress_callback=None,
+        on_file_complete=on_done,
+    )
+    assert out.status is DownloadStatus.COMPLETED
+
+
 # --------------------------------------------------------------------------- #
 # download_files_with_retry
 # --------------------------------------------------------------------------- #
@@ -303,3 +375,29 @@ async def test_download_files_with_retry_exhausts(monkeypatch):
     assert retry_count == 2
     assert succeeded == []
     assert [f["file-group-id"] for f in failed] == ["f1"]
+
+
+@pytest.mark.asyncio
+async def test_download_files_with_retry_forwards_on_file_complete(monkeypatch):
+    async def fake_parallel(**kwargs):
+        return SimpleNamespace(status=DownloadStatus.COMPLETED, file_group_id=kwargs["file_group_id"])
+
+    monkeypatch.setattr(parallel, "download_file_parallel", fake_parallel)
+    seen: list = []
+
+    async def on_done(result):
+        seen.append(result.file_group_id)
+
+    succeeded, failed, _ = await parallel.download_files_with_retry(
+        client=object(),
+        files=[{"file-group-id": "f1"}, {"file-group-id": "f2"}],
+        destination_dir=Path("/tmp"),
+        num_parts=2,
+        global_semaphore=asyncio.Semaphore(2),
+        intelligent_delay=0.0,
+        base_retry_delay=0.0,
+        max_retries=1,
+        on_file_complete=on_done,
+    )
+    assert failed == []
+    assert sorted(seen) == ["f1", "f2"]  # exactly once per successful file
