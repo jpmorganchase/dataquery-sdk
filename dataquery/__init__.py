@@ -63,6 +63,7 @@ from .types.models import (
     Group,
     GroupList,
 )
+from .utils import download_zip_async
 
 __all__ = [
     "DataQuery",
@@ -103,6 +104,7 @@ __all__ = [
     "get_function_registry",
     "list_functions_by_category",
     "lookup_function",
+    "download_zip_async",
 ]
 
 __version_info__ = tuple(int(x) for x in __version__.split("."))

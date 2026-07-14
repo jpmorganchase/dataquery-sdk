@@ -10,7 +10,7 @@ import time
 from calendar import monthrange
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional, Tuple, Union
 
 import structlog
 from dotenv import load_dotenv
@@ -907,6 +907,7 @@ class DataQuery:
         delay_between_downloads: float = 0.2,
         max_retries: int = 3,
         file_group_id: Optional[Union[str, List[str]]] = None,
+        on_file_complete: Optional[Callable[["DownloadResult"], Awaitable[None]]] = None,
     ) -> OperationReport:
         """
         Download all files in a group for a date range using parallel HTTP range requests.
@@ -929,6 +930,11 @@ class DataQuery:
             file_group_id: Optional restriction to specific file-group-id(s). Accepts a
                 single id or a list of ids. When a list is supplied, availability is
                 queried in parallel per id and the union of dates is downloaded.
+            on_file_complete: Optional async callback awaited for each file as soon as
+                it finishes downloading (status ``completed``/``already_exists``). Runs
+                concurrently with the downloads still in flight, so post-processing such
+                as unzipping overlaps with subsequent downloads rather than waiting for
+                the whole batch.
 
         Returns:
             Dictionary with download results and statistics
@@ -1071,6 +1077,7 @@ class DataQuery:
                 base_retry_delay=delay_between_downloads,
                 max_retries=max_retries,
                 progress_callback=progress_callback,
+                on_file_complete=on_file_complete,
             )
 
             operation_end_time = time.time()

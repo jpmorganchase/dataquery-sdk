@@ -16,7 +16,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Callable, Optional
+from typing import IO, TYPE_CHECKING, Awaitable, Callable, Optional
 
 import aiohttp
 import structlog
@@ -530,6 +530,7 @@ async def _download_one_with_stagger(
     global_semaphore: asyncio.Semaphore,
     delay_seconds: float,
     progress_callback: Optional[Callable],
+    on_file_complete: Optional[Callable[[DownloadResult], Awaitable[None]]] = None,
 ) -> Optional[DownloadResult]:
     file_group_id = _file_id(file_info)
     file_datetime = _file_dt(file_info)
@@ -554,6 +555,21 @@ async def _download_one_with_stagger(
             file_datetime=file_datetime,
             status=result.status.value if result else "failed",
         )
+        if (
+            on_file_complete is not None
+            and result is not None
+            and result.status.value in ("completed", "already_exists")
+        ):
+            # Post-processing (e.g. unzip) runs here so it overlaps with the
+            # downloads of other files still in flight under the gather().
+            try:
+                await on_file_complete(result)
+            except Exception as cb_err:  # pragma: no cover - defensive
+                logger.warning(
+                    "on_file_complete callback failed",
+                    file_group_id=file_group_id,
+                    error=str(cb_err),
+                )
         return result
     except Exception as e:
         logger.error(
@@ -596,6 +612,7 @@ async def download_files_with_retry(
     base_retry_delay: float,
     max_retries: int,
     progress_callback: Optional[Callable] = None,
+    on_file_complete: Optional[Callable[[DownloadResult], Awaitable[None]]] = None,
 ) -> tuple[list[DownloadResult], list[dict], int]:
     """Run a staggered, retrying batch of parallel-range downloads.
 
@@ -604,6 +621,10 @@ async def download_files_with_retry(
     the batch. Files are launched ``intelligent_delay`` seconds apart to
     spread the burst against the API rate limiter. Failures are retried up
     to ``max_retries`` times with exponential backoff (``base_retry_delay``).
+
+    When ``on_file_complete`` is provided it is awaited for each successfully
+    downloaded file as soon as that file finishes, so post-processing (e.g.
+    unzipping) overlaps with the downloads of files still in flight.
 
     Returns ``(successful, failed, retry_count)``.
     """
@@ -618,6 +639,7 @@ async def download_files_with_retry(
                 global_semaphore=global_semaphore,
                 delay_seconds=i * intelligent_delay,
                 progress_callback=progress_callback,
+                on_file_complete=on_file_complete,
             )
             for i, fi in enumerate(batch)
         ]
