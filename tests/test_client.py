@@ -348,7 +348,7 @@ class TestDataQueryClientInitialization:
             client = DataQueryClient(config)
             assert client.config.oauth_enabled is True
             assert client.config.client_id == "test_client"
-            assert client.config.bearer_token == "explicit_token"
+            assert client.config.get_bearer_token() == "explicit_token"
 
     def test_client_initialization_with_proxy(self):
         """Test client initialization with proxy configuration."""

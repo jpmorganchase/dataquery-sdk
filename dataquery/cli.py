@@ -183,7 +183,7 @@ def create_parser() -> argparse.ArgumentParser:
     _ = auth_sub.add_parser("test", help="Test authentication by listing groups")
 
     p_search = subparsers.add_parser(
-        "text-search",
+        "search",
         help="Search the DataQuery catalog using a natural-language query (POST /search)",
     )
     p_search.add_argument("--query", required=True, help="Free-text search query")
@@ -483,9 +483,9 @@ async def cmd_auth_test(args: argparse.Namespace) -> int:
     return 0
 
 
-async def cmd_text_search(args: argparse.Namespace) -> int:
+async def cmd_search(args: argparse.Namespace) -> int:
     async with DataQuery(args.env_file) as dq:
-        result = await dq.text_search_async(args.query)
+        result = await dq.search_async(args.query)
 
     if args.json:
         print(json.dumps(result, indent=2))
@@ -734,7 +734,7 @@ _ASYNC_COMMANDS = {
     "availability": cmd_availability,
     "download": cmd_download,
     "download-group": cmd_download_group,
-    "text-search": cmd_text_search,
+    "search": cmd_search,
     "groups-search": cmd_groups_search,
     "instruments": cmd_instruments,
     "instruments-search": cmd_instruments_search,

@@ -247,7 +247,7 @@ class EnvConfig:
         if config.oauth_enabled:
             if not config.client_id:
                 errors.append("CLIENT_ID is required when OAuth is enabled")
-            if not config.client_secret:
+            if not config.get_client_secret():
                 errors.append("CLIENT_SECRET is required when OAuth is enabled")
             if not config.oauth_token_url:
                 errors.append("OAUTH_TOKEN_URL is required when OAuth is enabled")

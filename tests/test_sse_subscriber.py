@@ -678,6 +678,88 @@ def test_failed_files_setitem_touches_lru(tmp_path):
     assert mgr._failed_files.get("a", 0) == 2
 
 
+# ---------------------------------------------------------------------------
+# Replay low-water-mark — the cursor only advances past a settled download
+# ---------------------------------------------------------------------------
+
+
+class _RecordingStore:
+    """Async event-id store stand-in that records every persisted id."""
+
+    def __init__(self) -> None:
+        self.saved: List[str] = []
+
+    def load(self) -> Optional[str]:
+        return None
+
+    async def save(self, event_id: str) -> None:
+        self.saved.append(event_id)
+
+    def clear(self) -> None:
+        self.saved.clear()
+
+
+def _numeric_event(event_id: int) -> SSEEvent:
+    return _event(event_id=str(event_id))
+
+
+@pytest.mark.asyncio
+async def test_replay_cursor_is_low_water_mark(tmp_path):
+    """Out-of-order download completion must not advance the persisted cursor
+    past an event whose download is still in flight."""
+    mgr = NotificationDownloadManager(
+        client=_FakeClient(),
+        group_id="G",
+        destination_dir=str(tmp_path),
+        initial_check=False,
+    )
+    store = _RecordingStore()
+    mgr._event_id_store = store
+    # Resuming from 709: everything <= 709 was already handled on a prior run.
+    mgr._committed_event_id = 709
+    mgr._highest_seen_event_id = 709
+
+    for i in (710, 711, 712):
+        mgr._register_event_id(_numeric_event(i))
+
+    # 712 finishes first — the cursor must stay behind the in-flight 710.
+    await mgr._commit_settled_event(_numeric_event(712))
+    assert store.saved == []
+
+    # 710 finishes — 711 still in flight, so commit only up to 710.
+    await mgr._commit_settled_event(_numeric_event(710))
+    assert store.saved == ["710"]
+
+    # 711 finishes — nothing in flight, jump to the highest id seen (712).
+    await mgr._commit_settled_event(_numeric_event(711))
+    assert store.saved == ["710", "712"]
+
+
+@pytest.mark.asyncio
+async def test_replay_cursor_never_advances_past_unsettled_event(tmp_path):
+    """A download that never settles (e.g. the process crashes mid-download)
+    must leave the cursor behind it so the event is replayed on restart."""
+    mgr = NotificationDownloadManager(
+        client=_FakeClient(),
+        group_id="G",
+        destination_dir=str(tmp_path),
+        initial_check=False,
+    )
+    store = _RecordingStore()
+    mgr._event_id_store = store
+    mgr._committed_event_id = 800
+    mgr._highest_seen_event_id = 800
+
+    # 801 and 802 arrive; only 802 settles — 801 is still downloading.
+    mgr._register_event_id(_numeric_event(801))
+    mgr._register_event_id(_numeric_event(802))
+    await mgr._commit_settled_event(_numeric_event(802))
+
+    # The cursor cannot pass the unsettled 801, so nothing new is persisted.
+    assert store.saved == []
+    assert mgr._committed_event_id == 800
+
+
 def test_failed_files_pop_removes_entry(tmp_path):
     client = _FakeClient()
     mgr = NotificationDownloadManager(

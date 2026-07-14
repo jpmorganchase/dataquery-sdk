@@ -256,12 +256,12 @@ DATAQUERY_BASE_URL={config.base_url}
 DATAQUERY_OAUTH_ENABLED={str(config.oauth_enabled).lower()}
 DATAQUERY_OAUTH_TOKEN_URL={config.oauth_token_url or ""}
 DATAQUERY_CLIENT_ID={config.client_id or ""}
-DATAQUERY_CLIENT_SECRET={config.client_secret or ""}
+DATAQUERY_CLIENT_SECRET={config.get_client_secret() or ""}
 DATAQUERY_OAUTH_AUD={getattr(config, "aud", "") or ""}
 DATAQUERY_GRANT_TYPE={config.grant_type}
 
 # Bearer Token Configuration
-DATAQUERY_BEARER_TOKEN={config.bearer_token or ""}
+DATAQUERY_BEARER_TOKEN={config.get_bearer_token() or ""}
 DATAQUERY_TOKEN_REFRESH_THRESHOLD={config.token_refresh_threshold}
 
 # HTTP Configuration

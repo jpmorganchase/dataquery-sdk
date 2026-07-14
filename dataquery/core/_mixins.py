@@ -609,7 +609,7 @@ class GridMixin(_RequestProto):
 class SearchMixin(_RequestProto):
     """Natural-language catalog search via POST /search."""
 
-    async def text_search_async(self, query: str) -> Dict[str, Any]:
+    async def search_async(self, query: str) -> Dict[str, Any]:
         """Search the DataQuery catalog using a natural-language query.
 
         POSTs ``{"query": query}`` to ``/search`` and returns the parsed JSON body.

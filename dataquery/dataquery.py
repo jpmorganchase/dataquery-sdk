@@ -14,6 +14,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional, Tupl
 
 import structlog
 from dotenv import load_dotenv
+from pydantic import SecretStr
 
 from .config import EnvConfig
 from .core._sync import SyncRunner
@@ -186,7 +187,7 @@ class DataQuery:
             if client_id:
                 self.client_config.client_id = client_id
             if client_secret:
-                self.client_config.client_secret = client_secret
+                self.client_config.client_secret = SecretStr(client_secret)
             if not self.client_config.oauth_token_url and self.client_config.base_url:
                 self.client_config.oauth_token_url = f"{self.client_config.base_url.rstrip('/')}/oauth/token"
 
@@ -717,7 +718,7 @@ class DataQuery:
         client = self._ensure_client()
         return await client.get_grid_data_async(expr, grid_id, date)
 
-    async def text_search_async(self, query: str) -> Dict[str, Any]:
+    async def search_async(self, query: str) -> Dict[str, Any]:
         """Search the DataQuery catalog using a natural-language query.
 
         Args:
@@ -728,7 +729,7 @@ class DataQuery:
         """
         await self.connect_async()
         client = self._ensure_client()
-        return await client.text_search_async(query)
+        return await client.search_async(query)
 
     async def run_groups_async(self, max_concurrent: int = 5) -> OperationReport:
         """Run complete operation for listing all groups."""
@@ -2054,9 +2055,9 @@ class DataQuery:
         """
         return self._run_sync(self.get_grid_data_async(expr, grid_id, date))
 
-    def text_search(self, query: str) -> Dict[str, Any]:
-        """Synchronous wrapper for :meth:`text_search_async`."""
-        return self._run_sync(self.text_search_async(query))
+    def search(self, query: str) -> Dict[str, Any]:
+        """Synchronous wrapper for :meth:`search_async`."""
+        return self._run_sync(self.search_async(query))
 
     def run_groups(self, max_concurrent: int = 5) -> OperationReport:
         """Synchronous wrapper for run_groups_async."""
