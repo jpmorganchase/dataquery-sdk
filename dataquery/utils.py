@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 import aiohttp
 import structlog
 
-from .constants.download import DEFAULT_WRITTEN_RESEARCH_CHUNK_DAYS
+from .constants.download import DEFAULT_WRITTEN_RESEARCH_CHUNK_DAYS, NO_FILES_FOUND_ERROR
 from .types.exceptions import ValidationError
 from .types.models import ClientConfig
 
@@ -178,8 +178,8 @@ DATAQUERY_DEFAULT_DIR=files
 # =============================================================================
 
 # User agent string for HTTP requests
-# Default: DATAQUERY-SDK/1.2.0
-DATAQUERY_USER_AGENT=DATAQUERY-SDK/1.2.0
+# Default: DATAQUERY-SDK/1.2.1
+DATAQUERY_USER_AGENT=DATAQUERY-SDK/1.2.1
 
 # Enable HTTP/2 support (true/false)
 # Default: true
@@ -770,15 +770,14 @@ def _extract_zip_safely(zip_path: Path, target_dir: Path) -> List[str]:
     target_dir.mkdir(parents=True, exist_ok=True)
     resolved_target = target_dir.resolve()
 
-    extracted: List[str] = []
     with zipfile.ZipFile(zip_path) as zf:
-        for member in zf.namelist():
+        members = zf.namelist()
+        for member in members:
             member_path = (target_dir / member).resolve()
             if resolved_target not in member_path.parents and member_path != resolved_target:
                 raise ValidationError(f"Unsafe path in archive '{zip_path.name}': {member}")
         zf.extractall(target_dir)
-        extracted = zf.namelist()
-    return extracted
+    return members
 
 
 def _extract_single_zip(
@@ -816,6 +815,65 @@ def _extract_single_zip(
     }
 
 
+async def _run_download_over_ranges(
+    dq: "DataQuery",
+    group_id: str,
+    ranges: List[Tuple[str, str]],
+    **kwargs: Any,
+) -> Tuple[Dict[str, int], List[Dict[str, Any]]]:
+    """Run :meth:`DataQuery.run_group_download_async` once per date window.
+
+    Shared by :func:`download_zip_async` and
+    :func:`run_group_download_chunked_async`.
+
+    Returns:
+        ``(totals, per_chunk)`` where ``totals`` aggregates the download counts
+        across all windows and ``per_chunk`` holds one summary dict (dates,
+        status, error, counts) per window, in order.
+    """
+    totals = {"total_files": 0, "successful_downloads": 0, "failed_downloads": 0}
+    per_chunk: List[Dict[str, Any]] = []
+
+    for chunk_start, chunk_end in ranges:
+        report = await dq.run_group_download_async(
+            group_id=group_id,
+            start_date=chunk_start,
+            end_date=chunk_end,
+            **kwargs,
+        )
+        counts = report.counts or {}
+        for key in totals:
+            totals[key] += int(counts.get(key, 0) or 0)
+        per_chunk.append(
+            {
+                "start_date": chunk_start,
+                "end_date": chunk_end,
+                "status": report.status,
+                "error": report.error,
+                "counts": counts,
+            }
+        )
+
+    return totals, per_chunk
+
+
+def _aggregate_chunk_status(per_chunk: List[Dict[str, Any]]) -> str:
+    """Combine per-window statuses into one ``success``/``partial``/``error``.
+
+    Windows that merely had no available files (a quiet window, reported by
+    the API as an error) are ignored so they don't mark an otherwise clean
+    multi-window run as ``partial``.
+    """
+    relevant = [
+        c["status"] for c in per_chunk if not (c["status"] == "error" and c.get("error") == NO_FILES_FOUND_ERROR)
+    ]
+    if not relevant or all(s == "success" for s in relevant):
+        return "success"
+    if all(s == "error" for s in relevant):
+        return "error"
+    return "partial"
+
+
 async def download_zip_async(
     dq: "DataQuery",
     group_id: str,
@@ -835,6 +893,10 @@ async def download_zip_async(
     still in flight instead of waiting for the whole batch to finish. A final
     sweep extracts any archives not already handled by the per-file hook.
 
+    Note that with ``remove_zip_after_extract=True`` the archives are gone
+    after the run, so re-running the same range downloads them again (the
+    downloader can't see they were already fetched).
+
     Args:
         dq: An already-constructed ``DataQuery`` instance (used inside its own
             ``async with`` context by the caller).
@@ -848,16 +910,17 @@ async def download_zip_async(
         **kwargs: Forwarded as-is to ``DataQuery.run_group_download_async``.
 
     Returns:
-        Dict with the download ``status``/``counts`` and an ``extracted`` list
-        describing each archive that was unzipped.
+        Dict with the aggregated ``status``/``counts``, a ``chunks`` list of
+        per-window summaries, an ``extracted`` list describing each archive
+        that was unzipped, and an ``extraction_errors`` list for archives that
+        downloaded fine but could not be extracted (any entry here downgrades
+        an overall ``success`` to ``partial``).
     """
     ranges = _split_into_monthly_ranges(start_date, end_date)
 
-    counts = {"total_files": 0, "successful_downloads": 0, "failed_downloads": 0}
-    statuses: List[str] = []
-
     today = datetime.now().strftime("%Y%m%d")
     extracted: List[Dict[str, Any]] = []
+    extraction_errors: List[Dict[str, str]] = []
     processed: set[Path] = set()
 
     async def _on_file_complete(result: "DownloadResult") -> None:
@@ -870,38 +933,37 @@ async def download_zip_async(
         processed.add(key)
         # Run the blocking unzip off the event loop so concurrent downloads
         # keep progressing while this archive is extracted.
-        record = await asyncio.to_thread(
-            _extract_single_zip, local_path, today, remove_zip_after_extract
-        )
+        try:
+            record = await asyncio.to_thread(_extract_single_zip, local_path, today, remove_zip_after_extract)
+        except Exception as exc:
+            # Leave the archive for the final sweep to retry; only the sweep
+            # records a definitive extraction error.
+            processed.discard(key)
+            logger.warning(
+                "Extraction failed, will retry in final sweep",
+                zip=str(local_path),
+                error=str(exc),
+            )
+            return
         if record is not None:
             extracted.append(record)
 
-    for chunk_start, chunk_end in ranges:
-        report = await dq.run_group_download_async(
-            group_id=group_id,
-            start_date=chunk_start,
-            end_date=chunk_end,
-            destination_dir=destination_dir,
-            on_file_complete=_on_file_complete,
-            **kwargs,
-        )
-        statuses.append(report.status)
-        chunk_counts = report.counts or {}
-        for key in counts:
-            counts[key] += int(chunk_counts.get(key, 0) or 0)
-
-    if all(s == "success" for s in statuses):
-        status = "success"
-    elif all(s == "error" for s in statuses):
-        status = "error"
-    else:
-        status = "partial"
+    totals, per_chunk = await _run_download_over_ranges(
+        dq,
+        group_id,
+        ranges,
+        destination_dir=destination_dir,
+        on_file_complete=_on_file_complete,
+        **kwargs,
+    )
+    status = _aggregate_chunk_status(per_chunk)
 
     group_dir = destination_dir / group_id
 
     # Fallback sweep: extract any archives the per-file hook did not handle
-    # (e.g. files whose local path was unavailable). Already-extracted zips
-    # were removed/deduplicated, so this is idempotent.
+    # (e.g. files whose local path was unavailable, or first-attempt extraction
+    # failures). Already-extracted zips were removed/deduplicated, so this is
+    # idempotent.
     if group_dir.is_dir():
         # Snapshot the top-level archives before extracting so nested zips
         # unpacked from these archives are left untouched (no recursion).
@@ -911,17 +973,27 @@ async def download_zip_async(
             if key in processed:
                 continue
             processed.add(key)
-            record = _extract_single_zip(zip_path, today, remove_zip_after_extract)
+            try:
+                record = await asyncio.to_thread(_extract_single_zip, zip_path, today, remove_zip_after_extract)
+            except Exception as exc:
+                logger.error("Extraction failed", zip=str(zip_path), error=str(exc))
+                extraction_errors.append({"zip": str(zip_path), "error": str(exc)})
+                continue
             if record is not None:
                 extracted.append(record)
+
+    if extraction_errors and status == "success":
+        status = "partial"
 
     return {
         "group_id": group_id,
         "start_date": start_date,
         "end_date": end_date,
         "status": status,
-        "counts": counts,
+        "counts": totals,
+        "chunks": per_chunk,
         "extracted": extracted,
+        "extraction_errors": extraction_errors,
     }
 
 
@@ -955,28 +1027,7 @@ async def run_group_download_chunked_async(
         ``OperationReport`` dumps.
     """
     chunks = split_date_range_into_chunks(start_date, end_date, chunk_days)
-
-    totals = {"total_files": 0, "successful_downloads": 0, "failed_downloads": 0}
-    per_chunk: List[Dict[str, Any]] = []
-
-    for chunk_start, chunk_end in chunks:
-        report = await dq.run_group_download_async(
-            group_id=group_id,
-            start_date=chunk_start,
-            end_date=chunk_end,
-            **kwargs,
-        )
-        counts = report.counts or {}
-        for key in totals:
-            totals[key] += int(counts.get(key, 0) or 0)
-        per_chunk.append(
-            {
-                "start_date": chunk_start,
-                "end_date": chunk_end,
-                "status": report.status,
-                "counts": counts,
-            }
-        )
+    totals, per_chunk = await _run_download_over_ranges(dq, group_id, chunks, **kwargs)
 
     return {
         "group_id": group_id,

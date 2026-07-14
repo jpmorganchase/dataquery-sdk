@@ -17,6 +17,7 @@ from dotenv import load_dotenv
 from pydantic import SecretStr
 
 from .config import EnvConfig
+from .constants.download import NO_FILES_FOUND_ERROR
 from .core._sync import SyncRunner
 from .core.client import DataQueryClient
 from .types.exceptions import ConfigurationError
@@ -1013,7 +1014,7 @@ class DataQuery:
                 total_time_minutes = total_time_seconds / 60.0
 
                 logger.warning(
-                    "No available files found for date range",
+                    NO_FILES_FOUND_ERROR,
                     group_id=group_id,
                     start_date=start_date,
                     end_date=end_date,
@@ -1021,7 +1022,7 @@ class DataQuery:
                 return OperationReport(
                     operation="group_download",
                     status="error",
-                    error="No available files found for date range",
+                    error=NO_FILES_FOUND_ERROR,
                     subject={"group_id": group_id, "start_date": start_date, "end_date": end_date},
                     counts={"total_files": 0, "successful_downloads": 0, "failed_downloads": 0},
                     timing={

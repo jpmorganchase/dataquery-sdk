@@ -40,5 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - SSE: jittered reconnect backoff to avoid synchronized reconnect storms; stop reconnecting on fatal 403/404 and bound retries on 401; idle `sock_read` timeout distinguished from the heartbeat watchdog; honor the server `retry:` hint; strip a leading UTF-8 BOM; larger read buffer guards against `LineTooLong`; `stop()` is await-safe under concurrent callers
 ## [1.2.0] - 2026-06-29
 - DataQuery functions: new `function-help` command for local lookup of all 158 DQ function syntaxes, parameters, and categories (no API call); backed by a static, frozen `dataquery/data/function.json` dataset
+## [1.2.1] - 2026-07-14
+- Written research: new `download_zip_async` helper that downloads a group over a date range (split into calendar-month windows to fit the available-files endpoint limit) and safely extracts ZIP archives as each download completes, overlapping unzip with in-flight downloads
+- Group downloads: `run_group_download_async` accepts an `on_file_complete` async callback awaited per file on `completed`/`already_exists`
+- Extraction is Zip Slip-guarded, skips current-day archives, and surfaces failures via `extraction_errors` (downgrading overall status to `partial`); date windows with no available files no longer mark a multi-window run as `partial`
 
 
