@@ -923,3 +923,66 @@ async def download_zip_async(
         "counts": counts,
         "extracted": extracted,
     }
+
+
+async def run_group_download_chunked_async(
+    dq: "DataQuery",
+    group_id: str,
+    start_date: str,
+    end_date: str,
+    chunk_days: int = DEFAULT_WRITTEN_RESEARCH_CHUNK_DAYS,
+    **kwargs: Any,
+) -> Dict[str, Any]:
+    """Run :meth:`DataQuery.run_group_download_async` in date-range chunks.
+
+    The ``[start_date, end_date]`` range is split into ``chunk_days``-sized
+    windows (see :func:`split_date_range_into_chunks`) so each call to the
+    ``available-files`` endpoint covers a smaller window. Results are
+    aggregated into a single summary dict.
+
+    Args:
+        dq: An already-constructed ``DataQuery`` instance (will be used inside
+            its own ``async with`` context by the caller).
+        group_id: Group ID to download files from.
+        start_date: Inclusive start date in YYYYMMDD format.
+        end_date: Inclusive end date in YYYYMMDD format.
+        chunk_days: Days per chunk (default:
+            ``DEFAULT_WRITTEN_RESEARCH_CHUNK_DAYS``).
+        **kwargs: Forwarded as-is to ``DataQuery.run_group_download_async``.
+
+    Returns:
+        Dict with aggregated ``totals`` and a ``chunks`` list of per-chunk
+        ``OperationReport`` dumps.
+    """
+    chunks = split_date_range_into_chunks(start_date, end_date, chunk_days)
+
+    totals = {"total_files": 0, "successful_downloads": 0, "failed_downloads": 0}
+    per_chunk: List[Dict[str, Any]] = []
+
+    for chunk_start, chunk_end in chunks:
+        report = await dq.run_group_download_async(
+            group_id=group_id,
+            start_date=chunk_start,
+            end_date=chunk_end,
+            **kwargs,
+        )
+        counts = report.counts or {}
+        for key in totals:
+            totals[key] += int(counts.get(key, 0) or 0)
+        per_chunk.append(
+            {
+                "start_date": chunk_start,
+                "end_date": chunk_end,
+                "status": report.status,
+                "counts": counts,
+            }
+        )
+
+    return {
+        "group_id": group_id,
+        "start_date": start_date,
+        "end_date": end_date,
+        "chunk_days": chunk_days,
+        "totals": totals,
+        "chunks": per_chunk,
+    }
