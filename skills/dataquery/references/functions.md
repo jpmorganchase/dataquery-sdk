@@ -1,4 +1,6 @@
-# Functions Glossary
+ # Functions Glossary
+
+> **Grounding:** These are the only 158 functions DataQuery supports. Do not invent, alias, or guess function names or parameters. If a requested analytic has no match here, tell the user rather than approximating. Verify exact syntax with `function-help --name <FUNC>`.
 
 ## Aggregate
 

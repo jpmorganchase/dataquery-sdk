@@ -181,7 +181,7 @@ class DataQueryClient(
             raise ConfigurationError("Invalid base_url format")
 
         if strict_oauth_check and self.config.oauth_enabled:
-            if not self.config.client_id or not self.config.client_secret:
+            if not self.config.client_id or not self.config.get_client_secret():
                 raise ConfigurationError("client_id and client_secret are required")
 
         if not self.auth_manager.is_authenticated():
@@ -494,33 +494,28 @@ class DataQueryClient(
         if self.session is None:
             raise NetworkError("Failed to establish connection")
 
-        try:
-            response = await self.session.request(method, url, **kwargs)
+        response = await self.session.request(method, url, **kwargs)
 
-            # Raise 429 inside the retry scope so the retry manager backs off and retries.
-            if response.status == 429:
-                self.rate_limiter.handle_rate_limit_response(dict(response.headers))
-                retry_after = self._parse_retry_after(response.headers)
-                # Drain body so the connection can be reused; ignore decode errors.
-                try:
-                    await response.text()
-                except (UnicodeDecodeError, aiohttp.ClientPayloadError):
-                    pass
-                raise RateLimitError(f"Rate limit exceeded: {response.status}", retry_after=retry_after)
+        # Raise 429 inside the retry scope so the retry manager backs off and retries.
+        if response.status == 429:
+            self.rate_limiter.handle_rate_limit_response(dict(response.headers))
+            retry_after = self._parse_retry_after(response.headers)
+            # Drain body so the connection can be reused; ignore decode errors.
+            try:
+                await response.text()
+            except (UnicodeDecodeError, aiohttp.ClientPayloadError):
+                pass
+            raise RateLimitError(f"Rate limit exceeded: {response.status}", retry_after=retry_after)
 
-            if response.status >= 500:
-                # Drain body so the connection can be reused; ignore decode errors.
-                try:
-                    await response.text()
-                except (UnicodeDecodeError, aiohttp.ClientPayloadError):
-                    pass
-                raise NetworkError(f"Server error: {response.status}", status_code=response.status)
+        if response.status >= 500:
+            # Drain body so the connection can be reused; ignore decode errors.
+            try:
+                await response.text()
+            except (UnicodeDecodeError, aiohttp.ClientPayloadError):
+                pass
+            raise NetworkError(f"Server error: {response.status}", status_code=response.status)
 
-            return response
-        except (NetworkError, RateLimitError):
-            raise
-        except Exception:
-            raise
+        return response
 
     async def list_groups_async(self, limit: Optional[int] = None) -> List[Group]:
         """

@@ -41,16 +41,16 @@ async def test_more_async_endpoints(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_text_search_async_endpoint(monkeypatch):
+async def test_search_async_endpoint(monkeypatch):
     dq = _dq(monkeypatch)
     with patch("dataquery.dataquery.DataQueryClient") as Fake:
         inst = Fake.return_value
         inst.connect = AsyncMock()
         inst.close = AsyncMock()
         await dq.connect_async()
-        inst.text_search_async = AsyncMock(return_value={"results": []})
-        assert await dq.text_search_async("10y yield") == {"results": []}
-        inst.text_search_async.assert_awaited_once_with("10y yield")
+        inst.search_async = AsyncMock(return_value={"results": []})
+        assert await dq.search_async("10y yield") == {"results": []}
+        inst.search_async.assert_awaited_once_with("10y yield")
 
 
 def test_sync_proxies_more(monkeypatch):
@@ -60,8 +60,8 @@ def test_sync_proxies_more(monkeypatch):
         assert ra.called
 
 
-def test_text_search_sync_proxy(monkeypatch):
+def test_search_sync_proxy(monkeypatch):
     dq = _dq(monkeypatch)
     with patch("dataquery.dataquery.DataQuery._run_sync", return_value={"ok": True}) as ra:
-        assert dq.text_search("q") == {"ok": True}
+        assert dq.search("q") == {"ok": True}
         assert ra.called

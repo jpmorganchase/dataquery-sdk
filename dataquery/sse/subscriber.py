@@ -6,8 +6,10 @@ downloads files as notifications arrive. Each SSE event uses the standard
 SSE format with the event type in the ``event:`` field (e.g., ``file-updated``)
 and the file details in the JSON ``data:`` payload.
 
-The SSE ``id:`` field is persisted to disk so that cross-process replay via
-the ``last-event-id`` query parameter works correctly on reconnection.
+The SSE ``id:`` field is persisted to disk as a low-water-mark — advanced past
+an event only once its download has settled — so cross-process replay via the
+``last-event-id`` query parameter re-delivers any file whose download did not
+complete before a restart (at-least-once delivery).
 """
 
 import asyncio
@@ -245,6 +247,13 @@ class NotificationDownloadManager:
         self._download_semaphore: Optional[asyncio.Semaphore] = None
         self._inflight: Set[asyncio.Task] = set()
 
+        # Replay low-water-mark. The persisted last-event-id is only advanced
+        # past an event once its download has settled, so a crash mid-download
+        # replays that event on restart instead of silently skipping it.
+        self._uncommitted_ids: Set[int] = set()
+        self._highest_seen_event_id: int = 0
+        self._committed_event_id: int = 0
+
         self.stats: Dict[str, Any] = {
             "start_time": None,
             "notifications_received": 0,
@@ -285,6 +294,12 @@ class NotificationDownloadManager:
             if self._event_id_store is not None:
                 stored_event_id = self._event_id_store.load()
 
+        if stored_event_id is not None and stored_event_id.isdigit():
+            # Seed the low-water-mark so we neither re-persist the stored id nor
+            # ever regress below it as newly received events settle.
+            self._committed_event_id = int(stored_event_id)
+            self._highest_seen_event_id = int(stored_event_id)
+
         if stored_event_id is not None:
             logger.info(
                 "Event replay enabled — resuming from event-id %s; skipping initial bulk check.",
@@ -307,6 +322,9 @@ class NotificationDownloadManager:
             params=self.subscription.query_params(),
             event_id_store=self._event_id_store,
             heartbeat_timeout=self._heartbeat_timeout,
+            # This manager commits a low-water-mark after downloads settle,
+            # so the client must not persist ids itself at parse time.
+            defer_event_id_persistence=True,
         )
         await self._sse_client.start()
 
@@ -393,6 +411,7 @@ class NotificationDownloadManager:
         if not self._running:
             return
 
+        self._register_event_id(event)
         task = asyncio.create_task(self._run_handler(event), name="sse-download")
         self._inflight.add(task)
         task.add_done_callback(self._inflight.discard)
@@ -407,6 +426,63 @@ class NotificationDownloadManager:
             except Exception as exc:
                 logger.error("Error handling notification: %s", exc)
                 await self._dispatch_error(exc)
+        # The download has settled (success, skip, or handled failure); advance
+        # the replay cursor. Deliberately not in a ``finally``: if the task is
+        # cancelled mid-download the cursor stays behind this event so it is
+        # replayed on restart rather than skipped.
+        await self._commit_settled_event(event)
+
+    def _register_event_id(self, event: SSEEvent) -> None:
+        """Record a numeric event id as in-flight before its download starts.
+
+        The replay cursor is never advanced past an in-flight id, so a crash
+        before the download settles leaves the event to be replayed.
+        """
+        if self._event_id_store is None:
+            return
+        eid = event.id
+        if not eid or not eid.isdigit():
+            return
+        value = int(eid)
+        self._uncommitted_ids.add(value)
+        if value > self._highest_seen_event_id:
+            self._highest_seen_event_id = value
+
+    def _next_commit_id(self) -> Optional[str]:
+        """Return the highest replay id now safe to persist, or ``None``.
+
+        The safe id is the low-water-mark: everything below the oldest
+        still-in-flight event has settled, so commit ``min(in-flight) - 1``
+        (or the highest id seen when nothing is in flight). Fully synchronous
+        so two concurrent settlers can't persist a decreasing watermark across
+        the ``await`` in :meth:`_commit_settled_event`.
+        """
+        if self._uncommitted_ids:
+            watermark = min(self._uncommitted_ids) - 1
+        else:
+            watermark = self._highest_seen_event_id
+        if watermark > self._committed_event_id:
+            self._committed_event_id = watermark
+            return str(watermark)
+        return None
+
+    async def _commit_settled_event(self, event: SSEEvent) -> None:
+        """Advance the persisted replay cursor after an event's handler settles.
+
+        Runs whether the download succeeded, was skipped, or failed — the id is
+        no longer in-flight either way. A terminal download failure is already
+        surfaced via ``error_callback``/``stats``; the cursor still advances so a
+        genuinely unfetchable file can't stall replay forever.
+        """
+        store = self._event_id_store
+        if store is None:
+            return
+        eid = event.id
+        if eid and eid.isdigit():
+            self._uncommitted_ids.discard(int(eid))
+        to_save = self._next_commit_id()
+        if to_save is not None:
+            await store.save(to_save)
 
     async def _on_sse_error(self, exc: Exception) -> None:
         """Called by SSEClient on connection errors."""

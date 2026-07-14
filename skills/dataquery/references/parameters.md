@@ -1,4 +1,6 @@
-# DataQuery API v2 - Parameter Reference (Trading Desk)
+# DataQuery API v2 - Parameter Reference 
+
+> **Grounding:** These enum tables are exhaustive. Pass only values listed here — do not invent or guess parameter values, calendars, frequencies, or filter names.
 
 ## Date Parameters
 
@@ -131,5 +133,8 @@
 
 ## Environment
 
-The base URL and IDA client credentials are configured in `config/config.json`.
-Default configuration targets the production DataQuery kong proxy. No `--environment` flag is needed.
+The base URL and OAuth client credentials are read from environment variables (or a `.env`
+file passed via `--env-file`). Run `dataquery config template` to generate a `.env.template`
+listing every supported variable, then copy it to `.env` and fill in the values. Built-in
+defaults target the production DataQuery kong proxy, so no configuration is required for
+standard use, and there is no `--environment` flag.

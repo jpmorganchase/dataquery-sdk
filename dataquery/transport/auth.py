@@ -72,7 +72,7 @@ class TokenManager:
             Bearer token string or None if no valid token available
         """
         if self.config.has_bearer_token:
-            return f"Bearer {self.config.bearer_token}"
+            return f"Bearer {self.config.get_bearer_token()}"
 
         if not self.config.has_oauth_credentials:
             logger.warning("No OAuth credentials or bearer token configured")
@@ -111,7 +111,7 @@ class TokenManager:
         if not self.config.oauth_token_url:
             raise ConfigurationError("OAuth token URL not configured")
 
-        if not self.config.client_id or not self.config.client_secret:
+        if not self.config.client_id or not self.config.get_client_secret():
             raise ConfigurationError("client_id and client_secret are required for OAuth")
 
         token_request = TokenRequest(
@@ -172,7 +172,7 @@ class TokenManager:
                 "grant_type": "refresh_token",
                 "refresh_token": self.current_token.refresh_token,
                 "client_id": self.config.client_id,
-                "client_secret": self.config.client_secret,
+                "client_secret": self.config.get_client_secret(),
             }
 
             if not self.config.oauth_token_url:

@@ -111,6 +111,7 @@ class SSEClient:
         params: Optional[dict] = None,
         event_id_store: Optional[SSEEventIdStore] = None,
         heartbeat_timeout: float = 0.0,
+        defer_event_id_persistence: bool = False,
     ):
         """
         Initialise the SSE client.
@@ -147,6 +148,16 @@ class SSEClient:
                     larger than the server's keep-alive interval. ``0`` (the
                     default) disables the watchdog and relies on the server
                     closing the stream cleanly.
+            defer_event_id_persistence: When ``True``, do not persist parsed
+                    event ids to ``event_id_store`` as they arrive. The owner
+                    (e.g. :class:`NotificationDownloadManager`) instead commits
+                    a low-water-mark only after the matching download has
+                    settled, so a crash mid-download replays the event instead
+                    of skipping it (at-least-once). ``event_id_store`` is still
+                    read once on construction to seed the first
+                    ``Last-Event-ID``. Defaults to ``False`` — persist at parse
+                    time, which is correct for standalone use where there is no
+                    download step to gate persistence on.
         """
         self.config = config
         self.auth_manager = auth_manager
@@ -158,6 +169,7 @@ class SSEClient:
         self.params = dict(params) if params else None
         self.event_id_store = event_id_store
         self.heartbeat_timeout = heartbeat_timeout
+        self._defer_event_id_persistence = defer_event_id_persistence
 
         self._running = False
         self._task: Optional[asyncio.Task] = None
@@ -481,7 +493,8 @@ class SSEClient:
                 event_id = field_value
                 if field_value and field_value.isdigit():
                     self._last_event_id = field_value
-                    self._persist_event_id(field_value)
+                    if not self._defer_event_id_persistence:
+                        self._persist_event_id(field_value)
             elif field_name == "retry":
                 try:
                     retry_ms = int(field_value)
