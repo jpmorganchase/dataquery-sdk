@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import json
 import sys
+from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -289,6 +290,22 @@ def create_parser() -> argparse.ArgumentParser:
     )
 
     subparsers.add_parser("heartbeat", help="Check if DataQuery is running")
+
+    p_connect = subparsers.add_parser(
+        "mcp-connect",
+        help="Connect a local stdio MCP client to a remote MCP server (AuthE OAuth)",
+        description=(
+            "Bridge a desktop MCP client (stdio) to a remote streamable-HTTP MCP\n"
+            "server, authenticating with an OAuth client-credentials (AuthE) token\n"
+            "minted from the DATAQUERY_* environment. Point your MCP client's\n"
+            "`command` at:  dataquery mcp-connect --url <MCP_URL>"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_connect.add_argument("--url", required=True, help="Remote MCP endpoint URL")
+    p_connect.add_argument(
+        "--name", default="dataquery-mcp", help="Proxy server name (default: dataquery-mcp)"
+    )
 
     return parser
 
@@ -716,6 +733,60 @@ def cmd_function_help(args: argparse.Namespace) -> int:
     return 0
 
 
+async def cmd_mcp_connect(args: argparse.Namespace) -> int:
+    """Bridge a desktop MCP client (stdio) to a remote streamable-HTTP MCP server.
+
+    Mints an OAuth client-credentials (AuthE) token with the SDK's own
+    TokenManager from the ``DATAQUERY_*`` environment and attaches a fresh bearer
+    token to every upstream request. Launched by an MCP client as its stdio
+    ``command``; stdout carries only the MCP JSON-RPC stream, so all diagnostics
+    go to stderr.
+    """
+    try:
+        import httpx
+        from fastmcp import FastMCP
+        from fastmcp.client.transports import StreamableHttpTransport
+    except ImportError:
+        print(
+            "The MCP bridge requires the 'mcp' extra. Install it with:\n"
+            "    pip install 'dataquery-sdk[mcp]'\n"
+            "or run it directly with:\n"
+            "    uvx --from 'dataquery-sdk[mcp]' dataquery mcp-connect --url <MCP_URL>",
+            file=sys.stderr,
+        )
+        return 1
+
+    from dataquery.config import EnvConfig
+    from dataquery.transport.auth import TokenManager
+
+    config = EnvConfig.create_client_config(
+        env_file=Path(args.env_file) if getattr(args, "env_file", None) else None
+    )
+    token_manager = TokenManager(config)
+
+    class _AutheAuth(httpx.Auth):
+        """Stamp a fresh AuthE bearer token (from the SDK TokenManager) per request."""
+
+        async def async_auth_flow(
+            self, request: httpx.Request
+        ) -> AsyncGenerator[httpx.Request, httpx.Response]:
+            header = await token_manager.get_valid_token()  # "Bearer <jwt>"
+            if not header:
+                raise DataQueryError(
+                    "Could not obtain an OAuth token \u2014 check DATAQUERY_CLIENT_ID, "
+                    "DATAQUERY_CLIENT_SECRET, DATAQUERY_OAUTH_TOKEN_URL and "
+                    "DATAQUERY_OAUTH_AUD."
+                )
+            request.headers["Authorization"] = header
+            yield request
+
+    transport = StreamableHttpTransport(args.url, auth=_AutheAuth())
+    proxy = FastMCP.as_proxy(transport, name=args.name)
+    # stdout is reserved for the MCP JSON-RPC stream; keep the banner off it.
+    await proxy.run_async(transport="stdio", show_banner=False)
+    return 0
+
+
 def main_sync(ns: argparse.Namespace) -> int:
     if ns.command == "config":
         if ns.config_command == "show":
@@ -745,6 +816,7 @@ _ASYNC_COMMANDS = {
     "expression-timeseries": cmd_expression_timeseries,
     "grid-data": cmd_grid_data,
     "heartbeat": cmd_heartbeat,
+    "mcp-connect": cmd_mcp_connect,
 }
 
 
