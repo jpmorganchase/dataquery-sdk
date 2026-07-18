@@ -303,9 +303,7 @@ def create_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p_connect.add_argument("--url", required=True, help="Remote MCP endpoint URL")
-    p_connect.add_argument(
-        "--name", default="dataquery-mcp", help="Proxy server name (default: dataquery-mcp)"
-    )
+    p_connect.add_argument("--name", default="dataquery-mcp", help="Proxy server name (default: dataquery-mcp)")
 
     return parser
 
@@ -759,17 +757,13 @@ async def cmd_mcp_connect(args: argparse.Namespace) -> int:
     from dataquery.config import EnvConfig
     from dataquery.transport.auth import TokenManager
 
-    config = EnvConfig.create_client_config(
-        env_file=Path(args.env_file) if getattr(args, "env_file", None) else None
-    )
+    config = EnvConfig.create_client_config(env_file=Path(args.env_file) if getattr(args, "env_file", None) else None)
     token_manager = TokenManager(config)
 
     class _AutheAuth(httpx.Auth):
         """Stamp a fresh AuthE bearer token (from the SDK TokenManager) per request."""
 
-        async def async_auth_flow(
-            self, request: httpx.Request
-        ) -> AsyncGenerator[httpx.Request, httpx.Response]:
+        async def async_auth_flow(self, request: httpx.Request) -> AsyncGenerator[httpx.Request, httpx.Response]:
             header = await token_manager.get_valid_token()  # "Bearer <jwt>"
             if not header:
                 raise DataQueryError(
