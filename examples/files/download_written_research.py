@@ -15,8 +15,8 @@ from dataquery.utils import download_zip_async  # noqa: E402
 GROUP_ID = "RESEARCH_EQUITY_ALL"
 # Trailing two weeks up to yesterday. Current-day archives are skipped by the
 # unzip step anyway, since their content may still be updating.
-END_DATE = (date.today() - timedelta(days=1)).strftime("%Y%m%d")
-START_DATE = (date.today() - timedelta(days=14)).strftime("%Y%m%d")
+END_DATE = "20161031"
+START_DATE = "20161001"
 
 
 async def main():

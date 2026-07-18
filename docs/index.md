@@ -96,10 +96,10 @@ DataQuery SDK is designed for high-performance data operations:
 
 ## Community
 
-- :material-github: [GitHub Repository](https://github.com/dataquery/dataquery-sdk)
-- :material-bug: [Report Issues](https://github.com/dataquery/dataquery-sdk/issues)
-- :material-lightbulb: [Request Features](https://github.com/dataquery/dataquery-sdk/issues/new?template=feature_request.md)
-- :material-book: [Documentation](https://dataquery.github.io/dataquery-sdk/)
+- :material-github: [GitHub Repository](https://github.com/jpmorganchase/dataquery-sdk)
+- :material-bug: [Report Issues](https://github.com/jpmorganchase/dataquery-sdk/issues)
+- :material-lightbulb: [Request Features](https://github.com/jpmorganchase/dataquery-sdk/issues/new?template=feature_request.md)
+- :material-book: [Documentation](https://jpmorganchase.github.io/dataquery-sdk/)
 
 ## License
 

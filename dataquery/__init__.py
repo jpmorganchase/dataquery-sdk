@@ -11,10 +11,10 @@ Quick Start:
     ...     groups = await dq.list_groups_async()
     ...     print(f"Found {len(groups)} groups")
 
-For more information, visit: https://github.com/dataquery/dataquery-sdk
+For more information, visit: https://github.com/jpmorganchase/dataquery-sdk
 """
 
-__version__ = "1.2.1"
+__version__ = "1.2.2"
 __author__ = "DATAQUERY SDK Team"
 __email__ = "dataquery_support@jpmorgan.com"
 __license__ = "MIT"

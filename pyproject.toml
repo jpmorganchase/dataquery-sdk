@@ -48,10 +48,10 @@ keywords = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/dataquery/dataquery-sdk"
-"Bug Tracker" = "https://github.com/dataquery/dataquery-sdk/issues"
-Documentation = "https://github.com/dataquery/dataquery-sdk/wiki"
-"Source Code" = "https://github.com/dataquery/dataquery-sdk"
+Homepage = "https://github.com/jpmorganchase/dataquery-sdk"
+"Bug Tracker" = "https://github.com/jpmorganchase/dataquery-sdk/issues"
+Documentation = "https://github.com/jpmorganchase/dataquery-sdk/wiki"
+"Source Code" = "https://github.com/jpmorganchase/dataquery-sdk"
 
 [project.optional-dependencies]
 dev = [
