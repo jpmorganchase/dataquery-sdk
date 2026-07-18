@@ -8,7 +8,7 @@ To enable GitHub Pages deployment for this repository, follow these steps:
 
 ### 1. Enable GitHub Pages
 
-1. Go to your repository on GitHub: `https://github.com/dataquery/dataquery-sdk`
+1. Go to your repository on GitHub: `https://github.com/jpmorganchase/dataquery-sdk`
 2. Click on **Settings** tab
 3. Scroll down to **Pages** section in the left sidebar
 4. Under **Source**, select **GitHub Actions**
@@ -21,7 +21,7 @@ After pushing changes to the `main` branch that affect documentation:
 1. Go to the **Actions** tab in your repository
 2. Look for the "Deploy Documentation" workflow
 3. Verify it completes successfully
-4. Visit your documentation site at: `https://dataquery.github.io/dataquery-sdk/`
+4. Visit your documentation site at: `https://jpmorganchase.github.io/dataquery-sdk/`
 
 ## Automatic Deployment
 

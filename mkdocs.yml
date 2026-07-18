@@ -1,7 +1,7 @@
 site_name: DataQuery SDK
 site_description: A Python SDK for efficient data querying and file downloads with parallel processing capabilities
-site_url: https://dataquery.github.io/dataquery-sdk/
-repo_url: https://github.com/dataquery/dataquery-sdk
+site_url: https://jpmorganchase.github.io/dataquery-sdk/
+repo_url: https://github.com/jpmorganchase/dataquery-sdk
 repo_name: dataquery/dataquery-sdk
 
 theme:
@@ -102,7 +102,7 @@ nav:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/dataquery/dataquery-sdk
+      link: https://github.com/jpmorganchase/dataquery-sdk
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/dataquery-sdk/
   version:

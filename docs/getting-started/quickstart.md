@@ -186,5 +186,5 @@ Now that you have the basics:
 ## Need Help?
 
 - 📚 [Full Documentation](../index.md)
-- 🐛 [Report Issues](https://github.com/dataquery/dataquery-sdk/issues)
-- 💬 [Ask Questions](https://github.com/dataquery/dataquery-sdk/discussions)
+- 🐛 [Report Issues](https://github.com/jpmorganchase/dataquery-sdk/issues)
+- 💬 [Ask Questions](https://github.com/jpmorganchase/dataquery-sdk/discussions)
