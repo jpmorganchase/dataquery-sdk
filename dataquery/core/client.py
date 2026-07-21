@@ -527,28 +527,53 @@ class DataQueryClient(
         Returns:
             List of group information
         """
-        await self._ensure_connected()
-
-        url = self._build_api_url(C.API_GROUPS)
-        params = {}
-        if limit is not None:
-            params["limit"] = str(limit)
-
         try:
-            async with await self._make_authenticated_request("GET", url, params=params) as response:
-                await self._handle_response(response)
-                data = await response.json()
-
-                group_list = GroupList(**data)
-                self.logger.info("Groups listed", count=len(group_list.groups), limit=limit)
-
-                self.logging_manager.log_metric("groups_listed", len(group_list.groups), "count")
-
-                return group_list.groups
-
+            group_list = await self.list_groups_page_async(limit=limit)
+            self.logger.info("Groups listed", count=len(group_list.groups), limit=limit)
+            self.logging_manager.log_metric("groups_listed", len(group_list.groups), "count")
+            return group_list.groups
         except Exception as e:
             self.logger.error("Failed to list groups", error=str(e))
             raise
+
+    async def list_groups_page_async(
+        self,
+        limit: Optional[int] = None,
+        *,
+        page: Optional[str] = None,
+    ) -> GroupList:
+        """Return a single :class:`GroupList` page for client-driven pagination.
+
+        Unlike :meth:`list_groups_async` (which returns a bare list), this
+        exposes the full page object — ``links``, ``items``, ``page_size`` and
+        ``next_link`` — so the caller owns the loop::
+
+            page = await client.list_groups_page_async(limit=100)
+            while page is not None:
+                handle(page.groups)
+                page = await client.get_next_page_async(page)
+
+        Args:
+            limit: Maximum number of groups per page (server-side cap).
+            page: Optional ``next``-link cursor returned by a prior page's
+                ``links[].next``.
+
+        Returns:
+            The requested :class:`GroupList` page.
+        """
+        await self._ensure_connected()
+
+        params: Dict[str, str] = {}
+        if limit is not None:
+            params["limit"] = str(limit)
+        if page is not None:
+            params["page"] = page
+
+        url = self._build_api_url(C.API_GROUPS)
+        async with await self._make_authenticated_request("GET", url, params=params) as response:
+            await self._handle_response(response)
+            data = await response.json()
+            return self._build_page(GroupList, data)
 
     async def list_all_groups_async(
         self,
@@ -608,11 +633,7 @@ class DataQueryClient(
         await self._ensure_connected()
 
         async def _first() -> GroupList:
-            url = self._build_api_url(C.API_GROUPS)
-            async with await self._make_authenticated_request("GET", url) as response:
-                await self._handle_response(response)
-                data = await response.json()
-                return GroupList(**data)
+            return await self.list_groups_page_async()
 
         async for page in self.iter_pages(_first, max_pages=max_pages, raise_on_cap=raise_on_cap):
             yield page
@@ -650,28 +671,10 @@ class DataQueryClient(
         Returns:
             List of matching groups for the requested page.
         """
-        await self._ensure_connected()
-
-        params: Dict[str, str] = {"keywords": keywords}
-        if limit is not None:
-            params["limit"] = str(limit)
-        if offset is not None:
-            params["offset"] = str(offset)
-        if page is not None:
-            params["page"] = page
-
-        url = self._build_api_url(C.API_GROUPS_SEARCH)
-
         try:
-            async with await self._make_authenticated_request("GET", url, params=params) as response:
-                await self._handle_response(response)
-                data = await response.json()
-
-                group_list = GroupList(**data)
-                self.logger.info("Groups searched", keywords=keywords, count=len(group_list.groups))
-
-                return group_list.groups
-
+            group_list = await self.search_groups_page_async(keywords, limit=limit, offset=offset, page=page)
+            self.logger.info("Groups searched", keywords=keywords, count=len(group_list.groups))
+            return group_list.groups
         except Exception as e:
             self.logger.error("Failed to search groups", keywords=keywords, error=str(e))
             raise
@@ -681,6 +684,7 @@ class DataQueryClient(
         keywords: str,
         limit: Optional[int] = None,
         *,
+        offset: Optional[int] = None,
         page: Optional[str] = None,
     ) -> GroupList:
         """Single-page cursor search returning the full :class:`GroupList`.
@@ -694,6 +698,8 @@ class DataQueryClient(
         params: Dict[str, str] = {"keywords": keywords}
         if limit is not None:
             params["limit"] = str(limit)
+        if offset is not None:
+            params["offset"] = str(offset)
         if page is not None:
             params["page"] = page
 
@@ -701,7 +707,7 @@ class DataQueryClient(
         async with await self._make_authenticated_request("GET", url, params=params) as response:
             await self._handle_response(response)
             data = await response.json()
-            return GroupList(**data)
+            return self._build_page(GroupList, data)
 
     async def iter_search_groups_pages_async(
         self,
@@ -775,20 +781,34 @@ class DataQueryClient(
             self.logger.error("Failed to walk all matching groups", keywords=keywords, error=str(e))
             raise
 
-    async def list_files_async(self, group_id: str, file_group_id: Optional[str] = None) -> FileList:
+    async def list_files_async(
+        self,
+        group_id: str,
+        file_group_id: Optional[str] = None,
+        *,
+        page: Optional[str] = None,
+    ) -> FileList:
         """
-        List all files in a group.
+        List files in a group (single page).
+
+        The returned :class:`FileList` is paginated: read its ``next_link`` and
+        pass it to :meth:`get_next_page_async` to fetch the next page, exactly
+        like every other paged endpoint.
 
         Args:
             group_id: Group ID to list files for
             file_group_id: Optional specific file ID to filter by
+            page: Optional ``next``-link cursor returned by a prior page's
+                ``links[].next``.
 
         Returns:
-            FileList with file information
+            FileList with file information for the requested page
         """
         params = {"group-id": group_id}
         if file_group_id:
             params["file-group-id"] = file_group_id
+        if page:
+            params["page"] = page
 
         url = self._build_files_api_url(C.API_GROUP_FILES)
 
@@ -797,13 +817,48 @@ class DataQueryClient(
                 await self._handle_response(response)
                 data = await response.json()
 
-                file_list = FileList(**data)
+                file_list = self._build_page(FileList, data)
                 self.logger.info("Files listed", group_id=group_id, count=file_list.file_count)
 
                 return file_list
 
         except Exception as e:
             self.logger.error("Failed to list files", group_id=group_id, error=str(e))
+            raise
+
+    async def list_all_files_async(
+        self,
+        group_id: str,
+        file_group_id: Optional[str] = None,
+        *,
+        max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
+        raise_on_cap: bool = True,
+    ) -> List[FileInfo]:
+        """Materialize every page of a group's file catalog.
+
+        Mirrors :meth:`list_all_groups_async` for the files endpoint — walks
+        ``links[].next`` with the shared ``iter_pages`` hardening (loop
+        detection + page cap).
+        """
+
+        async def _first() -> FileList:
+            return await self.list_files_async(group_id, file_group_id)
+
+        files: List[FileInfo] = []
+        page_count = 0
+        try:
+            async for page in self.iter_pages(_first, max_pages=max_pages, raise_on_cap=raise_on_cap):
+                page_count += 1
+                files.extend(page.file_group_ids)
+            self.logger.info(
+                "All files listed",
+                group_id=group_id,
+                total_files=len(files),
+                total_pages=page_count,
+            )
+            return files
+        except Exception as e:
+            self.logger.error("Failed to list all files", group_id=group_id, error=str(e))
             raise
 
     async def get_file_info_async(self, group_id: str, file_group_id: str) -> FileInfo:

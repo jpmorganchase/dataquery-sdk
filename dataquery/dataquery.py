@@ -10,7 +10,7 @@ import time
 from calendar import monthrange
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional, Tuple, Union
+from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional, Tuple, TypeVar, Union
 
 import structlog
 from dotenv import load_dotenv
@@ -29,15 +29,20 @@ from .types.models import (
     DownloadResult,
     DownloadStatus,
     FileInfo,
+    FileList,
     FiltersResponse,
     GridDataResponse,
     Group,
+    GroupList,
     InstrumentsResponse,
     OperationReport,
+    Paginated,
     TimeSeriesResponse,
 )
 
 logger = structlog.get_logger(__name__)
+
+P = TypeVar("P", bound=Paginated)
 
 
 def _format_duration(seconds: float) -> str:
@@ -301,6 +306,55 @@ class DataQuery:
         else:
             return await client.list_groups_async(limit=limit)
 
+    async def list_groups_page_async(
+        self,
+        limit: Optional[int] = None,
+        *,
+        page: Optional[str] = None,
+    ) -> GroupList:
+        """
+        Return a single page of groups for client-driven pagination.
+
+        Exposes the full :class:`GroupList` page (``links``, ``items``,
+        ``page_size``, ``next_link``) so the caller can page manually with
+        :meth:`get_next_page_async`, rather than letting the SDK walk every
+        page. Contrast :meth:`list_groups_async`, which returns a bare list.
+
+        Args:
+            limit: Maximum number of groups per page (server-side cap).
+            page: Optional ``next``-link cursor from a prior page.
+
+        Returns:
+            The requested :class:`GroupList` page.
+        """
+        await self.connect_async()
+        client = self._ensure_client()
+        return await client.list_groups_page_async(limit=limit, page=page)
+
+    async def get_next_page_async(self, page: P) -> Optional[P]:
+        """
+        Fetch the page after ``page``, or ``None`` if it is the last page.
+
+        Client-driven pagination: read ``page.next_link`` off any paged
+        response and hand the response back here to get the next page (same
+        type). Returns ``None`` once there is no next link, so it composes
+        into a plain ``while`` loop::
+
+            page = await dq.list_instruments_async(group_id)
+            while page is not None:
+                handle(page.instruments)
+                page = await dq.get_next_page_async(page)
+
+        Args:
+            page: The page whose ``next`` link should be followed.
+
+        Returns:
+            The next page (same type as ``page``), or ``None`` at the end.
+        """
+        await self.connect_async()
+        client = self._ensure_client()
+        return await client.get_next_page_async(page)
+
     async def search_groups_async(
         self,
         keywords: str,
@@ -327,6 +381,33 @@ class DataQuery:
         await self.connect_async()
         client = self._ensure_client()
         return await client.search_groups_async(keywords, limit, offset, page=page)
+
+    async def search_groups_page_async(
+        self,
+        keywords: str,
+        limit: Optional[int] = None,
+        *,
+        page: Optional[str] = None,
+    ) -> GroupList:
+        """
+        Return a single page of keyword search results for client-driven pagination.
+
+        Exposes the full :class:`GroupList` page (``links``, ``items``,
+        ``page_size``, ``next_link``) so the caller can page manually with
+        :meth:`get_next_page_async`, matching every other paged endpoint.
+        Contrast :meth:`search_groups_async`, which returns a bare list.
+
+        Args:
+            keywords: Search keywords.
+            limit: Maximum number of results per page (server-side cap).
+            page: Optional ``next``-link cursor from a prior page.
+
+        Returns:
+            The requested :class:`GroupList` page.
+        """
+        await self.connect_async()
+        client = self._ensure_client()
+        return await client.search_groups_page_async(keywords, limit=limit, page=page)
 
     async def search_all_groups_async(
         self,
@@ -358,19 +439,50 @@ class DataQuery:
 
     async def list_files_async(self, group_id: str, file_group_id: Optional[str] = None) -> List[FileInfo]:
         """
-        List all files in a group.
+        List all files in a group, walking every page.
+
+        The file catalog is paginated; this aggregates every page into one
+        list (with the shared walker's loop detection and page cap). For
+        page-by-page control use :meth:`list_files_page_async` +
+        :meth:`get_next_page_async`.
 
         Args:
             group_id: Group ID to list files for
             file_group_id: Optional specific file ID to filter by
 
         Returns:
-            List of file information
+            List of file information across all pages
         """
         await self.connect_async()
         client = self._ensure_client()
-        file_list = await client.list_files_async(group_id, file_group_id)
-        return file_list.file_group_ids
+        return await client.list_all_files_async(group_id, file_group_id)
+
+    async def list_files_page_async(
+        self,
+        group_id: str,
+        file_group_id: Optional[str] = None,
+        *,
+        page: Optional[str] = None,
+    ) -> FileList:
+        """
+        Return a single page of files for client-driven pagination.
+
+        Exposes the full :class:`FileList` page (``links``, ``items``,
+        ``page_size``, ``next_link``) so the caller can page manually with
+        :meth:`get_next_page_async`, matching every other paged endpoint.
+        Contrast :meth:`list_files_async`, which returns a bare list.
+
+        Args:
+            group_id: Group ID to list files for.
+            file_group_id: Optional specific file ID to filter by.
+            page: Optional ``next``-link cursor from a prior page.
+
+        Returns:
+            The requested :class:`FileList` page.
+        """
+        await self.connect_async()
+        client = self._ensure_client()
+        return await client.list_files_async(group_id, file_group_id, page=page)
 
     async def check_availability_async(self, file_group_id: str, file_datetime: str) -> AvailabilityInfo:
         """
@@ -1735,6 +1847,14 @@ class DataQuery:
         """Synchronous wrapper for list_groups."""
         return self._run_sync(self.list_groups_async(limit))
 
+    def list_groups_page(self, limit: Optional[int] = None, *, page: Optional[str] = None) -> GroupList:
+        """Synchronous wrapper for list_groups_page_async (client-driven pagination)."""
+        return self._run_sync(self.list_groups_page_async(limit=limit, page=page))
+
+    def get_next_page(self, page: P) -> Optional[P]:
+        """Synchronous wrapper for get_next_page_async (fetch the next page, or None)."""
+        return self._run_sync(self.get_next_page_async(page))
+
     def search_groups(
         self,
         keywords: str,
@@ -1745,6 +1865,16 @@ class DataQuery:
     ) -> List[Group]:
         """Synchronous wrapper for search_groups (single page)."""
         return self._run_sync(self.search_groups_async(keywords, limit, offset, page=page))
+
+    def search_groups_page(
+        self,
+        keywords: str,
+        limit: Optional[int] = None,
+        *,
+        page: Optional[str] = None,
+    ) -> GroupList:
+        """Synchronous wrapper for search_groups_page_async (client-driven pagination)."""
+        return self._run_sync(self.search_groups_page_async(keywords, limit=limit, page=page))
 
     def search_all_groups(
         self,
@@ -1762,6 +1892,16 @@ class DataQuery:
     def list_files(self, group_id: str, file_group_id: Optional[str] = None) -> List[FileInfo]:
         """Synchronous wrapper for list_files."""
         return self._run_sync(self.list_files_async(group_id, file_group_id))
+
+    def list_files_page(
+        self,
+        group_id: str,
+        file_group_id: Optional[str] = None,
+        *,
+        page: Optional[str] = None,
+    ) -> FileList:
+        """Synchronous wrapper for list_files_page_async (client-driven pagination)."""
+        return self._run_sync(self.list_files_page_async(group_id, file_group_id, page=page))
 
     def check_availability(self, file_group_id: str, file_datetime: str) -> AvailabilityInfo:
         """Synchronous wrapper for check_availability."""

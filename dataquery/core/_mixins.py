@@ -28,16 +28,19 @@ from typing import (
     Dict,
     List,
     Optional,
+    Type,
     TypeVar,
     Union,
 )
+from urllib.parse import urljoin, urlparse
 
 import aiohttp
 
 from .. import constants as C
-from ..types.exceptions import PaginationError
+from ..types.exceptions import APIResponseError, PaginationError
 from ..types.models import (
     AttributesResponse,
+    FileList,
     FiltersResponse,
     GridDataResponse,
     InstrumentsResponse,
@@ -61,7 +64,7 @@ except ImportError:
 if TYPE_CHECKING:
     import structlog
 
-    from ..types.models import FileInfo, FileList, Group, GroupList
+    from ..types.models import FileInfo, Group, GroupList
 
 
 __all__ = [
@@ -92,6 +95,9 @@ class _RequestProto:
     def _build_api_url(self, endpoint: str) -> str:  # pragma: no cover - stub
         raise NotImplementedError
 
+    def _build_files_api_url(self, endpoint: str) -> str:  # pragma: no cover - stub
+        raise NotImplementedError
+
     async def _enter_request_cm(  # pragma: no cover - stub
         self, method: str, url: str, **kwargs: object
     ) -> aiohttp.ClientResponse:
@@ -104,13 +110,124 @@ class _RequestProto:
 
 
 class PaginationMixin(_RequestProto):
-    """Shared async-iterator pagination over any ``Paginated`` response.
+    """Client-driven and SDK-driven pagination over any ``Paginated`` response.
 
     The DataQuery v2 API returns ``links[].next`` cursor URLs on every paged
-    endpoint. ``iter_pages`` walks them until exhausted, with the same loop
-    detection + page cap that ``list_all_groups_async`` already uses, so every
-    paginated method gets the same hardening for free.
+    endpoint. Two styles are supported:
+
+    - **Client-driven** (:meth:`get_next_page_async`): the caller owns the
+      loop. Fetch the first page with the normal single-page method, read
+      ``page.next_link`` (surfaced to you), then hand the page back to
+      ``get_next_page_async`` to fetch the next one. Nothing is fetched until
+      you ask, so the client decides how far to page.
+    - **SDK-driven** (:meth:`iter_pages`): the SDK walks every page for you,
+      with loop detection and a page cap. The ``iter_*`` / ``*_all_*`` helpers
+      build on this.
     """
+
+    @staticmethod
+    def _build_page(model_cls: Type[P], payload: Any) -> P:
+        """Construct a paginated response, handling DataQuery's non-data envelopes.
+
+        A paged endpoint can answer with data, or with an out-of-band envelope.
+        An envelope is recognised structurally: it carries **none** of the
+        model's own fields (by name or wire alias).
+
+        - ``{"errors": [{"code", "message", "description"}, ...]}`` (or a single
+          ``{"error": {...}}``) — a real failure returned inside a 2xx response,
+          such as ``498 Unrecognized Page Token``. Raised as
+          :class:`APIResponseError`.
+        - ``{"info": {"code": "204", "description": "...no content available."}}``
+          — a "no content" signal (``info`` is a declared field). Built into an
+          empty page (no records, no ``links``) so pagination simply stops.
+        - Any other unrecognisable body (``{}``, ``{"message": "..."}``) also
+          raises :class:`APIResponseError` — a malformed 2xx must fail loudly
+          rather than masquerade as an empty page.
+
+        A data payload that merely *carries* an extra ``errors`` field alongside
+        recognised fields is built normally (models allow extra fields).
+        """
+        if isinstance(payload, dict):
+            known: set = set()
+            for name, field in model_cls.model_fields.items():
+                known.add(name)
+                if field.alias:
+                    known.add(field.alias)
+            if not (known & payload.keys()):
+                raw_errors = payload.get("errors") or payload.get("error")
+                if raw_errors:
+                    err_items = raw_errors if isinstance(raw_errors, list) else [raw_errors]
+                    first = next((e for e in err_items if isinstance(e, dict)), {})
+                    code = first.get("code")
+                    description = first.get("description") or first.get("message") or "API returned an error response"
+                    message = f"[{code}] {description}" if code is not None else description
+                    raise APIResponseError(message, code=code, details={"errors": err_items})
+                raise APIResponseError(
+                    "Unrecognized response shape from paginated endpoint",
+                    details={"keys": sorted(payload.keys())},
+                )
+        return model_cls(**payload)
+
+    async def get_next_page_async(self, page: P) -> Optional[P]:
+        """Fetch the page after ``page``, or ``None`` if it is the last page.
+
+        This is the manual, client-driven counterpart to :meth:`iter_pages`.
+        The returned page is the same type as ``page`` and carries its own
+        ``links`` / ``items`` / ``page_size`` plus ``next_link`` for the page
+        after it, so the caller can keep paging::
+
+            page = await client.list_instruments_async(group_id)
+            while page is not None:
+                handle(page.instruments)
+                page = await client.get_next_page_async(page)
+
+        Args:
+            page: The page whose ``links[].next`` should be followed. Passing a
+                page with no next link returns ``None``.
+
+        Returns:
+            The next page (same type as ``page``), or ``None`` when ``page`` is
+            the last page.
+
+        Raises:
+            APIResponseError: If the server answers with an error envelope or
+                an unrecognizable body (see :meth:`_build_page`).
+            PaginationError: If the ``next`` link points at a different host
+                than the page's API surface — authenticated requests are never
+                sent off-host.
+        """
+        next_url = page.get_next_link()
+        if not next_url:
+            return None
+
+        # Resolve against the surface the page came from (files vs JSON API).
+        # urljoin handles base-relative ("groups?page=2"), host-absolute
+        # ("/research/.../groups?page=2"), and fully absolute links alike.
+        base = self._page_base_url(page)
+        absolute = urljoin(base, next_url)
+        if urlparse(absolute).netloc.lower() != urlparse(base).netloc.lower():
+            raise PaginationError(
+                "Refusing to follow next link pointing at a different host",
+                pages_fetched=1,
+                items_collected=_page_item_count(page),
+                url=absolute,
+            )
+
+        async with await self._enter_request_cm("GET", absolute) as response:
+            await self._handle_response(response)
+            payload = await response.json()
+            return self._build_page(type(page), payload)
+
+    def _page_base_url(self, page: Paginated) -> str:
+        """Base URL a page's relative links resolve against.
+
+        ``FileList`` pages come from the File Delivery surface
+        (``files_api_base_url``); every other paginated response comes from the
+        JSON Data API (``api_base_url``).
+        """
+        if isinstance(page, FileList):
+            return self._build_files_api_url("")
+        return self._build_api_url("")
 
     async def iter_pages(
         self,
@@ -165,14 +282,10 @@ class PaginationMixin(_RequestProto):
                     )
                 return
 
-            absolute = next_url
-            if not absolute.startswith(("http://", "https://")):
-                absolute = self._build_api_url(absolute.lstrip("/"))
-
-            async with await self._enter_request_cm("GET", absolute) as response:
-                await self._handle_response(response)
-                payload = await response.json()
-                page = type(page)(**payload)
+            nxt = await self.get_next_page_async(page)
+            if nxt is None:
+                return
+            page = nxt
 
             page_count += 1
             items_so_far += _page_item_count(page)
@@ -182,7 +295,7 @@ class PaginationMixin(_RequestProto):
 
 def _page_item_count(page: Paginated) -> int:
     """Best-effort count of records in a page across all known response shapes."""
-    for attr in ("groups", "instruments", "filters"):
+    for attr in ("groups", "instruments", "filters", "file_group_ids"):
         value = getattr(page, attr, None)
         if isinstance(value, list):
             return len(value)
@@ -209,7 +322,7 @@ class InstrumentsMixin(PaginationMixin):
         async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             data = await response.json()
-            return InstrumentsResponse(**data)
+            return self._build_page(InstrumentsResponse, data)
 
     async def iter_instruments_async(
         self,
@@ -242,7 +355,7 @@ class InstrumentsMixin(PaginationMixin):
         async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             data = await response.json()
-            return InstrumentsResponse(**data)
+            return self._build_page(InstrumentsResponse, data)
 
     async def iter_search_instruments_async(
         self,
@@ -274,7 +387,7 @@ class MetadataMixin(PaginationMixin):
         async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             payload = await response.json()
-            return FiltersResponse(**payload)
+            return self._build_page(FiltersResponse, payload)
 
     async def iter_group_filters_async(
         self,
@@ -308,7 +421,7 @@ class MetadataMixin(PaginationMixin):
         async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             payload = await response.json()
-            return AttributesResponse(**payload)
+            return self._build_page(AttributesResponse, payload)
 
     async def iter_group_attributes_async(
         self,
@@ -373,7 +486,7 @@ class TimeSeriesMixin(PaginationMixin):
         async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             payload = await response.json()
-            return TimeSeriesResponse(**payload)
+            return self._build_page(TimeSeriesResponse, payload)
 
     async def get_expressions_time_series_async(
         self,
@@ -419,7 +532,7 @@ class TimeSeriesMixin(PaginationMixin):
         async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             payload = await response.json()
-            return TimeSeriesResponse(**payload)
+            return self._build_page(TimeSeriesResponse, payload)
 
     async def get_group_time_series_async(
         self,
@@ -466,7 +579,7 @@ class TimeSeriesMixin(PaginationMixin):
         async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             payload = await response.json()
-            return TimeSeriesResponse(**payload)
+            return self._build_page(TimeSeriesResponse, payload)
 
     async def iter_instrument_time_series_async(
         self,

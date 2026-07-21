@@ -34,6 +34,7 @@ from .function_registry import (
 from .sse.client import SSEClient, SSEEvent
 from .sse.subscriber import NotificationDownloadManager
 from .types.exceptions import (
+    APIResponseError,
     AuthenticationError,
     AvailabilityError,
     ConfigurationError,
@@ -45,6 +46,7 @@ from .types.exceptions import (
     GroupNotFoundError,
     NetworkError,
     NotFoundError,
+    PaginationError,
     RateLimitError,
     ValidationError,
     WorkflowError,
@@ -62,6 +64,8 @@ from .types.models import (
     FileList,
     Group,
     GroupList,
+    Link,
+    Paginated,
 )
 from .utils import download_zip_async
 
@@ -71,6 +75,8 @@ __all__ = [
     "ClientConfig",
     "Group",
     "GroupList",
+    "Paginated",
+    "Link",
     "FileInfo",
     "FileList",
     "AvailabilityInfo",
@@ -81,9 +87,11 @@ __all__ = [
     "DownloadProgress",
     "DateRange",
     "DataQueryError",
+    "APIResponseError",
     "AuthenticationError",
     "ValidationError",
     "NotFoundError",
+    "PaginationError",
     "RateLimitError",
     "NetworkError",
     "ConfigurationError",

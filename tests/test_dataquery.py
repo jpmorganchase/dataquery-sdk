@@ -394,13 +394,12 @@ class TestDataQueryAsyncMethods:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
-                # Mock the file list object that has file_group_ids attribute
-                mock_file_list = MagicMock()
-                mock_file_list.file_group_ids = [
+                # Facade aggregates every page via the client-level walker
+                mock_files = [
                     FileInfo(file_group_id="file1", file_type="csv", file_size=1024),
                     FileInfo(file_group_id="file2", file_type="json", file_size=2048),
                 ]
-                mock_client.list_files_async.return_value = mock_file_list
+                mock_client.list_all_files_async.return_value = mock_files
 
                 dataquery = DataQuery(config)
                 # Set the client directly to avoid network calls
@@ -408,8 +407,8 @@ class TestDataQueryAsyncMethods:
 
                 result = await dataquery.list_files_async("group1", "file_group1")
 
-                assert result == mock_file_list.file_group_ids
-                mock_client.list_files_async.assert_called_once_with("group1", "file_group1")
+                assert result == mock_files
+                mock_client.list_all_files_async.assert_called_once_with("group1", "file_group1")
 
     @pytest.mark.asyncio
     async def test_check_availability_async(self):
@@ -1506,13 +1505,11 @@ class TestDataQueryWorkflowMethods:
                 mock_client = AsyncMock()
                 mock_client_class.return_value = mock_client
 
-                # Mock the file list object that has file_group_ids attribute
-                mock_file_list = MagicMock()
-                mock_file_list.file_group_ids = [
+                # Facade list_files_async now aggregates via list_all_files_async
+                mock_client.list_all_files_async.return_value = [
                     FileInfo(file_group_id="file1", file_type="csv", file_size=1024),
                     FileInfo(file_group_id="file2", file_type="json", file_size=2048),
                 ]
-                mock_client.list_files_async.return_value = mock_file_list
 
                 dataquery = DataQuery(config)
                 # Set the client directly to avoid network calls

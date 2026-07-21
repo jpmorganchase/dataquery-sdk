@@ -17,9 +17,12 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # noqa: E402
+ROOT = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(ROOT))  # noqa: E402
 
-from dataquery import DataQuery  # noqa: E402
+from dataquery import DataQuery, EnvConfig  # noqa: E402
+
+EnvConfig.load_env_file(ROOT / ".env")
 
 # Time period to pull (inclusive, YYYYMMDD).
 START_DATE = "20250101"

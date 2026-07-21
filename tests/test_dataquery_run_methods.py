@@ -189,6 +189,9 @@ async def test_wrapper_methods_delegate_to_client():
         async def list_files_async(self, group_id, file_group_id=None):
             return FileList(group_id=group_id, file_group_ids=[FileInfo(file_group_id="f1")])
 
+        async def list_all_files_async(self, group_id, file_group_id=None):
+            return [FileInfo(file_group_id="f1")]
+
         async def check_availability_async(self, file_group_id, file_datetime):
             return AvailabilityInfo(file_date=file_datetime, is_available=True)
 

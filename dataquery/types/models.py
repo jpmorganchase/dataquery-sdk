@@ -440,20 +440,30 @@ class Group(BaseModel):
 class Link(BaseModel):
     """Pagination link model."""
 
-    self: Optional[str] = Field(None, description="Current page URL")
-    next: Optional[str] = Field(None, description="Next page URL")
+    self: Optional[str] = Field(None, description="URI to re-request this page")
+    next: Optional[str] = Field(None, description="URI to the next page")
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
 
 class Paginated(BaseModel):
-    """Mixin for any response carrying a ``links`` array.
+    """Mixin for any response carrying pagination metadata.
 
-    Subclasses inherit ``get_next_link()`` / ``has_next_page()`` so callers
-    don't have to scan ``links`` manually.
+    Every paged endpoint returns ``links`` (``self``/``next`` URIs), a total
+    ``items`` count, and the ``page-size`` used. Subclasses inherit the
+    accessors below so callers can drive pagination themselves: read
+    :attr:`next_link` off a response and hand it (or the whole response) to
+    :meth:`~dataquery.core._mixins.PaginationMixin.get_next_page_async` to
+    fetch the following page.
     """
 
     links: Optional[List[Link]] = Field(None, description="Pagination links")
+    items: Optional[int] = Field(None, description="Total number of items across the set of pages")
+    page_size: Optional[int] = Field(None, alias="page-size", description="Number of items listed on a page")
+    info: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Informational message ({code, description}) — e.g. a 204 'no content available' response",
+    )
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
@@ -466,6 +476,20 @@ class Paginated(BaseModel):
                 return link.next
         return None
 
+    def get_self_link(self) -> Optional[str]:
+        """Return the URL to re-request this page, or ``None`` if absent."""
+        if not self.links:
+            return None
+        for link in self.links:
+            if link.self:
+                return link.self
+        return None
+
+    @property
+    def next_link(self) -> Optional[str]:
+        """The next-page URL surfaced for the caller (``None`` on the last page)."""
+        return self.get_next_link()
+
     def has_next_page(self) -> bool:
         """``True`` if a next-page link is present."""
         return self.get_next_link() is not None
@@ -474,7 +498,7 @@ class Paginated(BaseModel):
 class GroupList(Paginated):
     """Response model for listing groups with pagination support."""
 
-    groups: List[Group] = Field(..., description="List of groups")
+    groups: List[Group] = Field(default_factory=list, description="List of groups")
 
 
 class FileInfo(BaseModel):
@@ -531,11 +555,13 @@ class FileInfo(BaseModel):
         return bool(self.file_type) and any((t or "").lower() == "json" for t in (self.file_type or []))
 
 
-class FileList(BaseModel):
-    """Response model for listing files."""
+class FileList(Paginated):
+    """Response model for listing files (paginated)."""
 
-    group_id: str = Field(..., alias="group-id", description="Group identifier")
-    file_group_ids: List[FileInfo] = Field(..., alias="file-group-ids", description="List of file information")
+    group_id: Optional[str] = Field(None, alias="group-id", description="Group identifier")
+    file_group_ids: List[FileInfo] = Field(
+        default_factory=list, alias="file-group-ids", description="List of file information"
+    )
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
@@ -846,33 +872,29 @@ class InstrumentResponse(BaseModel):
 class InstrumentsResponse(Paginated):
     """Response model for listing instruments."""
 
-    items: int = Field(..., description="Total number of items")
-    page_size: int = Field(..., alias="page-size", description="Number of items per page")
-    instruments: List[Instrument] = Field(..., description="List of instruments")
+    instruments: List[Instrument] = Field(default_factory=list, description="List of instruments")
 
 
 class AttributesResponse(Paginated):
     """Response model for listing attributes."""
 
-    items: int = Field(..., description="Total number of items")
-    page_size: int = Field(..., alias="page-size", description="Number of items per page")
-    instruments: List[InstrumentWithAttributes] = Field(..., description="List of instruments with attributes")
+    instruments: List[InstrumentWithAttributes] = Field(
+        default_factory=list, description="List of instruments with attributes"
+    )
 
 
 class FiltersResponse(Paginated):
     """Response model for listing filters."""
 
-    items: int = Field(..., description="Total number of items")
-    page_size: int = Field(..., alias="page-size", description="Number of items per page")
-    filters: List[Filter] = Field(..., description="List of filters")
+    filters: List[Filter] = Field(default_factory=list, description="List of filters")
 
 
 class TimeSeriesResponse(Paginated):
     """Response model for time series data."""
 
-    items: int = Field(..., description="Total number of items")
-    page_size: int = Field(..., alias="page-size", description="Number of items per page")
-    instruments: List[InstrumentWithAttributes] = Field(..., description="List of instruments with time series data")
+    instruments: List[InstrumentWithAttributes] = Field(
+        default_factory=list, description="List of instruments with time series data"
+    )
 
 
 class GridDataSeries(BaseModel):

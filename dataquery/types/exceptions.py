@@ -177,6 +177,22 @@ class PaginationError(DataQueryError):
         super().__init__(message, details)
 
 
+class APIResponseError(DataQueryError):
+    """Raised when the API returns an ``errors``/``error`` envelope inside an
+    otherwise successful (2xx) HTTP response — e.g. an invalid page token
+    (``498 Unrecognized Page Token``). Distinct from HTTP-status errors, which
+    surface as :class:`AuthenticationError`, :class:`NotFoundError`, etc."""
+
+    def __init__(
+        self,
+        message: str,
+        code: Optional[Any] = None,
+        details: Optional[Dict[str, Any]] = None,
+    ):
+        self.code = code
+        super().__init__(message, details)
+
+
 class WorkflowError(DataQueryError):
     """Raised when workflow operations fail."""
 
