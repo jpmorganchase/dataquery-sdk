@@ -12,7 +12,7 @@ from dataquery import DataQuery, EnvConfig  # noqa: E402
 
 EnvConfig.load_env_file(ROOT / ".env")
 
-INSTRUMENTS = ["IE00BH3SQ895"]
+INSTRUMENTS = ["2049b68865b02042e99c9adeb1db0fa0-DQGNMTBNDFIM"]
 ATTRIBUTES = ["MIDPRC"]
 START_DATE = "20240101"
 END_DATE = "20240131"
@@ -20,6 +20,7 @@ END_DATE = "20240131"
 
 async def main():
     async with DataQuery() as dq:
+        instruments = []
         page = await dq.get_instrument_time_series_async(
             instruments=INSTRUMENTS,
             attributes=ATTRIBUTES,
@@ -27,9 +28,17 @@ async def main():
             end_date=END_DATE,
         )
         while page is not None:
-            for instrument in page.instruments or []:
-                print(instrument)
+            instruments.extend(page.instruments or [])
             page = await dq.get_next_page_async(page)
+
+        print(f"Instruments returned: {len(instruments)}")
+
+        # Convert to a tidy DataFrame: one row per (instrument, attribute, date).
+        try:
+            df = dq.time_series_to_dataframe(instruments)
+            print(df.head(10))
+        except ImportError:
+            print("pandas not installed — run: pip install 'dataquery-sdk[pandas]'")
 
 
 if __name__ == "__main__":

@@ -11,7 +11,7 @@ from dataquery.types.exceptions import (
     PaginationError,
     ValidationError,
 )
-from dataquery.types.models import ClientConfig, FileList, GroupList, InstrumentsResponse
+from dataquery.types.models import ClientConfig, FileList, GroupList, InstrumentsResponse, TimeSeriesResponse
 
 
 class DummyLogger:
@@ -938,6 +938,43 @@ async def test_get_next_page_resolves_host_absolute_links(monkeypatch):
     )
     await client.get_next_page_async(page)
     assert captured["url"] == "https://api.example.com/research/dataquery-authe/api/v2/groups?page=2"
+
+
+@pytest.mark.asyncio
+async def test_get_next_page_resolves_slash_links_under_context_path(monkeypatch):
+    """Regression: the live API returns leading-slash links WITHOUT the context path.
+
+    A next link like ``/group/time-series?...&page=...`` must resolve under the
+    configured API base (including ``research/dataquery-authe/api/v2``), not at
+    the host root — resolving at the root produced a 404
+    ('no Route matched with those values').
+    """
+    client = make_client(monkeypatch)
+    captured = {}
+
+    async def pager(method, url, **kwargs):
+        captured["url"] = url
+        resp = DummyResponse()
+
+        async def json():
+            return {"items": 0, "page-size": 1, "links": [{"next": None}], "instruments": []}
+
+        resp.json = json
+        return resp
+
+    monkeypatch.setattr(client, "_make_authenticated_request", pager)
+    page = TimeSeriesResponse(
+        **{
+            "items": 1,
+            "page-size": 1,
+            "links": [{"next": "/group/time-series?group-id=G&page=tok"}],
+            "instruments": [],
+        }
+    )
+    await client.get_next_page_async(page)
+    assert captured["url"] == (
+        "https://api.example.com/research/dataquery-authe/api/v2/group/time-series?group-id=G&page=tok"
+    )
 
 
 @pytest.mark.asyncio

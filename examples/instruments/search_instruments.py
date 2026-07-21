@@ -13,7 +13,7 @@ from dataquery import DataQuery, EnvConfig  # noqa: E402
 EnvConfig.load_env_file(ROOT / ".env")
 
 GROUP_ID = "FI_GO_BO_EA"
-KEYWORD = "market"
+KEYWORD = "SPGB"
 
 
 async def main():

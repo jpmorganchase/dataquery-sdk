@@ -32,7 +32,7 @@ from typing import (
     TypeVar,
     Union,
 )
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 
 import aiohttp
 
@@ -201,10 +201,22 @@ class PaginationMixin(_RequestProto):
             return None
 
         # Resolve against the surface the page came from (files vs JSON API).
-        # urljoin handles base-relative ("groups?page=2"), host-absolute
-        # ("/research/.../groups?page=2"), and fully absolute links alike.
+        # The DataQuery API returns links relative to the API base — with or
+        # without a leading slash, but WITHOUT the context path (e.g.
+        # "/group/time-series?...&page=..." must resolve under
+        # ".../research/dataquery-authe/api/v2"). If a link does already carry
+        # the base's context path, join at the host root so it isn't doubled.
         base = self._page_base_url(page)
-        absolute = urljoin(base, next_url)
+        if next_url.startswith(("http://", "https://")):
+            absolute = next_url
+        else:
+            parts = urlparse(base)
+            base_path = parts.path.rstrip("/")
+            if base_path and next_url.startswith(base_path + "/"):
+                absolute = f"{parts.scheme}://{parts.netloc}{next_url}"
+            else:
+                absolute = f"{base.rstrip('/')}/{next_url.lstrip('/')}"
+
         if urlparse(absolute).netloc.lower() != urlparse(base).netloc.lower():
             raise PaginationError(
                 "Refusing to follow next link pointing at a different host",

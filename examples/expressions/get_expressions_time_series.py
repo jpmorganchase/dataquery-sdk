@@ -19,15 +19,24 @@ END_DATE = "20240131"
 
 async def main():
     async with DataQuery() as dq:
+        instruments = []
         page = await dq.get_expressions_time_series_async(
             expressions=EXPRESSIONS,
             start_date=START_DATE,
             end_date=END_DATE,
         )
         while page is not None:
-            for instrument in page.instruments or []:
-                print(instrument)
+            instruments.extend(page.instruments or [])
             page = await dq.get_next_page_async(page)
+
+        print(f"Instruments returned: {len(instruments)}")
+
+        # Convert to a tidy DataFrame: one row per (instrument, attribute, date).
+        try:
+            df = dq.time_series_to_dataframe(instruments)
+            print(df.head(10))
+        except ImportError:
+            print("pandas not installed — run: pip install 'dataquery-sdk[pandas]'")
 
 
 if __name__ == "__main__":

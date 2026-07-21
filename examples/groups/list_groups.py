@@ -17,14 +17,23 @@ async def main():
     async with DataQuery() as dq:
         # Fetch the first page, then follow ``next`` yourself with
         # get_next_page_async. Each page carries items / page_size / next_link.
+        groups = []
         page = await dq.list_groups_page_async()
         page_no = 1
         while page is not None:
             print(f"page {page_no}: {len(page.groups)} groups (items={page.items}, page-size={page.page_size})")
             for group in page.groups:
                 print("  ", group.group_id, "—", group.group_name)
+            groups.extend(page.groups)
             page = await dq.get_next_page_async(page)
             page_no += 1
+
+        # Convert any response data to a DataFrame with the generic converter.
+        try:
+            df = dq.to_dataframe(groups)
+            print(df.head(10))
+        except ImportError:
+            print("pandas not installed — run: pip install 'dataquery-sdk[pandas]'")
 
 
 if __name__ == "__main__":
