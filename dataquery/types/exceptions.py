@@ -176,7 +176,7 @@ class PaginationError(DataQueryError):
 
 
 class APIResponseError(DataQueryError):
-    """Raised when the API returns an ``errors``/``error`` envelope inside an otherwise successful (2xx) HTTP response — e.g. an invalid page token (``498 Unrecognized Page Token``)."""
+    """Raised when the API returns an error envelope inside a 2xx response (e.g. an invalid page token, 498)."""
 
     def __init__(
         self,
