@@ -134,7 +134,7 @@ class EnhancedTokenBucketRateLimiter:
                     if elapsed + wait_time > timeout:
                         return False
 
-                await asyncio.sleep(min(wait_time, 0.1))
+        await asyncio.sleep(min(wait_time, 0.1))
 
     def _refill_tokens(self):
         """Refill tokens based on time elapsed."""
