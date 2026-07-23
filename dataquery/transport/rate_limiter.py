@@ -1,9 +1,4 @@
-"""
-Enhanced rate limiting implementation for the DATAQUERY SDK.
-
-Provides token bucket rate limiting with configurable burst capacity,
-requests per minute limits, and a queuing mechanism to prevent breaches.
-"""
+"""Enhanced rate limiting implementation for the DATAQUERY SDK."""
 
 import asyncio
 import time
@@ -116,21 +111,7 @@ class EnhancedTokenBucketRateLimiter:
         priority: QueuePriority = QueuePriority.NORMAL,
         operation: str = "unknown",
     ) -> bool:
-        """
-        Acquire a token for making a request.
-
-        Acquisition is a straight token bucket; ``priority`` and ``operation``
-        are accepted for call-site context (e.g. the timeout message in
-        :class:`RateLimitContext`) and do not affect ordering.
-
-        Args:
-            timeout: Maximum time to wait for a token (None = no timeout)
-            priority: Accepted for API/context; does not affect ordering
-            operation: Operation name for logging/context
-
-        Returns:
-            True if token acquired, False if timeout
-        """
+        """Acquire a token for making a request."""
         if not self.config.enable_rate_limiting:
             return True
 
@@ -190,12 +171,7 @@ class EnhancedTokenBucketRateLimiter:
         return base_wait
 
     def handle_rate_limit_response(self, headers: Dict[str, str]) -> None:
-        """
-        Handle rate limit response from server with adaptive backoff.
-
-        Args:
-            headers: Response headers from the server
-        """
+        """Handle rate limit response from server with adaptive backoff."""
         retry_after = headers.get(self.config.retry_after_header)
         if retry_after:
             try:
@@ -302,20 +278,7 @@ def create_rate_limiter(
     max_queue_size: int = 1000,
     adaptive_rate_limiting: bool = True,
 ) -> EnhancedTokenBucketRateLimiter:
-    """
-    Create an enhanced rate limiter with the specified configuration.
-
-    Args:
-        requests_per_minute: Maximum requests per minute
-        burst_capacity: Maximum burst capacity
-        enable_rate_limiting: Whether to enable rate limiting
-        enable_queuing: Whether to enable request queuing
-        max_queue_size: Maximum number of queued requests
-        adaptive_rate_limiting: Whether to enable adaptive backoff
-
-    Returns:
-        Configured enhanced rate limiter
-    """
+    """Create an enhanced rate limiter with the specified configuration."""
     config = RateLimitConfig(
         requests_per_minute=requests_per_minute,
         burst_capacity=burst_capacity,

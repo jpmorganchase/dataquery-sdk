@@ -1,10 +1,4 @@
-"""
-Shared download utilities for the SSE-driven NotificationDownloadManager.
-
-Helpers for the per-event download path: progress wrappers and the
-`download_and_track` coroutine that records stats and updates the success /
-failure tracking sets after each download attempt.
-"""
+"""Shared download utilities for the SSE-driven NotificationDownloadManager."""
 
 import asyncio
 import inspect
@@ -16,24 +10,14 @@ from ..types.models import DownloadOptions, DownloadProgress, DownloadStatus
 
 
 class _SupportsAddContains(Protocol):
-    """Set-like protocol used by :func:`download_and_track`.
-
-    The concrete implementation is either a plain ``set`` or the bounded
-    LRU container in :mod:`dataquery.sse.subscriber`. Only ``add`` and
-    ``__contains__`` are exercised here.
-    """
+    """Set-like protocol used by :func:`download_and_track`."""
 
     def add(self, key: str) -> None: ...
     def __contains__(self, key: object) -> bool: ...
 
 
 class _SupportsRetryCounter(Protocol):
-    """Dict-like protocol for the per-file retry counter.
-
-    Concrete impl is either a plain ``dict`` or the bounded LRU container
-    in :mod:`dataquery.sse.subscriber`. Only ``get``, ``pop`` and item
-    assignment are exercised here.
-    """
+    """Dict-like protocol for the per-file retry counter."""
 
     def get(self, key: str, default: int = ...) -> int: ...
     def pop(self, key: str, default: Any = ...) -> Any: ...

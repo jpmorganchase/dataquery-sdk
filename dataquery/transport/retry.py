@@ -1,9 +1,4 @@
-"""
-Enhanced retry logic for the DATAQUERY SDK.
-
-Provides exponential backoff, jitter, circuit breaker pattern,
-and configurable retry strategies.
-"""
+"""Enhanced retry logic for the DATAQUERY SDK."""
 
 import asyncio
 import math
@@ -186,20 +181,7 @@ class RetryManager:
         )
 
     async def execute_with_retry(self, func: Callable, *args, **kwargs) -> Any:
-        """
-        Execute function with retry logic.
-
-        Args:
-            func: Function to execute
-            *args: Function arguments
-            **kwargs: Function keyword arguments
-
-        Returns:
-            Function result
-
-        Raises:
-            Exception: If all retries fail
-        """
+        """Execute function with retry logic."""
         last_exception = None
 
         for attempt in range(self.config.max_retries + 1):
@@ -303,12 +285,7 @@ class RetryManager:
 
     @staticmethod
     def _retry_after_from_exception(exception: Exception) -> Optional[float]:
-        """Extract a server-provided Retry-After (seconds) from an exception.
-
-        Duck-typed on a ``details`` dict (e.g. ``RateLimitError`` carries
-        ``details["retry_after"]``) so the retry manager stays decoupled from
-        specific SDK exception types.
-        """
+        """Extract a server-provided Retry-After (seconds) from an exception."""
         details = getattr(exception, "details", None)
         if isinstance(details, dict):
             value = details.get("retry_after")
@@ -355,19 +332,7 @@ def create_retry_config(
     strategy: RetryStrategy = RetryStrategy.EXPONENTIAL,
     enable_circuit_breaker: bool = True,
 ) -> RetryConfig:
-    """
-    Create retry configuration.
-
-    Args:
-        max_retries: Maximum number of retry attempts
-        base_delay: Base delay between retries
-        max_delay: Maximum delay between retries
-        strategy: Retry strategy to use
-        enable_circuit_breaker: Whether to enable circuit breaker
-
-    Returns:
-        Retry configuration
-    """
+    """Create retry configuration."""
     return RetryConfig(
         max_retries=max_retries,
         base_delay=base_delay,
@@ -378,13 +343,5 @@ def create_retry_config(
 
 
 def create_retry_manager(config: RetryConfig) -> RetryManager:
-    """
-    Create a retry manager with the specified configuration.
-
-    Args:
-        config: Retry configuration
-
-    Returns:
-        Configured retry manager
-    """
+    """Create a retry manager with the specified configuration."""
     return RetryManager(config)

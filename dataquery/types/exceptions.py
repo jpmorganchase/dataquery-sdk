@@ -1,6 +1,4 @@
-"""
-Custom exceptions for the DATAQUERY SDK.
-"""
+"""Custom exceptions for the DATAQUERY SDK."""
 
 from typing import Any, Dict, Optional
 
@@ -174,6 +172,19 @@ class PaginationError(DataQueryError):
             details["max_pages"] = cap
         if url is not None:
             details["url"] = url
+        super().__init__(message, details)
+
+
+class APIResponseError(DataQueryError):
+    """Raised when the API returns an error envelope inside a 2xx response (e.g. an invalid page token, 498)."""
+
+    def __init__(
+        self,
+        message: str,
+        code: Optional[Any] = None,
+        details: Optional[Dict[str, Any]] = None,
+    ):
+        self.code = code
         super().__init__(message, details)
 
 

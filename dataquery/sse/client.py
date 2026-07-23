@@ -1,9 +1,4 @@
-"""
-Server-Sent Events (SSE) client for the DataQuery notification endpoint.
-
-Connects to the /notification SSE endpoint and dispatches events to registered
-handlers. Automatically reconnects on connection loss using exponential backoff.
-"""
+"""Server-Sent Events (SSE) client for the DataQuery notification endpoint."""
 
 import asyncio
 import inspect
@@ -24,16 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 def is_expected_disconnect(exc: BaseException) -> bool:
-    """True for connection-close exceptions raised during normal server recycles.
-
-    Centralised so :class:`SSEClient` and :class:`NotificationDownloadManager`
-    classify disconnects consistently. ``TransferEncodingError`` lives in
-    :mod:`aiohttp.http_exceptions` and is a subclass of ``ClientPayloadError``,
-    so the ``isinstance`` checks below cover the cases the SDK saw in practice:
-    idle ``sock_read`` timeout (``ServerTimeoutError``, which also covers
-    ``SocketTimeoutError``), scheduled recycle, and peer-side close. These are
-    routine for a long-lived stream and should log at DEBUG, not WARNING.
-    """
+    """True for connection-close exceptions raised during normal server recycles."""
     return isinstance(
         exc,
         (aiohttp.ClientPayloadError, aiohttp.ServerDisconnectedError, aiohttp.ServerTimeoutError),
@@ -41,12 +27,7 @@ def is_expected_disconnect(exc: BaseException) -> bool:
 
 
 def _with_jitter(delay: float) -> float:
-    """Apply equal jitter: a random point in ``[delay/2, delay]``.
-
-    De-synchronises reconnects across many clients/subscriptions so a single
-    server-side recycle doesn't trigger a synchronised reconnect storm against
-    the shared notification endpoint (thundering herd).
-    """
+    """Apply equal jitter: a random point in ``[delay/2, delay]``."""
     if delay <= 0:
         return delay
     return random.uniform(delay / 2.0, delay)
@@ -61,8 +42,7 @@ class _SSEFatalError(Exception):
 
 
 class _SSEAuthError(Exception):
-    """HTTP 401 on connect — retryable a bounded number of times (the token may
-    just need refreshing), then escalated to a fatal error."""
+    """HTTP 401 on connect — retryable a bounded number of times, then escalated to a fatal error."""
 
     def __init__(self, status: int, message: str) -> None:
         self.status = status
@@ -80,24 +60,7 @@ class SSEEvent:
 
 
 class SSEClient:
-    """
-    Server-Sent Events client for the DataQuery /notification endpoint.
-
-    Maintains a persistent streaming connection and dispatches SSE events to
-    registered callbacks. Reconnects automatically with exponential backoff when
-    the connection is lost.
-
-    Usage::
-
-        sse = SSEClient(
-            config=config,
-            auth_manager=auth_manager,
-            on_event=lambda event: print(event),
-        )
-        await sse.start()
-        # ... later ...
-        await sse.stop()
-    """
+    """Server-Sent Events client for the DataQuery /notification endpoint."""
 
     def __init__(
         self,
@@ -113,52 +76,7 @@ class SSEClient:
         heartbeat_timeout: float = 0.0,
         defer_event_id_persistence: bool = False,
     ):
-        """
-        Initialise the SSE client.
-
-        Args:
-            config: DataQuery client configuration.
-            auth_manager: OAuthManager used to obtain Bearer tokens.
-            on_event: Callback invoked for every received SSEEvent.
-                      May be a regular function or a coroutine function.
-            on_error: Callback invoked when a (re)connection error occurs.
-                      May be a regular function or a coroutine function.
-            reconnect_delay: Initial delay in seconds before the first
-                             reconnection attempt.
-            max_reconnect_delay: Maximum delay between reconnection attempts.
-            sse_timeout: Per-read socket timeout in seconds. If no bytes
-                         (data or comment heartbeats) arrive within this
-                         window the connection is treated as stale and
-                         reconnected. Defaults to 90s; set to 0 to disable.
-            params: Optional query string parameters appended to the notification
-                    URL. Used to subscribe to a filtered notification stream —
-                    e.g. ``{"group-id": "G", "file-group-id": "FG"}`` tells the
-                    server to only emit events for that group/file-group so no
-                    client-side filtering is needed.
-            event_id_store: Optional persistent store for the last seen event
-                    id. When provided, the stored id seeds ``_last_event_id``
-                    on construction (so the very first connection includes it
-                    as ``last-event-id`` query param + ``Last-Event-ID`` header
-                    for cross-process replay). Event IDs are extracted from the
-                    JSON payload by the subscriber and written to the store.
-            heartbeat_timeout: When > 0, force-reconnect if no bytes (events
-                    OR comment heartbeats) are received from the server within
-                    this many seconds. Protects against silent half-open TCP
-                    connections that wouldn't otherwise be detected. Must be
-                    larger than the server's keep-alive interval. ``0`` (the
-                    default) disables the watchdog and relies on the server
-                    closing the stream cleanly.
-            defer_event_id_persistence: When ``True``, do not persist parsed
-                    event ids to ``event_id_store`` as they arrive. The owner
-                    (e.g. :class:`NotificationDownloadManager`) instead commits
-                    a low-water-mark only after the matching download has
-                    settled, so a crash mid-download replays the event instead
-                    of skipping it (at-least-once). ``event_id_store`` is still
-                    read once on construction to seed the first
-                    ``Last-Event-ID``. Defaults to ``False`` — persist at parse
-                    time, which is correct for standalone use where there is no
-                    download step to gate persistence on.
-        """
+        """Initialise the SSE client."""
         self.config = config
         self.auth_manager = auth_manager
         self.on_event = on_event
@@ -199,12 +117,7 @@ class SSEClient:
         return self
 
     async def stop(self) -> None:
-        """Signal the connection loop to stop and wait for it to finish.
-
-        Guarded by a lock so concurrent callers all block until teardown is
-        complete, rather than a second caller returning early (before the task
-        is joined and pending event-id saves are drained).
-        """
+        """Signal the connection loop to stop and wait for it to finish."""
         if self._stop_lock is None:
             self._stop_lock = asyncio.Lock()
         async with self._stop_lock:
@@ -234,10 +147,7 @@ class SSEClient:
 
     @property
     def last_event_id(self) -> Optional[str]:
-        """The most recent SSE event id seen on the wire, or ``None``.
-
-        Reflects the value sent as ``Last-Event-ID`` on the next reconnect.
-        """
+        """The most recent SSE event id seen on the wire, or ``None``."""
         return self._last_event_id
 
     def _build_notification_url(self) -> str:
@@ -245,7 +155,6 @@ class SSEClient:
         return f"{base}{C.SSE_NOTIFICATION_PATH}"
 
     async def _get_headers(self) -> dict:
-        # already validates and refreshes the token (with single-flight locking)
         headers = await self.auth_manager.get_headers()
         headers["Accept"] = "text/event-stream"
         if self._last_event_id is not None:
@@ -253,22 +162,13 @@ class SSEClient:
         return headers
 
     def _base_delay(self) -> float:
-        """The reconnect floor: the server-supplied ``retry:`` hint when one has
-        been received, otherwise the configured ``reconnect_delay``."""
+        """The reconnect floor: the server-supplied ``retry:`` hint, otherwise the configured ``reconnect_delay``."""
         if self._server_retry_delay is not None:
             return self._server_retry_delay
         return self.reconnect_delay
 
     async def _run_loop(self) -> None:
-        """Outer loop: reconnect with exponential backoff on failure.
-
-        The backoff is reset whenever the preceding connection lasted long
-        enough to count as "healthy" (see ``SSE_HEALTHY_CONNECTION_SECONDS``
-        in ``constants``) so an expected periodic server recycle — e.g. a
-        5-minute idle timeout — doesn't grow the reconnect delay across cycles.
-        Each wait is jittered to ``[delay/2, delay]`` so many clients don't
-        reconnect in lockstep after a shared server-side recycle.
-        """
+        """Outer loop: reconnect with exponential backoff on failure."""
         delay = self._base_delay()
         if self._stop_event is None:
             self._stop_event = asyncio.Event()
@@ -288,7 +188,6 @@ class SSEClient:
             except asyncio.CancelledError:
                 break
             except _SSEFatalError as exc:
-                # 403/404 (or exhausted auth) won't self-heal — stop reconnecting
                 logger.error("SSE fatal error (HTTP %s): %s; not reconnecting", exc.status, exc)
                 await self._dispatch_error(exc)
                 break
@@ -348,26 +247,18 @@ class SSEClient:
         self._running = False
 
     def _build_request_params(self) -> Optional[dict]:
-        """Combine the static subscription params with the current
-        ``last-event-id`` (when known) so server-side replay can resume from
-        the last persisted event on every (re)connection.
-        """
+        """Combine the static subscription params with the current ``last-event-id`` when known."""
         effective: dict = dict(self.params) if self.params else {}
         if self._last_event_id is not None:
             effective["last-event-id"] = self._last_event_id
         return effective or None
 
     async def _connect_and_listen(self) -> float:
-        """Open a single SSE connection and read events until disconnected.
-
-        Returns the number of seconds the connection stayed open (used by
-        ``_run_loop`` to decide whether to reset the backoff).
-        """
+        """Open a single SSE connection and read events until disconnected."""
         url = self._build_notification_url()
         headers = await self._get_headers()
         request_params = self._build_request_params()
 
-        # Fresh session per reconnect: drops stale auth/half-closed sockets; nothing to pool.
         timeout = aiohttp.ClientTimeout(total=None, connect=30.0, sock_read=self.sse_timeout or None)
 
         proxy_kwargs = self.config.get_proxy_kwargs()
@@ -383,13 +274,11 @@ class SSEClient:
                         pass
                     detail = f": {body}" if body else ""
                     if response.status in (403, 404):
-                        # Forbidden / not-found won't self-heal on reconnect.
                         raise _SSEFatalError(
                             response.status,
                             f"SSE endpoint returned HTTP {response.status} for {url}{detail}",
                         )
                     if response.status == 401:
-                        # May be a stale token; retried a bounded number of times before failing.
                         raise _SSEAuthError(
                             response.status,
                             f"SSE authentication failed (HTTP 401) for {url}{detail}",
@@ -405,29 +294,12 @@ class SSEClient:
                 return self._last_connection_duration
 
     async def _parse_sse_stream(self, response: aiohttp.ClientResponse) -> None:
-        """
-        Read and parse an SSE stream line-by-line, dispatching events.
-
-        SSE wire format (per spec)::
-
-            event: <type>\\n
-            data: <payload>\\n
-            id: <id>\\n
-            retry: <ms>\\n
-            \\n          ← blank line dispatches the buffered event
-
-        When ``self.heartbeat_timeout > 0`` the loop enforces that at least one
-        byte arrives within the timeout window between lines; if the server
-        goes silent (half-open TCP / stalled proxy) a ``ConnectionError`` is
-        raised so the outer loop reconnects. Any line — including SSE
-        comments (``:keepalive``) — counts as activity.
-        """
+        """Read and parse an SSE stream line-by-line, dispatching events."""
         event_type = "message"
         data_parts: list[str] = []
         event_id: Optional[str] = None
         retry_ms: Optional[int] = None
 
-        # Relies on aiohttp readline: one full line per iteration (no internal line buffer).
         content_iter = response.content.__aiter__()
         while True:
             if not self._running:
@@ -527,11 +399,7 @@ class SSEClient:
             logger.exception("Error in SSE on_error callback")
 
     def _persist_event_id(self, event_id: str) -> None:
-        """Fire-and-forget save of the event id to the persistent store.
-
-        The save task is tracked in ``_save_tasks`` so ``stop()`` can drain
-        any pending writes before exiting.
-        """
+        """Fire-and-forget save of the event id to the persistent store."""
         store = self.event_id_store
         if store is None:
             return

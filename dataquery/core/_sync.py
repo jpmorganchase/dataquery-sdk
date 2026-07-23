@@ -1,17 +1,4 @@
-"""Shared synchronous-execution helper.
-
-Both the high-level :class:`~dataquery.dataquery.DataQuery` facade and the
-lower-level :class:`~dataquery.core.client.DataQueryClient` expose synchronous
-wrappers around their async methods. They must not use ``asyncio.run`` per call:
-that opens and closes a fresh event loop each time, but an
-``aiohttp.ClientSession`` is bound to the loop that created it. A second sync
-call would then reuse a session whose loop is already closed and raise
-``RuntimeError: Event loop is closed``.
-
-:class:`SyncRunner` funnels every sync call through one persistent background
-loop running in a daemon thread, so the session stays valid for the lifetime of
-the client.
-"""
+"""Shared synchronous-execution helper."""
 
 from __future__ import annotations
 
@@ -21,12 +8,7 @@ from typing import Any, Optional
 
 
 class SyncRunner:
-    """Runs coroutines on a single persistent event loop in a daemon thread.
-
-    The loop is created lazily on first use and torn down by :meth:`close`.
-    After teardown the runner is reusable — the next :meth:`run` starts a new
-    loop — so a client can be closed and used again.
-    """
+    """Runs coroutines on a single persistent event loop in a daemon thread."""
 
     __slots__ = ("_loop", "_thread", "_lock")
 
@@ -68,7 +50,6 @@ class SyncRunner:
 
     def run(self, coro: Any) -> Any:
         """Submit ``coro`` to the background loop and block for its result."""
-        # Refuse to block the calling thread's own running loop — would deadlock.
         try:
             asyncio.get_running_loop()
         except RuntimeError:

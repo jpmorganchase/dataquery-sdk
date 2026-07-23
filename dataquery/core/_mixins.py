@@ -1,21 +1,4 @@
-"""
-Mixins composed into ``DataQueryClient``.
-
-Each mixin owns one concern. The concrete client inherits from all of them so
-the public surface (``client.list_instruments_async`` etc.) stays unchanged
-while ``client.py`` itself only carries HTTP plumbing, auth, and downloads.
-
-Mixins fall into two groups:
-
-- **Read-only query mixins** (``InstrumentsMixin``, ``MetadataMixin``,
-  ``TimeSeriesMixin``, ``GridMixin``) — depend on three private methods of
-  the concrete client: ``_build_api_url``, ``_enter_request_cm``,
-  ``_handle_response``. The ``_RequestProto`` base provides typed stubs so
-  ``mypy`` is happy.
-
-- **Pure transformation** (``DataFrameMixin``) — no HTTP at all; converts API
-  response objects to ``pandas.DataFrame``. Only relies on ``self.logger``.
-"""
+"""Mixins composed into ``DataQueryClient``."""
 
 from __future__ import annotations
 
@@ -28,16 +11,19 @@ from typing import (
     Dict,
     List,
     Optional,
+    Type,
     TypeVar,
     Union,
 )
+from urllib.parse import urlparse
 
 import aiohttp
 
 from .. import constants as C
-from ..types.exceptions import PaginationError
+from ..types.exceptions import APIResponseError, PaginationError
 from ..types.models import (
     AttributesResponse,
+    FileList,
     FiltersResponse,
     GridDataResponse,
     InstrumentsResponse,
@@ -61,7 +47,7 @@ except ImportError:
 if TYPE_CHECKING:
     import structlog
 
-    from ..types.models import FileInfo, FileList, Group, GroupList
+    from ..types.models import FileInfo, Group, GroupList
 
 
 __all__ = [
@@ -82,14 +68,12 @@ P = TypeVar("P", bound=Paginated)
 
 
 class _RequestProto:
-    """Static typing shim for HTTP helpers the query mixins call on ``self``.
-
-    The concrete ``DataQueryClient`` provides real implementations; the stubs
-    here exist only so ``mypy`` can resolve attribute access inside the mixin
-    method bodies.
-    """
+    """Static typing shim for HTTP helpers the query mixins call on ``self``."""
 
     def _build_api_url(self, endpoint: str) -> str:  # pragma: no cover - stub
+        raise NotImplementedError
+
+    def _build_files_api_url(self, endpoint: str) -> str:  # pragma: no cover - stub
         raise NotImplementedError
 
     async def _enter_request_cm(  # pragma: no cover - stub
@@ -104,13 +88,69 @@ class _RequestProto:
 
 
 class PaginationMixin(_RequestProto):
-    """Shared async-iterator pagination over any ``Paginated`` response.
+    """Client-driven and SDK-driven pagination over any ``Paginated`` response."""
 
-    The DataQuery v2 API returns ``links[].next`` cursor URLs on every paged
-    endpoint. ``iter_pages`` walks them until exhausted, with the same loop
-    detection + page cap that ``list_all_groups_async`` already uses, so every
-    paginated method gets the same hardening for free.
-    """
+    @staticmethod
+    def _build_page(model_cls: Type[P], payload: Any) -> P:
+        """Construct a paginated response, handling DataQuery's non-data envelopes."""
+        if isinstance(payload, dict):
+            known: set = set()
+            for name, field in model_cls.model_fields.items():
+                known.add(name)
+                if field.alias:
+                    known.add(field.alias)
+            if not (known & payload.keys()):
+                raw_errors = payload.get("errors") or payload.get("error")
+                if raw_errors:
+                    err_items = raw_errors if isinstance(raw_errors, list) else [raw_errors]
+                    first = next((e for e in err_items if isinstance(e, dict)), {})
+                    code = first.get("code")
+                    description = first.get("description") or first.get("message") or "API returned an error response"
+                    message = f"[{code}] {description}" if code is not None else description
+                    raise APIResponseError(message, code=code, details={"errors": err_items})
+                raise APIResponseError(
+                    "Unrecognized response shape from paginated endpoint",
+                    details={"keys": sorted(payload.keys())},
+                )
+        return model_cls(**payload)
+
+    async def get_next_page_async(self, page: P) -> Optional[P]:
+        """Fetch the page after ``page``, or ``None`` if it is the last page."""
+        next_url = page.get_next_link()
+        if not next_url:
+            return None
+
+        # Relative next-links omit the API context path, so resolve them against
+        # the base; if a link already carries that path, join at host root to avoid doubling it.
+        base = self._page_base_url(page)
+        if next_url.startswith(("http://", "https://")):
+            absolute = next_url
+        else:
+            parts = urlparse(base)
+            base_path = parts.path.rstrip("/")
+            if base_path and next_url.startswith(base_path + "/"):
+                absolute = f"{parts.scheme}://{parts.netloc}{next_url}"
+            else:
+                absolute = f"{base.rstrip('/')}/{next_url.lstrip('/')}"
+
+        if urlparse(absolute).netloc.lower() != urlparse(base).netloc.lower():
+            raise PaginationError(
+                "Refusing to follow next link pointing at a different host",
+                pages_fetched=1,
+                items_collected=_page_item_count(page),
+                url=absolute,
+            )
+
+        async with await self._enter_request_cm("GET", absolute) as response:
+            await self._handle_response(response)
+            payload = await response.json()
+            return self._build_page(type(page), payload)
+
+    def _page_base_url(self, page: Paginated) -> str:
+        """Base URL a page's relative links resolve against."""
+        if isinstance(page, FileList):
+            return self._build_files_api_url("")
+        return self._build_api_url("")
 
     async def iter_pages(
         self,
@@ -119,24 +159,7 @@ class PaginationMixin(_RequestProto):
         max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
         raise_on_cap: bool = True,
     ) -> AsyncIterator[P]:
-        """Yield each page of a paginated endpoint, following ``links[].next``.
-
-        Args:
-            fetch_first: Zero-arg coroutine returning the first page. Subsequent
-                pages are fetched by GET-ing each ``next`` URL directly.
-            max_pages: Hard cap on pages walked. Guards against pathological
-                servers that loop ``next`` indefinitely.
-            raise_on_cap: When ``True`` (default), raise :class:`PaginationError`
-                if ``max_pages`` is reached. Set ``False`` to silently truncate.
-
-        Yields:
-            Each page response in order.
-
-        Raises:
-            PaginationError: If ``raise_on_cap`` is ``True`` and ``max_pages``
-                is reached, or if the server returns a previously-seen ``next``
-                URL (loop detected).
-        """
+        """Yield each page of a paginated endpoint, following ``links[].next``."""
         page = await fetch_first()
         page_count = 1
         items_so_far = _page_item_count(page)
@@ -165,14 +188,10 @@ class PaginationMixin(_RequestProto):
                     )
                 return
 
-            absolute = next_url
-            if not absolute.startswith(("http://", "https://")):
-                absolute = self._build_api_url(absolute.lstrip("/"))
-
-            async with await self._enter_request_cm("GET", absolute) as response:
-                await self._handle_response(response)
-                payload = await response.json()
-                page = type(page)(**payload)
+            nxt = await self.get_next_page_async(page)
+            if nxt is None:
+                return
+            page = nxt
 
             page_count += 1
             items_so_far += _page_item_count(page)
@@ -182,7 +201,7 @@ class PaginationMixin(_RequestProto):
 
 def _page_item_count(page: Paginated) -> int:
     """Best-effort count of records in a page across all known response shapes."""
-    for attr in ("groups", "instruments", "filters"):
+    for attr in ("groups", "instruments", "filters", "file_group_ids"):
         value = getattr(page, attr, None)
         if isinstance(value, list):
             return len(value)
@@ -209,7 +228,7 @@ class InstrumentsMixin(PaginationMixin):
         async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             data = await response.json()
-            return InstrumentsResponse(**data)
+            return self._build_page(InstrumentsResponse, data)
 
     async def iter_instruments_async(
         self,
@@ -242,7 +261,7 @@ class InstrumentsMixin(PaginationMixin):
         async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             data = await response.json()
-            return InstrumentsResponse(**data)
+            return self._build_page(InstrumentsResponse, data)
 
     async def iter_search_instruments_async(
         self,
@@ -274,7 +293,7 @@ class MetadataMixin(PaginationMixin):
         async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             payload = await response.json()
-            return FiltersResponse(**payload)
+            return self._build_page(FiltersResponse, payload)
 
     async def iter_group_filters_async(
         self,
@@ -308,7 +327,7 @@ class MetadataMixin(PaginationMixin):
         async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             payload = await response.json()
-            return AttributesResponse(**payload)
+            return self._build_page(AttributesResponse, payload)
 
     async def iter_group_attributes_async(
         self,
@@ -373,7 +392,7 @@ class TimeSeriesMixin(PaginationMixin):
         async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             payload = await response.json()
-            return TimeSeriesResponse(**payload)
+            return self._build_page(TimeSeriesResponse, payload)
 
     async def get_expressions_time_series_async(
         self,
@@ -419,7 +438,7 @@ class TimeSeriesMixin(PaginationMixin):
         async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             payload = await response.json()
-            return TimeSeriesResponse(**payload)
+            return self._build_page(TimeSeriesResponse, payload)
 
     async def get_group_time_series_async(
         self,
@@ -466,7 +485,7 @@ class TimeSeriesMixin(PaginationMixin):
         async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             payload = await response.json()
-            return TimeSeriesResponse(**payload)
+            return self._build_page(TimeSeriesResponse, payload)
 
     async def iter_instrument_time_series_async(
         self,
@@ -610,10 +629,7 @@ class SearchMixin(_RequestProto):
     """Natural-language catalog search via POST /search."""
 
     async def search_async(self, query: str) -> Dict[str, Any]:
-        """Search the DataQuery catalog using a natural-language query.
-
-        POSTs ``{"query": query}`` to ``/search`` and returns the parsed JSON body.
-        """
+        """Search the DataQuery catalog using a natural-language query."""
         if not query or not query.strip():
             raise ValueError("query must be a non-empty string")
 
@@ -628,16 +644,10 @@ class SearchMixin(_RequestProto):
 
 
 class DataFrameMixin:
-    """Pandas conversion methods for API response objects.
-
-    Pure data transformation — no dependency on the HTTP client, auth, or
-    rate limiter. Consumers must expose ``self.logger`` (a ``structlog``
-    bound logger).
-    """
+    """Pandas conversion methods for API response objects."""
 
     logger: "structlog.BoundLogger"
 
-    # Canonical column order for the tidy (long-format) time-series frame.
     _TS_CORE_COLUMNS = [
         "date",
         "value",
@@ -666,11 +676,7 @@ class DataFrameMixin:
         numeric_columns: Optional[List[str]] = None,
         custom_transformations: Optional[Dict[str, Callable]] = None,
     ) -> "pd.DataFrame":
-        """Convert any API response into a pandas DataFrame.
-
-        Handles Pydantic models, lists, dicts, and primitives. Accepts optional
-        date / numeric column hints plus custom per-column callables.
-        """
+        """Convert any API response into a pandas DataFrame."""
         if not HAS_PANDAS:
             raise ImportError("pandas is required for DataFrame conversion. Install it with: pip install pandas")
 
@@ -733,20 +739,7 @@ class DataFrameMixin:
         )
 
     def time_series_to_dataframe(self, time_series: Any, include_metadata: bool = False) -> "pd.DataFrame":
-        """Convert a time-series response into a tidy (long-format) DataFrame.
-
-        Produces one row per (instrument, attribute, observation) with a parsed
-        datetime ``date`` and numeric ``value``, plus the instrument and
-        attribute identifiers needed to disambiguate rows. With
-        ``include_metadata=True`` additional columns (CUSIP/ISIN, group,
-        last-published, message) are added.
-
-        Handles the nested ``TimeSeriesResponse`` shape
-        (``instruments -> attributes -> time_series``) whether passed as a
-        Pydantic model, an aliased dict, or a snake_case dict. A flat list of
-        ``{"date": ..., "value": ...}`` records is also accepted. An empty
-        response yields an empty DataFrame with the expected columns.
-        """
+        """Convert a time-series response into a tidy (long-format) DataFrame."""
         if not HAS_PANDAS:
             raise ImportError("pandas is required for DataFrame conversion. Install it with: pip install pandas")
 
@@ -786,11 +779,7 @@ class DataFrameMixin:
         return None
 
     def _unwrap_time_series(self, time_series: Any) -> Any:
-        """Pull the data payload out of a response wrapper.
-
-        Prefers the nested ``instruments`` container; otherwise unwraps the
-        legacy ``data``/``series``/``time_series`` carriers.
-        """
+        """Pull the data payload out of a response wrapper."""
         instruments = self._ts_get(time_series, "instruments")
         if instruments is not None:
             return instruments
@@ -801,12 +790,7 @@ class DataFrameMixin:
         return time_series
 
     def _as_instrument_list(self, payload: Any) -> Optional[List[Any]]:
-        """Return the payload as a list of instruments, or ``None`` if it is flat.
-
-        Instruments are recognised by carrying an ``attributes`` member; a flat
-        list of observation records (no ``attributes``) returns ``None`` so the
-        caller builds the frame directly.
-        """
+        """Return the payload as a list of instruments, or ``None`` if it is flat."""
         if payload is None:
             return []
         items = list(payload) if isinstance(payload, (list, tuple)) else [payload]
@@ -866,11 +850,7 @@ class DataFrameMixin:
 
     @staticmethod
     def _split_point(point: Any) -> tuple:
-        """Split a single observation into ``(date, value)``.
-
-        Accepts ``[date, value]`` pairs, ``{"date": ..., "value": ...}`` dicts,
-        and ``TimeSeriesDataPoint`` models.
-        """
+        """Split a single observation into ``(date, value)``."""
         if isinstance(point, (list, tuple)):
             date = point[0] if len(point) > 0 else None
             value = point[1] if len(point) > 1 else None
@@ -906,7 +886,6 @@ class DataFrameMixin:
             else:
                 return pd.DataFrame({"value": [data]})
 
-        # Chunk through large inputs to keep peak memory bounded.
         chunk_size = 1000
         all_records: list = []
         for i in range(0, len(data), chunk_size):

@@ -1,8 +1,4 @@
-"""
-Connection pool monitoring and management for the DATAQUERY SDK.
-
-Provides connection pool health monitoring, cleanup, and metrics collection.
-"""
+"""Connection pool monitoring and management for the DATAQUERY SDK."""
 
 import asyncio
 import time
@@ -217,12 +213,7 @@ class ConnectionPoolMonitor:
             logger.error("Error during health check", error=str(e))
 
     def _get_pool_stats(self) -> Dict[str, Any]:
-        """Get current connection pool statistics.
-
-        NOTE: aiohttp does not expose public APIs for connection counts.
-        We access ``connector._conns`` which is an internal attribute and
-        may change in future aiohttp versions (especially 4.x).
-        """
+        """Get current connection pool statistics."""
         _empty: Dict[str, Any] = {
             "total_connections": 0,
             "active_connections": 0,
@@ -402,18 +393,7 @@ def create_connection_pool_config(
     enable_cleanup: bool = True,
     cleanup_interval: int = 300,
 ) -> ConnectionPoolConfig:
-    """
-    Create connection pool configuration.
-
-    Args:
-        max_connections: Maximum total connections
-        max_connections_per_host: Maximum connections per host
-        enable_cleanup: Whether to enable automatic cleanup
-        cleanup_interval: Cleanup interval in seconds
-
-    Returns:
-        Connection pool configuration
-    """
+    """Create connection pool configuration."""
     cfg = ConnectionPoolConfig(
         max_connections=max_connections,
         enable_cleanup=enable_cleanup,

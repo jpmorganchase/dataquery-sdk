@@ -11,8 +11,6 @@ from typing import Any, Dict, List, Optional
 from dataquery import DataQuery
 from dataquery.types.exceptions import DataQueryError
 
-# ── Output helpers (legacy-CLI "summary + --- JSON ---" format) ────────────
-
 
 def _to_dict(payload: Any) -> Dict[str, Any]:
     """Normalize a Pydantic model or dict into a plain dict for JSON dump."""
@@ -203,8 +201,6 @@ def create_parser() -> argparse.ArgumentParser:
     )
     p_fn.add_argument("--list", action="store_true", help="List all available functions")
     p_fn.add_argument("--json", action="store_true", help="Output raw JSON")
-
-    # ── DataQuery API v2 endpoints (skill-facing surface) ────────────────
 
     def _ts_args(p: argparse.ArgumentParser) -> None:
         p.add_argument("--data", choices=["REFERENCE_DATA", "NO_REFERENCE_DATA", "ALL"], default=None)
@@ -518,9 +514,6 @@ async def cmd_search(args: argparse.Namespace) -> int:
     return 0
 
 
-# ── DataQuery API v2 command handlers ────────────────────────────────────
-
-
 async def cmd_groups_search(args: argparse.Namespace) -> int:
     async with DataQuery(args.env_file) as dq:
         items = await dq.search_groups_async(args.keywords, page=args.page)
@@ -732,14 +725,7 @@ def cmd_function_help(args: argparse.Namespace) -> int:
 
 
 async def cmd_mcp_connect(args: argparse.Namespace) -> int:
-    """Bridge a desktop MCP client (stdio) to a remote streamable-HTTP MCP server.
-
-    Mints an OAuth client-credentials (AuthE) token with the SDK's own
-    TokenManager from the ``DATAQUERY_*`` environment and attaches a fresh bearer
-    token to every upstream request. Launched by an MCP client as its stdio
-    ``command``; stdout carries only the MCP JSON-RPC stream, so all diagnostics
-    go to stderr.
-    """
+    """Bridge a desktop MCP client (stdio) to a remote streamable-HTTP MCP server."""
     try:
         import httpx
         from fastmcp import FastMCP
@@ -764,7 +750,7 @@ async def cmd_mcp_connect(args: argparse.Namespace) -> int:
         """Stamp a fresh AuthE bearer token (from the SDK TokenManager) per request."""
 
         async def async_auth_flow(self, request: httpx.Request) -> AsyncGenerator[httpx.Request, httpx.Response]:
-            header = await token_manager.get_valid_token()  # "Bearer <jwt>"
+            header = await token_manager.get_valid_token()
             if not header:
                 raise DataQueryError(
                     "Could not obtain an OAuth token \u2014 check DATAQUERY_CLIENT_ID, "
@@ -776,7 +762,6 @@ async def cmd_mcp_connect(args: argparse.Namespace) -> int:
 
     transport = StreamableHttpTransport(args.url, auth=_AutheAuth())
     proxy = FastMCP.as_proxy(transport, name=args.name)
-    # stdout is reserved for the MCP JSON-RPC stream; keep the banner off it.
     await proxy.run_async(transport="stdio", show_banner=False)
     return 0
 

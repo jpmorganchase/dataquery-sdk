@@ -1,6 +1,4 @@
-"""
-Data models for the DATAQUERY SDK based on the OpenAPI specification.
-"""
+"""Data models for the DATAQUERY SDK based on the OpenAPI specification."""
 
 import asyncio
 import base64
@@ -16,12 +14,7 @@ from .. import constants as C
 
 
 def _reveal_secret(value: Union[str, SecretStr, None]) -> Optional[str]:
-    """Return the plain-text value of a secret field, or ``None``.
-
-    Accepts a ``SecretStr`` (the normal case), a bare ``str`` (e.g. assigned
-    directly to a config attribute, which bypasses pydantic's coercion), or
-    ``None`` — so callers never have to care which form is stored.
-    """
+    """Return the plain-text value of a secret field, or ``None``."""
     if value is None:
         return None
     if isinstance(value, SecretStr):
@@ -145,7 +138,6 @@ class ClientConfig(BaseModel):
     availability_dir: str = Field(default="availability", description="Availability files subdirectory")
     default_dir: str = Field(default="files", description="Default files subdirectory")
 
-    # Security
     mask_secrets: bool = Field(default=True, description="Mask secrets in logs")
     token_storage_enabled: bool = Field(default=False, description="Enable token storage")
 
@@ -240,20 +232,11 @@ class ClientConfig(BaseModel):
         return _reveal_secret(self.proxy_password)
 
     def get_proxy_kwargs(self) -> Dict[str, Any]:
-        """Return aiohttp request/session kwargs for proxy routing.
-
-        Splat into any ``session.get/post/request(...)`` call — empty dict when
-        proxy support is disabled or no URL is configured, so the call becomes
-        a no-op.
-
-        Keeping this on the config (rather than inlined at each call site)
-        ensures auth, SSE, and API requests all route through the same proxy.
-        """
+        """Return aiohttp request/session kwargs for proxy routing."""
         if not (self.proxy_enabled and self.proxy_url):
             return {}
         kwargs: Dict[str, Any] = {"proxy": self.proxy_url}
         if self.has_proxy_credentials:
-            # Encode Basic proxy auth ourselves: aiohttp.BasicAuth is removed in 4.0 (latin1).
             raw = f"{self.proxy_username or ''}:{self.get_proxy_password() or ''}".encode("latin1")
             token = base64.b64encode(raw).decode("ascii")
             kwargs["proxy_headers"] = {"Proxy-Authorization": f"Basic {token}"}
@@ -294,8 +277,6 @@ class OAuthToken(BaseModel):
         if self.expires_in and self.issued_at:
             issued = self.issued_at
             if issued.tzinfo is None:
-                # Older SDK versions persisted naive local timestamps; interpret
-                # them in the system timezone before normalizing to UTC.
                 issued = issued.astimezone(timezone.utc)
             return issued + timedelta(seconds=self.expires_in)
         return None
@@ -440,20 +421,22 @@ class Group(BaseModel):
 class Link(BaseModel):
     """Pagination link model."""
 
-    self: Optional[str] = Field(None, description="Current page URL")
-    next: Optional[str] = Field(None, description="Next page URL")
+    self: Optional[str] = Field(None, description="URI to re-request this page")
+    next: Optional[str] = Field(None, description="URI to the next page")
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
 
 class Paginated(BaseModel):
-    """Mixin for any response carrying a ``links`` array.
-
-    Subclasses inherit ``get_next_link()`` / ``has_next_page()`` so callers
-    don't have to scan ``links`` manually.
-    """
+    """Mixin for any response carrying pagination metadata."""
 
     links: Optional[List[Link]] = Field(None, description="Pagination links")
+    items: Optional[int] = Field(None, description="Total number of items across the set of pages")
+    page_size: Optional[int] = Field(None, alias="page-size", description="Number of items listed on a page")
+    info: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Informational message ({code, description}) — e.g. a 204 'no content available' response",
+    )
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
@@ -466,6 +449,20 @@ class Paginated(BaseModel):
                 return link.next
         return None
 
+    def get_self_link(self) -> Optional[str]:
+        """Return the URL to re-request this page, or ``None`` if absent."""
+        if not self.links:
+            return None
+        for link in self.links:
+            if link.self:
+                return link.self
+        return None
+
+    @property
+    def next_link(self) -> Optional[str]:
+        """The next-page URL surfaced for the caller (``None`` on the last page)."""
+        return self.get_next_link()
+
     def has_next_page(self) -> bool:
         """``True`` if a next-page link is present."""
         return self.get_next_link() is not None
@@ -474,14 +471,11 @@ class Paginated(BaseModel):
 class GroupList(Paginated):
     """Response model for listing groups with pagination support."""
 
-    groups: List[Group] = Field(..., description="List of groups")
+    groups: List[Group] = Field(default_factory=list, description="List of groups")
 
 
 class FileInfo(BaseModel):
-    """Model representing file information based on the DataQuery spec.
-
-    Only `file_group_id` is supported as the identifier.
-    """
+    """Model representing file information based on the DataQuery spec."""
 
     file_group_id: Optional[str] = Field(None, alias="file-group-id", description="Unique file group identifier")
 
@@ -531,11 +525,13 @@ class FileInfo(BaseModel):
         return bool(self.file_type) and any((t or "").lower() == "json" for t in (self.file_type or []))
 
 
-class FileList(BaseModel):
-    """Response model for listing files."""
+class FileList(Paginated):
+    """Response model for listing files (paginated)."""
 
-    group_id: str = Field(..., alias="group-id", description="Group identifier")
-    file_group_ids: List[FileInfo] = Field(..., alias="file-group-ids", description="List of file information")
+    group_id: Optional[str] = Field(None, alias="group-id", description="Group identifier")
+    file_group_ids: List[FileInfo] = Field(
+        default_factory=list, alias="file-group-ids", description="List of file information"
+    )
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
@@ -755,12 +751,7 @@ OperationStatus = Literal["success", "error", "partial"]
 
 
 class OperationReport(BaseModel):
-    """Unified summary report returned by all DataQuery.run_*_async methods.
-
-    Every run_* operation shares this shape so callers learn one schema:
-    pull identifiers from `subject`, metrics from `counts`/`timing`, the
-    main payload from `data`, and operation-specific fields from `details`.
-    """
+    """Unified summary report returned by all DataQuery.run_*_async methods."""
 
     operation: str
     status: OperationStatus = "success"
@@ -846,33 +837,29 @@ class InstrumentResponse(BaseModel):
 class InstrumentsResponse(Paginated):
     """Response model for listing instruments."""
 
-    items: int = Field(..., description="Total number of items")
-    page_size: int = Field(..., alias="page-size", description="Number of items per page")
-    instruments: List[Instrument] = Field(..., description="List of instruments")
+    instruments: List[Instrument] = Field(default_factory=list, description="List of instruments")
 
 
 class AttributesResponse(Paginated):
     """Response model for listing attributes."""
 
-    items: int = Field(..., description="Total number of items")
-    page_size: int = Field(..., alias="page-size", description="Number of items per page")
-    instruments: List[InstrumentWithAttributes] = Field(..., description="List of instruments with attributes")
+    instruments: List[InstrumentWithAttributes] = Field(
+        default_factory=list, description="List of instruments with attributes"
+    )
 
 
 class FiltersResponse(Paginated):
     """Response model for listing filters."""
 
-    items: int = Field(..., description="Total number of items")
-    page_size: int = Field(..., alias="page-size", description="Number of items per page")
-    filters: List[Filter] = Field(..., description="List of filters")
+    filters: List[Filter] = Field(default_factory=list, description="List of filters")
 
 
 class TimeSeriesResponse(Paginated):
     """Response model for time series data."""
 
-    items: int = Field(..., description="Total number of items")
-    page_size: int = Field(..., alias="page-size", description="Number of items per page")
-    instruments: List[InstrumentWithAttributes] = Field(..., description="List of instruments with time series data")
+    instruments: List[InstrumentWithAttributes] = Field(
+        default_factory=list, description="List of instruments with time series data"
+    )
 
 
 class GridDataSeries(BaseModel):

@@ -1,8 +1,4 @@
-"""CSV export for DataQuery time-series and grid-data responses.
-
-Flattens API response payloads (Pydantic model dumps or raw dicts) into
-tabular CSV rows. Used by the CLI's ``--output-csv`` flag.
-"""
+"""CSV export for DataQuery time-series and grid-data responses."""
 
 from __future__ import annotations
 
@@ -25,11 +21,7 @@ def _to_dict(payload: Any) -> Dict[str, Any]:
 
 
 def export_timeseries_csv(response: Any, output_path: str) -> Dict[str, Any]:
-    """Flatten a time-series response into a CSV file (or stdout when path is ``-``).
-
-    Returns ``{"path": <file>, "rows": <int>}``; when ``output_path == "-"``,
-    also includes ``"content"`` with the CSV text.
-    """
+    """Flatten a time-series response into a CSV file (or stdout when path is ``-``)."""
     data = _to_dict(response)
     instruments = data.get("instruments") or []
     if not instruments:

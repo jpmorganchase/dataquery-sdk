@@ -1,6 +1,4 @@
-"""
-Main client for the DATAQUERY SDK.
-"""
+"""Main client for the DATAQUERY SDK."""
 
 import asyncio
 import socket
@@ -94,21 +92,10 @@ class DataQueryClient(
     GridMixin,
     SearchMixin,
 ):
-    """
-    High-level client for the DATAQUERY Data API.
-
-    Provides easy-to-use methods for listing groups, files, checking availability,
-    and downloading files with optimized performance, OAuth authentication,
-    rate limiting, retry logic, and comprehensive monitoring.
-    """
+    """High-level client for the DATAQUERY Data API."""
 
     def __init__(self, config: ClientConfig):
-        """
-        Initialize the client with configuration.
-
-        Args:
-            config: Client configuration
-        """
+        """Initialize the client with configuration."""
         self.config = config
         self.session: Optional[aiohttp.ClientSession] = None
         self.auth_manager = OAuthManager(config)
@@ -210,18 +197,7 @@ class DataQueryClient(
             return "unknown"
 
     def _build_api_url(self, endpoint: str) -> str:
-        """
-        Build a proper API URL by handling trailing slashes correctly.
-
-        Args:
-            endpoint: API endpoint path (e.g., 'groups', 'group/files')
-
-        Returns:
-            Complete API URL
-
-        Raises:
-            ValidationError: If URL exceeds 2080 character limit
-        """
+        """Build a proper API URL by handling trailing slashes correctly."""
         base_url = self.config.api_base_url.rstrip("/")
         url = f"{base_url}/{endpoint.lstrip('/')}"
 
@@ -402,14 +378,7 @@ class DataQueryClient(
 
     @staticmethod
     def _parse_retry_after(headers: Any) -> Optional[int]:
-        """Parse a ``Retry-After`` header into whole seconds.
-
-        Handles both supported forms — a non-negative integer count of seconds
-        and an HTTP-date — returning ``None`` when the header is absent or
-        unparseable (callers then fall back to their own backoff). The old
-        ``int(headers.get("Retry-After", 0))`` raised ``ValueError`` on the
-        HTTP-date form.
-        """
+        """Parse a ``Retry-After`` header into whole seconds."""
         raw = headers.get("Retry-After")
         if not raw:
             return None
@@ -430,17 +399,7 @@ class DataQueryClient(
         return max(0, int((when - datetime.now(timezone.utc)).total_seconds()))
 
     async def _make_authenticated_request(self, method: str, url: str, **kwargs) -> aiohttp.ClientResponse:
-        """
-        Make an authenticated HTTP request with enhanced features.
-
-        Args:
-            method: HTTP method
-            url: Request URL
-            **kwargs: Additional request parameters
-
-        Returns:
-            HTTP response
-        """
+        """Make an authenticated HTTP request with enhanced features."""
         params = kwargs.get("params")
         self._validate_request_url(url, params)
 
@@ -518,37 +477,36 @@ class DataQueryClient(
         return response
 
     async def list_groups_async(self, limit: Optional[int] = None) -> List[Group]:
-        """
-        List available data groups with optional limit.
-
-        Args:
-            limit: Optional limit on number of groups to return
-
-        Returns:
-            List of group information
-        """
-        await self._ensure_connected()
-
-        url = self._build_api_url(C.API_GROUPS)
-        params = {}
-        if limit is not None:
-            params["limit"] = str(limit)
-
+        """List available data groups with optional limit."""
         try:
-            async with await self._make_authenticated_request("GET", url, params=params) as response:
-                await self._handle_response(response)
-                data = await response.json()
-
-                group_list = GroupList(**data)
-                self.logger.info("Groups listed", count=len(group_list.groups), limit=limit)
-
-                self.logging_manager.log_metric("groups_listed", len(group_list.groups), "count")
-
-                return group_list.groups
-
+            group_list = await self.list_groups_page_async(limit=limit)
+            self.logger.info("Groups listed", count=len(group_list.groups), limit=limit)
+            self.logging_manager.log_metric("groups_listed", len(group_list.groups), "count")
+            return group_list.groups
         except Exception as e:
             self.logger.error("Failed to list groups", error=str(e))
             raise
+
+    async def list_groups_page_async(
+        self,
+        limit: Optional[int] = None,
+        *,
+        page: Optional[str] = None,
+    ) -> GroupList:
+        """Return a single :class:`GroupList` page for client-driven pagination."""
+        await self._ensure_connected()
+
+        params: Dict[str, str] = {}
+        if limit is not None:
+            params["limit"] = str(limit)
+        if page is not None:
+            params["page"] = page
+
+        url = self._build_api_url(C.API_GROUPS)
+        async with await self._make_authenticated_request("GET", url, params=params) as response:
+            await self._handle_response(response)
+            data = await response.json()
+            return self._build_page(GroupList, data)
 
     async def list_all_groups_async(
         self,
@@ -556,19 +514,7 @@ class DataQueryClient(
         max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
         raise_on_cap: bool = True,
     ) -> List[Group]:
-        """
-        List all available data groups using pagination.
-
-        Args:
-            max_pages: Hard cap on pages walked (defends against pathological
-                servers that loop the ``next`` link or paginate without bound).
-            raise_on_cap: If ``True`` (default), raise :class:`PaginationError`
-                when ``max_pages`` is reached. Set ``False`` to silently
-                truncate.
-
-        Returns:
-            List of all group information
-        """
+        """List all available data groups using pagination."""
         await self._ensure_connected()
 
         all_groups: List[Group] = []
@@ -608,11 +554,7 @@ class DataQueryClient(
         await self._ensure_connected()
 
         async def _first() -> GroupList:
-            url = self._build_api_url(C.API_GROUPS)
-            async with await self._make_authenticated_request("GET", url) as response:
-                await self._handle_response(response)
-                data = await response.json()
-                return GroupList(**data)
+            return await self.list_groups_page_async()
 
         async for page in self.iter_pages(_first, max_pages=max_pages, raise_on_cap=raise_on_cap):
             yield page
@@ -635,21 +577,24 @@ class DataQueryClient(
         *,
         page: Optional[str] = None,
     ) -> List[Group]:
-        """
-        Search groups by keywords (single page).
+        """Search groups by keywords (single page)."""
+        try:
+            group_list = await self.search_groups_page_async(keywords, limit=limit, offset=offset, page=page)
+            self.logger.info("Groups searched", keywords=keywords, count=len(group_list.groups))
+            return group_list.groups
+        except Exception as e:
+            self.logger.error("Failed to search groups", keywords=keywords, error=str(e))
+            raise
 
-        Args:
-            keywords: Search keywords
-            limit: Maximum number of results per page (server-side cap)
-            offset: Number of results to skip — kept for backwards compatibility.
-                Prefer ``page`` (cursor) or :meth:`iter_search_groups_async`
-                / :meth:`search_all_groups_async` for full-result iteration.
-            page: Optional ``next``-link cursor returned by a prior page's
-                ``links[].next``.
-
-        Returns:
-            List of matching groups for the requested page.
-        """
+    async def search_groups_page_async(
+        self,
+        keywords: str,
+        limit: Optional[int] = None,
+        *,
+        offset: Optional[int] = None,
+        page: Optional[str] = None,
+    ) -> GroupList:
+        """Single-page cursor search returning the full :class:`GroupList`."""
         await self._ensure_connected()
 
         params: Dict[str, str] = {"keywords": keywords}
@@ -661,47 +606,10 @@ class DataQueryClient(
             params["page"] = page
 
         url = self._build_api_url(C.API_GROUPS_SEARCH)
-
-        try:
-            async with await self._make_authenticated_request("GET", url, params=params) as response:
-                await self._handle_response(response)
-                data = await response.json()
-
-                group_list = GroupList(**data)
-                self.logger.info("Groups searched", keywords=keywords, count=len(group_list.groups))
-
-                return group_list.groups
-
-        except Exception as e:
-            self.logger.error("Failed to search groups", keywords=keywords, error=str(e))
-            raise
-
-    async def search_groups_page_async(
-        self,
-        keywords: str,
-        limit: Optional[int] = None,
-        *,
-        page: Optional[str] = None,
-    ) -> GroupList:
-        """Single-page cursor search returning the full :class:`GroupList`.
-
-        Use this (or :meth:`iter_search_groups_async`) instead of the raw
-        ``search_groups_async`` when you need access to ``links[].next`` for
-        cursor-based pagination.
-        """
-        await self._ensure_connected()
-
-        params: Dict[str, str] = {"keywords": keywords}
-        if limit is not None:
-            params["limit"] = str(limit)
-        if page is not None:
-            params["page"] = page
-
-        url = self._build_api_url(C.API_GROUPS_SEARCH)
         async with await self._make_authenticated_request("GET", url, params=params) as response:
             await self._handle_response(response)
             data = await response.json()
-            return GroupList(**data)
+            return self._build_page(GroupList, data)
 
     async def iter_search_groups_pages_async(
         self,
@@ -739,10 +647,7 @@ class DataQueryClient(
         max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
         raise_on_cap: bool = True,
     ) -> List[Group]:
-        """Materialize every page of a keyword search using cursor pagination.
-
-        Mirrors :meth:`list_all_groups_async` for the search endpoint.
-        """
+        """Materialize every page of a keyword search using cursor pagination."""
         all_groups: List[Group] = []
         page_count = 0
         try:
@@ -775,20 +680,19 @@ class DataQueryClient(
             self.logger.error("Failed to walk all matching groups", keywords=keywords, error=str(e))
             raise
 
-    async def list_files_async(self, group_id: str, file_group_id: Optional[str] = None) -> FileList:
-        """
-        List all files in a group.
-
-        Args:
-            group_id: Group ID to list files for
-            file_group_id: Optional specific file ID to filter by
-
-        Returns:
-            FileList with file information
-        """
+    async def list_files_async(
+        self,
+        group_id: str,
+        file_group_id: Optional[str] = None,
+        *,
+        page: Optional[str] = None,
+    ) -> FileList:
+        """List files in a group (single page)."""
         params = {"group-id": group_id}
         if file_group_id:
             params["file-group-id"] = file_group_id
+        if page:
+            params["page"] = page
 
         url = self._build_files_api_url(C.API_GROUP_FILES)
 
@@ -797,7 +701,7 @@ class DataQueryClient(
                 await self._handle_response(response)
                 data = await response.json()
 
-                file_list = FileList(**data)
+                file_list = self._build_page(FileList, data)
                 self.logger.info("Files listed", group_id=group_id, count=file_list.file_count)
 
                 return file_list
@@ -806,17 +710,38 @@ class DataQueryClient(
             self.logger.error("Failed to list files", group_id=group_id, error=str(e))
             raise
 
+    async def list_all_files_async(
+        self,
+        group_id: str,
+        file_group_id: Optional[str] = None,
+        *,
+        max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
+        raise_on_cap: bool = True,
+    ) -> List[FileInfo]:
+        """Materialize every page of a group's file catalog."""
+
+        async def _first() -> FileList:
+            return await self.list_files_async(group_id, file_group_id)
+
+        files: List[FileInfo] = []
+        page_count = 0
+        try:
+            async for page in self.iter_pages(_first, max_pages=max_pages, raise_on_cap=raise_on_cap):
+                page_count += 1
+                files.extend(page.file_group_ids)
+            self.logger.info(
+                "All files listed",
+                group_id=group_id,
+                total_files=len(files),
+                total_pages=page_count,
+            )
+            return files
+        except Exception as e:
+            self.logger.error("Failed to list all files", group_id=group_id, error=str(e))
+            raise
+
     async def get_file_info_async(self, group_id: str, file_group_id: str) -> FileInfo:
-        """
-        Get information about a specific file.
-
-        Args:
-            group_id: Group ID of the file
-            file_group_id: File ID of the specific file
-
-        Returns:
-            File information
-        """
+        """Get information about a specific file."""
         file_list = await self.list_files_async(group_id, file_group_id)
 
         if not file_list.file_group_ids:
@@ -825,18 +750,7 @@ class DataQueryClient(
         return file_list.file_group_ids[0]
 
     async def check_availability_async(self, file_group_id: str, file_datetime: str) -> AvailabilityInfo:
-        """
-        Check file availability for a specific datetime.
-
-        Args:
-            file_group_id: File ID to check availability for
-            file_datetime: File datetime in YYYYMMDD, YYYYMMDDTHHMM, or YYYYMMDDTHHMMSS format
-
-        Returns:
-            AvailabilityInfo for the requested datetime (or closest entry)
-        Raises:
-            ValueError: If file_datetime format is invalid
-        """
+        """Check file availability for a specific datetime."""
         validate_file_datetime(file_datetime)
         params = {"file-group-id": file_group_id, "file-datetime": file_datetime}
 
@@ -956,20 +870,7 @@ class DataQueryClient(
         num_parts: int = 1,
         progress_callback: Optional[Callable] = None,
     ) -> DownloadResult:
-        """
-        Download a specific file using single-stream or parallel HTTP range requests.
-
-        Args:
-            file_group_id: File ID to download
-            file_datetime: Optional datetime of the file (YYYYMMDD, YYYYMMDDTHHMM, or YYYYMMDDTHHMMSS)
-            options: Download options
-            num_parts: Number of parallel parts to split the file into (default 1,
-                single-stream). Set >1 to enable parallel HTTP range requests.
-            progress_callback: Optional progress callback function
-
-        Returns:
-            DownloadResult with download information
-        """
+        """Download a specific file using single-stream or parallel HTTP range requests."""
         _, options, num_parts = self._prepare_download_params(file_group_id, file_datetime, options, num_parts)
 
         if num_parts <= 1 or not self.config.enable_range_downloads:
@@ -998,18 +899,7 @@ class DataQueryClient(
         options: Optional[DownloadOptions] = None,
         progress_callback: Optional[Callable] = None,
     ) -> DownloadResult:
-        """
-        Download a specific file using single-stream (non-parallel) method.
-
-        Args:
-            file_group_id: File ID to download
-            file_datetime: Optional datetime of the file (YYYYMMDD, YYYYMMDDTHHMM, or YYYYMMDDTHHMMSS)
-            options: Download options
-            progress_callback: Optional progress callback function
-
-        Returns:
-            DownloadResult with download information
-        """
+        """Download a specific file using single-stream (non-parallel) method."""
         params, options, _ = self._prepare_download_params(file_group_id, file_datetime, options)
 
         if options.range_header:
@@ -1130,18 +1020,7 @@ class DataQueryClient(
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """
-        List available files by date range.
-
-        Args:
-            group_id: Group ID to list files for
-            file_group_id: Optional specific file ID to filter by
-            start_date: Optional start date in YYYYMMDD format
-            end_date: Optional end date in YYYYMMDD format
-
-        Returns:
-            List of available file information
-        """
+        """List available files by date range."""
         params = {"group-id": group_id}
         if file_group_id:
             params["file-group-id"] = file_group_id
@@ -1220,21 +1099,7 @@ class DataQueryClient(
 
     @staticmethod
     def _parse_v2_error(body: Optional[str]) -> Optional[ErrorResponse]:
-        """Parse a DataQuery v2 error envelope into an ``ErrorResponse``.
-
-        Accepts the canonical flat shape::
-
-            {"code": <number>, "description": "<text>"}
-
-        and the common wrapped variants used across DataQuery deployments::
-
-            {"info":   {"code": ..., "description": ...}}
-            {"error":  {"code": ..., "description": ...}}
-            {"errors": [{"code": ..., "description": ...}, ...]}
-
-        Returns ``None`` when the body is empty, not JSON, or doesn't carry
-        a recognisable error object.
-        """
+        """Parse a DataQuery v2 error envelope into an ``ErrorResponse``."""
         if not body:
             return None
         import json as _json
@@ -1342,16 +1207,12 @@ class DataQueryClient(
             self.rate_limiter.handle_successful_request()
 
     async def _enter_request_cm(self, method: str, url: str, **kwargs) -> aiohttp.ClientResponse:
-        """Support both awaitable and direct async context manager returns from mocks.
-
-        Some tests monkeypatch `_make_authenticated_request` to return a context
-        manager directly instead of an awaitable. This helper normalizes both.
-        """
+        """Support both awaitable and direct async context manager returns from mocks."""
         req = self._make_authenticated_request(method, url, **kwargs)
         try:
             cm = await req
         except TypeError:
-            cm = req  # type: ignore[assignment]  # already a CM
+            cm = req  # type: ignore[assignment]
         return cm
 
     def _get_file_extension(self, file_group_id: str) -> str:
@@ -1383,7 +1244,6 @@ class DataQueryClient(
                 return "." + ext
             return ".bin"
         except Exception:
-            # For any exceptions, return without dot for security
             return "bin"
 
     async def auto_download_async(
@@ -1405,66 +1265,7 @@ class DataQueryClient(
         max_tracked_files: int = 10_000,
         max_tracked_errors: int = 1_000,
     ) -> "NotificationDownloadManager":
-        """
-        Subscribe to the /notification SSE endpoint and download new files.
-
-        Starts a :class:`NotificationDownloadManager` that maintains a persistent
-        SSE connection to the DataQuery notification endpoint. ``group_id`` (and
-        optionally ``file_group_id``) are sent as query parameters so the server
-        only emits events for the requested subscription.
-
-        Args:
-            group_id: Data group to subscribe to (sent as ``group-id``).
-            destination_dir: Directory to download files to.
-            file_filter: Optional predicate ``(file_info_dict) -> bool`` to
-                         select which available files to download.
-            progress_callback: Called with :class:`DownloadProgress` updates.
-            error_callback: Called with exceptions from the SSE connection or
-                            download failures.
-            max_retries: Maximum retry attempts per file before giving up.
-            max_concurrent_downloads: Concurrency limit for parallel downloads.
-            initial_check: If ``True`` (default), perform a file-availability
-                           check immediately on start, before any SSE events.
-            reconnect_delay: Initial reconnection delay in seconds.
-            max_reconnect_delay: Maximum reconnection delay in seconds.
-            file_group_id: Optional restriction to one or more file-group-ids.
-                           Accepts a single id or a list. Sent to the server as
-                           the ``file-group-id`` query parameter (comma-separated
-                           when a list).
-            show_progress: If ``True`` (default), log download progress at
-                           DEBUG level when no ``progress_callback`` is set.
-            enable_event_replay: If ``True`` (default), persist the most
-                           recently received SSE event id to disk and replay
-                           from it on subsequent runs by sending it as the
-                           ``last-event-id`` URL parameter. Replay supersedes
-                           the bulk initial-check whenever a stored id is
-                           found. Set ``False`` to keep the legacy
-                           bulk-check-on-every-startup behaviour.
-            heartbeat_timeout: Seconds. When > 0, force the SSE stream to
-                           reconnect if no bytes (events or comment
-                           heartbeats) arrive within this window. ``0`` (the
-                           default) disables the watchdog and relies on the
-                           server to close the stream cleanly.
-            max_tracked_files: Bound on the in-memory dedup / retry maps so
-                           the manager can run 24/7 without unbounded memory
-                           growth. LRU eviction; default 10,000.
-            max_tracked_errors: Bound on ``stats["errors"]`` (ring buffer);
-                           default 1,000.
-
-        Returns:
-            A running :class:`NotificationDownloadManager` instance.
-
-        Example::
-
-            # Subscribe to every file in the group.
-            manager = await client.auto_download_async(group_id="economic-data")
-
-            # Subscribe to specific files only — the server filters.
-            manager = await client.auto_download_async(
-                group_id="economic-data",
-                file_group_id=["JPM_CPI", "JPM_GDP"],
-            )
-        """
+        """Subscribe to the /notification SSE endpoint and download new files."""
         from ..sse.subscriber import NotificationDownloadManager
 
         manager = NotificationDownloadManager(

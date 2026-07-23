@@ -1,8 +1,4 @@
-"""API endpoint paths.
-
-Paths are relative to the main API base URL (``_build_api_url``) or the files
-API base URL (``_build_files_api_url``) unless otherwise noted.
-"""
+"""API endpoint paths."""
 
 from __future__ import annotations
 

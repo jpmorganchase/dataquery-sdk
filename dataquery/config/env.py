@@ -1,15 +1,4 @@
-"""
-Environment-based configuration for the DATAQUERY SDK.
-
-Loads settings from environment variables (or a ``.env`` file) into a
-:class:`ClientConfig` Pydantic model. Field declarations live on
-``ClientConfig`` — this module only handles the env-var → field projection,
-type coercion, and cross-field validation.
-
-Single source of truth: :data:`ClientConfig.model_fields`. The
-``DEFAULTS`` table here is derived from the model at import time so the two
-cannot drift.
-"""
+"""Environment-based configuration for the DATAQUERY SDK."""
 
 from __future__ import annotations
 
@@ -57,12 +46,7 @@ def _unwrap_optional(annotation: Any) -> Any:
 
 
 def _build_defaults() -> Dict[str, Optional[str]]:
-    """Compute the ``EnvConfig.DEFAULTS`` table from the model.
-
-    Booleans become ``"true"``/``"false"`` (lowercase, matching the
-    tokens :meth:`EnvConfig.get_bool` accepts). Numeric / string defaults
-    are stringified directly. ``None`` defaults stay ``None``.
-    """
+    """Compute the ``EnvConfig.DEFAULTS`` table from the model."""
     defaults: Dict[str, Optional[str]] = {}
     for field_name, field in ClientConfig.model_fields.items():
         env_key = _env_name_for(field_name)
@@ -79,12 +63,7 @@ def _build_defaults() -> Dict[str, Optional[str]]:
 
 
 class EnvConfig:
-    """Environment-based configuration loader for the DataQuery SDK.
-
-    All methods are class methods — this class is a namespace, never
-    instantiated. Field definitions, types, and defaults all originate from
-    :class:`dataquery.types.models.ClientConfig`.
-    """
+    """Environment-based configuration loader for the DataQuery SDK."""
 
     PREFIX = "DATAQUERY_"
     DEFAULTS: Dict[str, Optional[str]] = _build_defaults()
@@ -146,11 +125,7 @@ class EnvConfig:
         config_data: Optional[Dict[str, Any]] = None,
         env_file: Optional[Path] = None,
     ) -> ClientConfig:
-        """Build a :class:`ClientConfig` from env vars or an explicit dict.
-
-        When ``config_data`` is provided the env-var path is skipped entirely
-        — the dict is passed straight to :class:`ClientConfig`.
-        """
+        """Build a :class:`ClientConfig` from env vars or an explicit dict."""
         if config_data is not None:
             return ClientConfig(**config_data)
 
@@ -275,11 +250,7 @@ class EnvConfig:
 
     @classmethod
     def create_env_template(cls, output_path: Optional[Path] = None) -> Path:
-        """Write a ``.env`` template listing every supported variable.
-
-        Lines are auto-generated from :data:`ClientConfig.model_fields` so a
-        new field shows up here automatically (no separate maintenance).
-        """
+        """Write a ``.env`` template listing every supported variable."""
         if output_path is None:
             output_path = Path(".env.template")
         if not isinstance(output_path, Path):

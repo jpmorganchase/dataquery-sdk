@@ -6,9 +6,12 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # noqa: E402
+ROOT = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(ROOT))  # noqa: E402
 
-from dataquery import DataQuery  # noqa: E402
+from dataquery import DataQuery, EnvConfig  # noqa: E402
+
+EnvConfig.load_env_file(ROOT / ".env")
 
 EXPRESSION = "DB(MTE,IRISH EUR 1.100 15-May-2029 LON,,IE00BH3SQ895,MIDPRC)"
 

@@ -1,8 +1,4 @@
-"""
-Authentication module for the DATAQUERY SDK.
-
-Provides OAuth token management and Bearer token authentication.
-"""
+"""Authentication module for the DATAQUERY SDK."""
 
 import asyncio
 import json
@@ -27,8 +23,8 @@ class TokenManager:
         self.config = config
         self.current_token: Optional[OAuthToken] = None
         self.token_file: Optional[Path] = None
-        # Lazily-created single-flight lock around token acquisition so
-        # concurrent callers don't stampede the token endpoint. Created on
+        # Single-flight lock around token acquisition so concurrent callers
+        # don't stampede the token endpoint.
         self._token_lock: Optional[asyncio.Lock] = None
         self._setup_token_storage()
 
@@ -54,23 +50,16 @@ class TokenManager:
 
         if base_dir:
             base_dir.mkdir(parents=True, exist_ok=True)
-            # Restrict directory to owner-only (POSIX).
             try:
                 os.chmod(base_dir, 0o700)
             except OSError:
-                # Windows or filesystem without POSIX perms — skip silently.
                 pass
             self.token_file = base_dir / "oauth_token.json"
         else:
             self.token_file = None
 
     async def get_valid_token(self) -> Optional[str]:
-        """
-        Get a valid access token for API requests.
-
-        Returns:
-            Bearer token string or None if no valid token available
-        """
+        """Get a valid access token for API requests."""
         if self.config.has_bearer_token:
             return f"Bearer {self.config.get_bearer_token()}"
 
@@ -83,7 +72,6 @@ class TokenManager:
 
         if self.current_token and not self.current_token.is_expired:
             if self.current_token.is_expiring_soon(self.config.token_refresh_threshold):
-                # Single-flight: only one coroutine refreshes; peers reuse the
                 async with self._get_token_lock():
                     if (
                         self.current_token
@@ -253,8 +241,8 @@ class TokenManager:
 
             self.token_file.parent.mkdir(parents=True, exist_ok=True)
 
-            # Write to a temp file that is created with owner-only permissions
-            # from the start (no TOCTOU window between open() and chmod()),
+            # Create the temp file with owner-only permissions from the start
+            # (no TOCTOU window between open() and chmod()).
             temp_file = self.token_file.with_suffix(".tmp")
             flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
             fd = os.open(temp_file, flags, 0o600)
@@ -313,27 +301,14 @@ class OAuthManager:
         self.token_manager = TokenManager(config)
 
     async def authenticate(self) -> str:
-        """
-        Authenticate and get a valid Bearer token.
-
-        Returns:
-            Bearer token string
-
-        Raises:
-            AuthenticationError: If authentication fails
-        """
+        """Authenticate and get a valid Bearer token."""
         token = await self.token_manager.get_valid_token()
         if not token:
             raise AuthenticationError("Failed to obtain valid authentication token")
         return token
 
     async def get_headers(self) -> Dict[str, str]:
-        """
-        Get headers with authentication token.
-
-        Returns:
-            Dictionary with Authorization header
-        """
+        """Get headers with authentication token."""
         token = await self.authenticate()
         return {"Authorization": token}
 
@@ -363,12 +338,7 @@ class OAuthManager:
         logger.info("Authentication data cleared")
 
     async def test_authentication(self) -> bool:
-        """
-        Test if authentication is working.
-
-        Returns:
-            True if authentication is successful
-        """
+        """Test if authentication is working."""
         try:
             await self.authenticate()
             return True

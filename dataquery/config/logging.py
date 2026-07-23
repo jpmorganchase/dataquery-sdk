@@ -1,9 +1,4 @@
-"""
-Enhanced logging configuration for the DATAQUERY SDK.
-
-Provides structured logging, performance metrics, request/response logging,
-and configurable log levels and formats.
-"""
+"""Enhanced logging configuration for the DATAQUERY SDK."""
 
 import logging
 from dataclasses import dataclass, field
@@ -353,21 +348,7 @@ def create_logging_config(
     enable_request_logging: bool = False,
     enable_performance_logging: bool = True,
 ) -> LoggingConfig:
-    """
-    Create logging configuration.
-
-    Args:
-        level: Log level
-        format: Log format
-        enable_console: Whether to enable console logging
-        enable_file: Whether to enable file logging
-        log_file: Path to log file
-        enable_request_logging: Whether to log HTTP requests/responses
-        enable_performance_logging: Whether to log performance metrics
-
-    Returns:
-        Logging configuration
-    """
+    """Create logging configuration."""
     return LoggingConfig(
         level=level,
         format=format,
@@ -380,13 +361,5 @@ def create_logging_config(
 
 
 def create_logging_manager(config: LoggingConfig) -> LoggingManager:
-    """
-    Create a logging manager with the specified configuration.
-
-    Args:
-        config: Logging configuration
-
-    Returns:
-        Configured logging manager
-    """
+    """Create a logging manager with the specified configuration."""
     return LoggingManager(config)
