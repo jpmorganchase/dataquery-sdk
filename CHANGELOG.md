@@ -46,5 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Extraction is Zip Slip-guarded, skips current-day archives, and surfaces failures via `extraction_errors` (downgrading overall status to `partial`); date windows with no available files no longer mark a multi-window run as `partial`
 ## [1.2.2] - 2026-07-18
 - MCP: new `mcp-connect` CLI command  
+## [1.2.3] - 2026-07-23
+- Pagination: new client-driven `get_next_page_async(page)` helper — read `next_link` off any paged response and hand the page back to fetch the next one (manual counterpart to the SDK-driven `iter_pages`); next-page links are resolved against the surface the page came from and never sent off-host
+- Pagination models: `items`, `page-size`, and `info` fields, plus the `next_link` property and `get_self_link()` accessor, moved onto the shared `Paginated` mixin; `FileList` is now paginated; list fields default to empty instead of being required so partial/empty envelopes parse cleanly
+- New `APIResponseError` raised when a 2xx response carries an `errors`/`error` envelope (e.g. `498 Unrecognized Page Token`); an `info` `204` "no content" envelope now yields an empty page so pagination stops cleanly, while any other unrecognized body fails loudly
+- Exports: `Paginated`, `Link`, `APIResponseError` are now part of the public API
 
 
