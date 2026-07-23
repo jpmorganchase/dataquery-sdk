@@ -1,16 +1,4 @@
-"""
-Notification-driven download manager for the DataQuery SDK.
-
-Subscribes to the DataQuery /events/notification SSE endpoint and
-downloads files as notifications arrive. Each SSE event uses the standard
-SSE format with the event type in the ``event:`` field (e.g., ``file-updated``)
-and the file details in the JSON ``data:`` payload.
-
-The SSE ``id:`` field is persisted to disk as a low-water-mark — advanced past
-an event only once its download has settled — so cross-process replay via the
-``last-event-id`` query parameter re-delivers any file whose download did not
-complete before a restart (at-least-once delivery).
-"""
+"""Notification-driven download manager for the DataQuery SDK."""
 
 import asyncio
 import inspect
@@ -30,12 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 class _BoundedKeySet:
-    """Set-like LRU container used to remember already-downloaded file keys.
-
-    Bounded so the manager can run indefinitely (24/7) without unbounded
-    memory growth. Touching a key on access (``__contains__``) keeps the
-    "hot" keys alive so a duplicate-event burst won't re-trigger downloads.
-    """
+    """Set-like LRU container used to remember already-downloaded file keys."""
 
     __slots__ = ("_data", "_maxsize")
 
@@ -65,11 +48,7 @@ class _BoundedKeySet:
 
 
 class _BoundedRetryMap:
-    """Dict-like LRU container used to remember per-file retry counts.
-
-    Mirrors :class:`_BoundedKeySet` but stores integer values instead of a
-    set membership marker. ``__setitem__`` touches the key (LRU on write).
-    """
+    """Dict-like LRU container used to remember per-file retry counts."""
 
     __slots__ = ("_data", "_maxsize")
 
@@ -104,39 +83,7 @@ class _BoundedRetryMap:
 
 
 class NotificationDownloadManager:
-    """
-    Downloads files in response to SSE notifications from the DataQuery API.
-
-    Each SSE event from ``/events/notification`` uses the standard SSE format::
-
-        id:714
-        event:file-updated
-        data: {
-          "file-group-id": "JPMAQS_ECONOMIC_SURPRISES_EXPLORER",
-          "file-datetime": "20260414",
-          "group-id": "JPMAQS",
-          "timestamp": "2026-04-30T11:37:30.315105200Z"
-        }
-
-    When a notification arrives the manager:
-
-    1. Parses the SSE ``id:`` field for replay, and ``file-group-id``, ``file-datetime`` from the JSON payload.
-    2. Only proceeds if the event type (``event:``) is ``file-updated``.
-    3. Checks if the file is not already local.
-    4. Downloads the file.
-
-    Usage::
-
-        async with DataQueryClient(config) as client:
-            manager = NotificationDownloadManager(
-                client=client,
-                group_id="my-group",
-                destination_dir="./downloads",
-            )
-            await manager.start()
-            # keep the process alive ...
-            await manager.stop()
-    """
+    """Downloads files in response to SSE notifications from the DataQuery API."""
 
     def __init__(
         self,
@@ -158,67 +105,7 @@ class NotificationDownloadManager:
         max_tracked_files: int = 10_000,
         max_tracked_errors: int = 1_000,
     ):
-        """
-        Initialise the manager.
-
-        Args:
-            client: An initialised ``DataQueryClient`` instance.
-            group_id: The data group to watch. Sent to the server as the
-                      ``group-id`` query parameter on the SSE subscription so
-                      only notifications for this group are delivered.
-            destination_dir: Directory where files will be saved.
-            file_filter: Optional predicate called with each available-file
-                         dict; return ``False`` to skip that file.
-            progress_callback: Called with a ``DownloadProgress`` object during
-                               downloads.  May be sync or async.
-            error_callback: Called with an ``Exception`` when a connection or
-                            download error occurs.  May be sync or async.
-            max_retries: Maximum download retry attempts per file.
-            max_concurrent_downloads: Concurrency limit for parallel downloads.
-            initial_check: If ``True`` perform a file-availability check
-                           immediately on start before SSE events arrive.
-            reconnect_delay: Initial SSE reconnection delay in seconds.
-            max_reconnect_delay: Maximum SSE reconnection delay in seconds.
-            file_group_id: Optional restriction to one or more file-group-ids.
-                           Sent to the server as the ``file-group-id`` query
-                           parameter (comma-separated when a list) so filtering
-                           happens at the source — the client no longer receives
-                           events for other files.
-            show_progress: If ``True`` (default), log download progress at
-                           DEBUG level when no ``progress_callback`` is set.
-            enable_event_replay: If ``True`` (default), persist the last seen
-                           SSE event id to disk and, on subsequent runs, send
-                           it as the ``last-event-id`` query parameter so the
-                           server replays any events published while the
-                           process was down. When a stored id is found the
-                           initial bulk availability check is skipped because
-                           replay covers that gap precisely. Set ``False`` to
-                           restore the legacy bulk-check-every-startup
-                           behaviour.
-            heartbeat_timeout: When > 0, force-reconnect the SSE stream if no
-                           bytes (events or comment heartbeats) arrive within
-                           this many seconds. Detects half-open TCP /
-                           stalled-proxy hangs that the server's clean-close
-                           recycle wouldn't otherwise surface. Must be larger
-                           than the server's keep-alive interval. ``0`` (the
-                           default) disables the watchdog.
-            max_tracked_files: Maximum number of file keys to remember in the
-                           in-memory dedup / retry maps. Bounded so the manager
-                           can run indefinitely without unbounded memory growth.
-                           Eviction is LRU — keys still seeing traffic stay hot.
-                           Default 10,000 ≈ a few MB, sufficient for years of
-                           realistic SSE volume.
-                           Edge case: a file that exhausted ``max_retries`` and
-                           is then evicted (because ``max_tracked_files`` cooler
-                           keys arrived in the meantime) will retry from zero
-                           if it reappears. In practice this is desirable —
-                           the original failure is likely long-stale by then —
-                           but it does mean ``max_retries`` is not a hard
-                           lifetime cap.
-            max_tracked_errors: Maximum number of recent errors retained in
-                           ``stats["errors"]``. Implemented as a ring buffer.
-                           Default 1,000.
-        """
+        """Initialise the manager."""
         self.client = client
         self.subscription = Subscription.from_user(group_id, file_group_id)
         self.group_id = group_id
@@ -240,7 +127,6 @@ class NotificationDownloadManager:
         self._heartbeat_timeout = heartbeat_timeout
         self._event_id_store: Optional[SSEEventIdStore] = None
 
-        # State — bounded so the manager can run 24/7 without leaking.
         self._running = False
         self._downloaded_files: _BoundedKeySet = _BoundedKeySet(max_tracked_files)
         self._failed_files: _BoundedRetryMap = _BoundedRetryMap(max_tracked_files)
@@ -295,8 +181,6 @@ class NotificationDownloadManager:
                 stored_event_id = self._event_id_store.load()
 
         if stored_event_id is not None and stored_event_id.isdigit():
-            # Seed the low-water-mark so we neither re-persist the stored id nor
-            # ever regress below it as newly received events settle.
             self._committed_event_id = int(stored_event_id)
             self._highest_seen_event_id = int(stored_event_id)
 
@@ -370,37 +254,16 @@ class NotificationDownloadManager:
             "failed_file_keys": len(self._failed_files),
             "last_event_id": last_event_id,
         }
-        # Copy the bounded error ring so external mutation can't corrupt it.
         snapshot["errors"] = list(self.stats["errors"])
         return snapshot
 
     def clear_event_id(self) -> None:
-        """Delete the persisted SSE event id so the next start() replays from
-        scratch (or runs the legacy initial bulk check, depending on flags)."""
+        """Delete the persisted SSE event id so the next start() replays from scratch."""
         if self._event_id_store is not None:
             self._event_id_store.clear()
 
     async def _on_sse_event(self, event: SSEEvent) -> None:
-        """Schedule the download triggered by an SSE event.
-
-        Returns immediately so the SSEClient's read loop can keep ingesting
-        notifications while downloads run in background tasks bounded by
-        ``max_concurrent_downloads``.
-
-        Expected SSE format::
-
-            id:714
-            event:file-updated
-            data: {
-              "file-group-id": "JPMAQS_ECONOMIC_SURPRISES_EXPLORER",
-              "file-datetime": "20260414",
-              "group-id": "JPMAQS",
-              "timestamp": "2026-04-30T11:37:30.315105200Z"
-            }
-
-        Note: Only events with event type ``file-updated`` will trigger downloads.
-        The SSE ``id:`` field is persisted for cross-process event replay.
-        """
+        """Schedule the download triggered by an SSE event."""
         self.stats["notifications_received"] += 1
         logger.info(
             "SSE notification received (event=%s id=%s): %s",
@@ -433,11 +296,7 @@ class NotificationDownloadManager:
         await self._commit_settled_event(event)
 
     def _register_event_id(self, event: SSEEvent) -> None:
-        """Record a numeric event id as in-flight before its download starts.
-
-        The replay cursor is never advanced past an in-flight id, so a crash
-        before the download settles leaves the event to be replayed.
-        """
+        """Record a numeric event id as in-flight before its download starts."""
         if self._event_id_store is None:
             return
         eid = event.id
@@ -449,14 +308,7 @@ class NotificationDownloadManager:
             self._highest_seen_event_id = value
 
     def _next_commit_id(self) -> Optional[str]:
-        """Return the highest replay id now safe to persist, or ``None``.
-
-        The safe id is the low-water-mark: everything below the oldest
-        still-in-flight event has settled, so commit ``min(in-flight) - 1``
-        (or the highest id seen when nothing is in flight). Fully synchronous
-        so two concurrent settlers can't persist a decreasing watermark across
-        the ``await`` in :meth:`_commit_settled_event`.
-        """
+        """Return the highest replay id now safe to persist, or ``None``."""
         if self._uncommitted_ids:
             watermark = min(self._uncommitted_ids) - 1
         else:
@@ -467,13 +319,7 @@ class NotificationDownloadManager:
         return None
 
     async def _commit_settled_event(self, event: SSEEvent) -> None:
-        """Advance the persisted replay cursor after an event's handler settles.
-
-        Runs whether the download succeeded, was skipped, or failed — the id is
-        no longer in-flight either way. A terminal download failure is already
-        surfaced via ``error_callback``/``stats``; the cursor still advances so a
-        genuinely unfetchable file can't stall replay forever.
-        """
+        """Advance the persisted replay cursor after an event's handler settles."""
         store = self._event_id_store
         if store is None:
             return
@@ -493,22 +339,7 @@ class NotificationDownloadManager:
         await self._dispatch_error(exc)
 
     async def _handle_notification(self, event: SSEEvent) -> None:
-        """Extract file-group-id/file-datetime from the event and download.
-
-        Expected SSE format::
-
-            id:714
-            event:file-updated
-            data: {
-              "file-group-id": "JPMAQS_ECONOMIC_SURPRISES_EXPLORER",
-              "file-datetime": "20260414",
-              "group-id": "JPMAQS",
-              "timestamp": "2026-04-30T11:37:30.315105200Z"
-            }
-
-        Note: Only events with event type ``file-updated`` will trigger downloads.
-        The SSE ``id:`` field is persisted for cross-process event replay.
-        """
+        """Extract file-group-id/file-datetime from the event and download."""
         if not event.data:
             logger.debug("SSE event has no data payload — skipping")
             return
@@ -584,11 +415,7 @@ class NotificationDownloadManager:
         await self._download_file(file_group_id, file_date_time, file_key)
 
     async def _check_and_download(self) -> None:
-        """Bulk-fetch available files for today and download any that are new.
-
-        Used only for the initial startup check so files published before
-        the SSE connection was established are not missed.
-        """
+        """Bulk-fetch available files for today and download any that are new."""
         self.stats["checks_triggered"] += 1
         today = datetime.now(timezone.utc).strftime("%Y%m%d")
 

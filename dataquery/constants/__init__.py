@@ -1,16 +1,4 @@
-"""Internal tunable constants used across the SDK.
-
-Centralizing these values here avoids drift between code paths that must agree
-(e.g. the single-stream and parallel downloaders share thresholds) and gives a
-single place to adjust tunables. Pydantic model field defaults and validation
-bounds are intentionally NOT hoisted here — those are part of the public
-schema.
-
-Constants are organized into topical submodules; this ``__init__`` re-exports
-them so existing call sites using ``from . import constants as C`` keep
-working without change. New code may also import from a specific submodule,
-e.g. ``from dataquery.constants.api import API_GROUPS``.
-"""
+"""Internal tunable constants used across the SDK."""
 
 from __future__ import annotations
 

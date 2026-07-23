@@ -1,14 +1,4 @@
-"""
-Persistent storage for the last-seen SSE event ID.
-
-Enables cross-process event replay: when a subscription reconnects, the stored
-``last-event-id`` is sent to the server (as both a URL query parameter and the
-``Last-Event-ID`` header) so the server can replay any events published while
-the client was disconnected.
-
-The on-disk format and atomic-write pattern mirrors the OAuth token persistence
-in :mod:`dataquery.transport.auth` (owner-only ``0o600`` temp file, then atomic rename).
-"""
+"""Persistent storage for the last-seen SSE event ID."""
 
 from __future__ import annotations
 
@@ -29,15 +19,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class Subscription:
-    """Identifies a single SSE notification subscription.
-
-    Encapsulates the ``(group_id, file_group_ids)`` pair the SDK uses to:
-    build SSE URL query parameters, derive the per-subscription on-disk
-    fingerprint for replay state, and render a human-readable label.
-
-    Use :meth:`from_user` to normalise the flexible user-facing types
-    (``str | iterable[str] | None``) into the canonical sorted-tuple form.
-    """
+    """Identifies a single SSE notification subscription."""
 
     group_id: str
     file_group_ids: Tuple[str, ...] = field(default_factory=tuple)
@@ -69,11 +51,7 @@ class Subscription:
         return params
 
     def fingerprint(self) -> str:
-        """Deterministic short hash; used as the on-disk state filename.
-
-        Stable across SDK versions: the canonical form must not change or
-        existing replay-state files will be silently orphaned.
-        """
+        """Deterministic short hash; used as the on-disk state filename."""
         canonical = f"group-id={self.group_id}|file-group-id={','.join(self.file_group_ids)}"
         return hashlib.sha1(canonical.encode("utf-8")).hexdigest()[:16]
 
@@ -89,14 +67,7 @@ def _fingerprint_subscription(group_id: str, file_group_id: Optional[Union[str, 
 
 
 def resolve_sse_state_dir(config: ClientConfig) -> Optional[Path]:
-    """Resolve the directory where SSE event-id state files live.
-
-    Mirrors the resolution order used by :class:`dataquery.transport.auth.TokenManager`:
-
-    1. ``token_storage_enabled`` + ``token_storage_dir`` → ``<dir>/.sse_state/``
-    2. ``download_dir`` set → ``<download_dir>/.sse_state/``
-    3. Otherwise ``None`` — persistence is silently disabled.
-    """
+    """Resolve the directory where SSE event-id state files live."""
     base_dir: Optional[Path] = None
     token_storage_enabled = bool(getattr(config, "token_storage_enabled", False))
     token_storage_dir = getattr(config, "token_storage_dir", None)
@@ -128,8 +99,7 @@ def build_event_id_store(
     config: ClientConfig,
     subscription: Subscription,
 ) -> Optional["SSEEventIdStore"]:
-    """Return a configured :class:`SSEEventIdStore` or ``None`` if persistence
-    is unavailable (no storage directory resolvable)."""
+    """Return a configured :class:`SSEEventIdStore` or ``None`` if persistence is unavailable."""
     state_dir = resolve_sse_state_dir(config)
     if state_dir is None:
         return None
@@ -138,17 +108,7 @@ def build_event_id_store(
 
 
 class SSEEventIdStore:
-    """Persist the most recent SSE event id for a single subscription.
-
-    Optimised for the common case: ``save`` is called once per SSE event,
-    so the implementation:
-    - skips no-op saves when the id matches the last successfully persisted
-      one (server reconnect echoes the boundary id repeatedly),
-    - writes compact JSON (no indent) since the file is machine-read,
-    - serialises concurrent saves through a per-instance lock so the
-      fire-and-forget save tasks in :mod:`dataquery.sse.client` don't
-      pile up unbounded writes for the same instance.
-    """
+    """Persist the most recent SSE event id for a single subscription."""
 
     def __init__(self, file_path: Path, subscription: str = "") -> None:
         self.file_path = Path(file_path)
@@ -157,11 +117,7 @@ class SSEEventIdStore:
         self._save_lock: Optional[asyncio.Lock] = None
 
     def load(self) -> Optional[str]:
-        """Return the last persisted event id, or ``None`` if unavailable.
-
-        Assumes stored event IDs are valid (numeric > 1) since validation
-        happens during save().
-        """
+        """Return the last persisted event id, or ``None`` if unavailable."""
         if not self.file_path.exists():
             return None
         try:
@@ -178,11 +134,7 @@ class SSEEventIdStore:
             return None
 
     async def save(self, event_id: str) -> None:
-        """Atomically persist ``event_id``. Failures are logged, not raised.
-
-        No-op when ``event_id`` is falsy, non-numeric, or matches the
-        most recently persisted value. Only numeric IDs are valid for replay.
-        """
+        """Atomically persist ``event_id``. Failures are logged, not raised."""
         if not event_id or not event_id.isdigit():
             return
         if event_id == self._last_saved_id:

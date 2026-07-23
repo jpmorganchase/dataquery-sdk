@@ -1,22 +1,4 @@
-"""Local stdio <-> Streamable HTTP proxy for a remote MCP server.
-
-Bridges an MCP client that only speaks stdio (Claude Desktop, Claude Code,
-etc.) to a remote MCP endpoint served over Streamable HTTP that expects the
-DataQuery OAuth bearer token. The token is fetched with the SDK's client
-credentials, injected on every request, and refreshed on expiry/401 — it never
-reaches the MCP client. Run via ``dataquery mcp connect --url https://.../mcp``.
-
-Protocol notes (Streamable HTTP, MCP spec 2025-03-26+):
-- every client JSON-RPC message is POSTed to the endpoint;
-- responses arrive either as ``application/json`` (one message) or as a
-  ``text/event-stream`` whose ``data:`` events each carry one message;
-- the ``Mcp-Session-Id`` response header from ``initialize`` must be echoed
-  on all subsequent requests, and DELETEd on shutdown;
-- an optional GET stream carries server-initiated messages; servers may
-  reject it (405), which is fine.
-
-stdout carries only JSON-RPC messages; all logging goes to stderr.
-"""
+"""Local stdio <-> Streamable HTTP proxy for a remote MCP server."""
 
 import asyncio
 import json
@@ -38,18 +20,12 @@ logger = structlog.get_logger(__name__)
 _SESSION_HEADER = "Mcp-Session-Id"
 _PROTOCOL_HEADER = "MCP-Protocol-Version"
 
-# GET listening-stream reconnect backoff (seconds).
 _GET_BACKOFF_INITIAL = 1.0
 _GET_BACKOFF_MAX = 30.0
 
 
 class StreamableHttpProxy:
-    """Forward JSON-RPC messages between a stdio client and a remote endpoint.
-
-    ``emit`` is called (in event-loop context) with each JSON-RPC message the
-    server produces; the caller decides how to deliver it (stdout in
-    production, a list in tests).
-    """
+    """Forward JSON-RPC messages between a stdio client and a remote endpoint."""
 
     def __init__(
         self,
@@ -95,7 +71,7 @@ class StreamableHttpProxy:
                     continue
 
                 if resp.status in (202, 204):
-                    return  # notification/response accepted, nothing to emit
+                    return
 
                 if resp.status == 404 and self.session_id:
                     # Session expired server-side. A transparent re-init is
@@ -129,9 +105,6 @@ class StreamableHttpProxy:
             logger.info("MCP session established")
 
     def _emit_message(self, payload: Any) -> None:
-        # Record the negotiated protocol version from the initialize result so
-        # subsequent requests carry the MCP-Protocol-Version header. Works for
-        # both JSON and SSE delivery.
         if isinstance(payload, dict):
             result = payload.get("result")
             if isinstance(result, dict) and result.get("protocolVersion"):
@@ -142,7 +115,7 @@ class StreamableHttpProxy:
         """Answer a request the endpoint never processed with a JSON-RPC error."""
         request_id = request.get("id")
         if request_id is None:
-            return  # notification: nothing to answer
+            return
         self.emit(
             {
                 "jsonrpc": "2.0",
@@ -165,13 +138,9 @@ class StreamableHttpProxy:
                     self._emit_message(json.loads(data))
                 except json.JSONDecodeError:
                     logger.warning("Skipping non-JSON SSE event", data=data[:200])
-            # id:/event:/retry:/comment lines need no handling for this proxy.
 
     async def listen_get_stream(self) -> None:
-        """Pump the optional server-initiated GET stream, reconnecting politely.
-
-        Servers that don't offer one answer 405/404; give up in that case.
-        """
+        """Pump the optional server-initiated GET stream, reconnecting politely."""
         backoff = _GET_BACKOFF_INITIAL
         while True:
             headers = await self._headers()
@@ -215,13 +184,7 @@ def _configure_stderr_logging() -> None:
 
 
 def _build_oauth_manager(url: str, env_file: Optional[Path]) -> OAuthManager:
-    """Build the OAuth manager from env config.
-
-    ``DATAQUERY_BASE_URL`` is only used to derive the default token URL, so
-    when it isn't set fall back to the MCP endpoint's origin — the credentials
-    themselves still come from ``DATAQUERY_CLIENT_ID``/``_CLIENT_SECRET`` (or
-    ``DATAQUERY_BEARER_TOKEN``).
-    """
+    """Build the OAuth manager from env config."""
     if env_file is not None:
         EnvConfig.load_env_file(env_file)
     if not EnvConfig.get_env_var("BASE_URL"):
@@ -254,8 +217,6 @@ async def run_mcp_proxy(url: str, env_file: Optional[Path] = None) -> int:
     _configure_stderr_logging()
     try:
         oauth = _build_oauth_manager(url, env_file)
-        # Validate credentials before the client starts talking, so a bad
-        # secret fails fast with a readable error instead of a hung client.
         await oauth.authenticate()
     except (ConfigurationError, AuthenticationError) as exc:
         print(f"dataquery mcp connect: {exc}", file=sys.stderr)
@@ -279,7 +240,7 @@ async def run_mcp_proxy(url: str, env_file: Optional[Path] = None) -> int:
             while True:
                 line = await reader.readline()
                 if not line:
-                    break  # client closed stdin: shut down
+                    break
                 text = line.decode("utf-8", errors="replace").strip()
                 if not text:
                     continue

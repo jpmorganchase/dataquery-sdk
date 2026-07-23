@@ -1,18 +1,4 @@
-"""
-DATAQUERY SDK - Python SDK for DATAQUERY Data API
-
-A high-performance Python SDK for the DATAQUERY Data API, providing seamless access
-to economic data files with advanced features like querying, downloading, availability
-checking, rate limiting, retry logic, connection pool monitoring, and comprehensive logging.
-
-Quick Start:
-    >>> from dataquery import DataQuery
-    >>> async with DataQuery() as dq:
-    ...     groups = await dq.list_groups_async()
-    ...     print(f"Found {len(groups)} groups")
-
-For more information, visit: https://github.com/jpmorganchase/dataquery-sdk
-"""
+"""DATAQUERY SDK - Python SDK for DATAQUERY Data API."""
 
 __version__ = "1.2.3"
 __author__ = "DATAQUERY SDK Team"

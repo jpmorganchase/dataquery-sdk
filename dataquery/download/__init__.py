@@ -1,5 +1,4 @@
-"""Download machinery: file-existence helpers, progress wrapping, and the
-parallel range downloader."""
+"""Download machinery: file-existence helpers, progress wrapping, and the parallel range downloader."""
 
 from __future__ import annotations
 

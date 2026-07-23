@@ -1,6 +1,4 @@
-"""
-Utility functions for the DATAQUERY SDK.
-"""
+"""Utility functions for the DATAQUERY SDK."""
 
 import asyncio
 import os
@@ -27,15 +25,7 @@ logger = structlog.get_logger(__name__)
 
 
 def create_env_template(env_file: Optional[Path] = None) -> Path:
-    """
-    Create a .env template file with all available configuration options.
-
-    Args:
-        env_file: Path to the template file (default: .env.template)
-
-    Returns:
-        Path to the created template file
-    """
+    """Create a .env template file with all available configuration options."""
     template_file = env_file or Path(".env.template")
 
     if not isinstance(template_file, Path):
@@ -232,16 +222,7 @@ DATAQUERY_LOG_REQUESTS=false
 
 
 def save_config_to_env(config: ClientConfig, env_file: Optional[Path] = None) -> Path:
-    """
-    Save configuration to .env file.
-
-    Args:
-        config: Client configuration to save
-        env_file: Path to the .env file (default: .env)
-
-    Returns:
-        Path to the saved .env file
-    """
+    """Save configuration to .env file."""
     env_file = env_file or Path(".env")
 
     if not isinstance(env_file, Path):
@@ -298,12 +279,7 @@ DATAQUERY_DEFAULT_DIR=files
 
 
 def load_env_file(env_file: Optional[Path] = None) -> None:
-    """
-    Load environment variables from .env file.
-
-    Args:
-        env_file: Path to the .env file (default: .env)
-    """
+    """Load environment variables from .env file."""
     try:
         from dotenv import load_dotenv
     except ImportError:
@@ -327,38 +303,18 @@ def load_env_file(env_file: Optional[Path] = None) -> None:
 
 
 def get_env_value(key: str, default: Optional[str] = None) -> Optional[str]:
-    """
-    Get environment variable value with optional default.
-
-    Args:
-        key: Environment variable name
-        default: Default value if not found
-
-    Returns:
-        Environment variable value or default
-    """
+    """Get environment variable value with optional default."""
     return os.getenv(key, default)
 
 
 def set_env_value(key: str, value: str) -> None:
-    """
-    Set environment variable value.
-
-    Args:
-        key: Environment variable name
-        value: Value to set
-    """
+    """Set environment variable value."""
     os.environ[key] = value
     logger.debug("Set environment variable", key=key, value=value)
 
 
 def validate_env_config() -> None:
-    """
-    Validate that required environment variables are set.
-
-    Raises:
-        ValueError: If required variables are missing or invalid
-    """
+    """Validate that required environment variables are set."""
     timeout = get_env_value("DATAQUERY_TIMEOUT")
     if timeout:
         try:
@@ -398,19 +354,7 @@ def validate_env_config() -> None:
 
 
 def format_file_size(size_bytes: int, precision: int = 1, strict: bool = False) -> str:
-    """
-    Format file size in human-readable format.
-
-    Args:
-        size_bytes: Size in bytes
-        precision: Number of decimal places (default: 1).
-                  Note: Client uses precision=2.
-        strict: If True, always use the specified precision.
-               If False (default), bytes are formatted with 0 decimals.
-
-    Returns:
-        Formatted string (e.g., "1.5 MB")
-    """
+    """Format file size in human-readable format."""
     if size_bytes == 0:
         return "0 B"
 
@@ -433,17 +377,7 @@ def format_file_size(size_bytes: int, precision: int = 1, strict: bool = False) 
 
 
 def format_duration(seconds: float, compact: bool = False) -> str:
-    """
-    Format duration string.
-
-    Args:
-        seconds: Duration in seconds
-        compact: If True, uses compact format (X.Ys, X.Ym, X.Yh).
-                If False, uses verbose format (Xh Ym Zs).
-
-    Returns:
-        Formatted duration string
-    """
+    """Format duration string."""
     if seconds == 0:
         return "0s"
 
@@ -512,19 +446,10 @@ def get_download_paths(base_dir: Optional[Path] = None) -> dict:
 
 
 def parse_content_disposition(content_disposition: str) -> Optional[str]:
-    """
-    Parse Content-Disposition header to extract filename (including RFC 2231/5987 support).
-
-    Args:
-        content_disposition: The Content-Disposition header value
-
-    Returns:
-        The extracted filename or None if not found
-    """
+    """Parse Content-Disposition header to extract filename (including RFC 2231/5987 support)."""
     if not content_disposition:
         return None
 
-    # Try to find filename* (RFC 2231/5987)
     filename_star_match = re.search(r"filename\*=(?:UTF-8\'\')?([^;\r\n]+)", content_disposition, re.IGNORECASE)
     if filename_star_match:
         filename = filename_star_match.group(1)
@@ -547,17 +472,7 @@ def get_filename_from_response(
     file_group_id: str,
     file_datetime: Optional[str] = None,
 ) -> str:
-    """
-    Extract filename from response headers or generate a default one.
-
-    Args:
-        response: HTTP response object
-        file_group_id: File group ID for fallback filename
-        file_datetime: Optional file datetime for fallback filename
-
-    Returns:
-        Filename to use for the download
-    """
+    """Extract filename from response headers or generate a default one."""
     content_disposition = response.headers.get("content-disposition")
     if content_disposition:
         filename = parse_content_disposition(content_disposition)
@@ -602,10 +517,7 @@ def get_filename_from_response(
 
 
 def validate_file_datetime(file_datetime: str) -> None:
-    """
-    Validate file-datetime format: YYYYMMDD, YYYYMMDDTHHMM, or YYYYMMDDTHHMMSS.
-    Raises ValueError if invalid.
-    """
+    """Validate file-datetime format: YYYYMMDD, YYYYMMDDTHHMM, or YYYYMMDDTHHMMSS."""
     if not file_datetime:
         return
     patterns = [
@@ -621,16 +533,7 @@ def validate_file_datetime(file_datetime: str) -> None:
 
 
 def validate_date_format(date_str: str, param_name: str) -> None:
-    """
-    Validate date format for start-date and end-date parameters.
-
-    Args:
-        date_str: Date string to validate
-        param_name: Parameter name for error messages
-
-    Raises:
-        ValidationError: If date format is invalid
-    """
+    """Validate date format for start-date and end-date parameters."""
     if not date_str:
         return
 
@@ -681,19 +584,7 @@ def split_date_range_into_chunks(
     end_date: str,
     chunk_days: int = DEFAULT_WRITTEN_RESEARCH_CHUNK_DAYS,
 ) -> List[Tuple[str, str]]:
-    """Split an inclusive YYYYMMDD date range into fixed-size chunks.
-
-    Args:
-        start_date: Inclusive start date in YYYYMMDD format.
-        end_date: Inclusive end date in YYYYMMDD format.
-        chunk_days: Number of days per chunk (default:
-            ``DEFAULT_WRITTEN_RESEARCH_CHUNK_DAYS``). The last chunk may be
-            shorter.
-
-    Returns:
-        Ordered list of ``(chunk_start, chunk_end)`` YYYYMMDD tuples covering
-        ``[start_date, end_date]`` with no gaps or overlaps.
-    """
+    """Split an inclusive YYYYMMDD date range into fixed-size chunks."""
     if chunk_days <= 0:
         raise ValidationError("chunk_days must be a positive integer")
 
@@ -717,19 +608,7 @@ def split_date_range_into_chunks(
 
 
 def _split_into_monthly_ranges(from_date: str, to_date: str) -> List[Tuple[str, str]]:
-    """Split an inclusive YYYYMMDD date range into calendar-month windows.
-
-    Each returned window spans at most one calendar month, matching the
-    ``available-files`` endpoint's one-month range limit.
-
-    Args:
-        from_date: Inclusive start date in YYYYMMDD format.
-        to_date: Inclusive end date in YYYYMMDD format.
-
-    Returns:
-        Ordered list of ``(chunk_start, chunk_end)`` YYYYMMDD tuples covering
-        ``[from_date, to_date]`` with no gaps or overlaps.
-    """
+    """Split an inclusive YYYYMMDD date range into calendar-month windows."""
     try:
         start = datetime.strptime(from_date, "%Y%m%d").date()
         end = datetime.strptime(to_date, "%Y%m%d").date()
@@ -754,19 +633,7 @@ def _split_into_monthly_ranges(from_date: str, to_date: str) -> List[Tuple[str, 
 
 
 def _extract_zip_safely(zip_path: Path, target_dir: Path) -> List[str]:
-    """Extract a ZIP archive into ``target_dir``, guarding against Zip Slip.
-
-    Args:
-        zip_path: Path to the ``.zip`` archive to extract.
-        target_dir: Directory the archive contents are written to.
-
-    Returns:
-        List of member names that were extracted.
-
-    Raises:
-        ValidationError: If any archive member would be written outside
-            ``target_dir`` (path traversal attempt).
-    """
+    """Extract a ZIP archive into ``target_dir``, guarding against Zip Slip."""
     target_dir.mkdir(parents=True, exist_ok=True)
     resolved_target = target_dir.resolve()
 
@@ -785,11 +652,7 @@ def _extract_single_zip(
     today: str,
     remove_zip_after_extract: bool,
 ) -> Optional[Dict[str, Any]]:
-    """Extract one top-level archive, returning a record or ``None`` if skipped.
-
-    Leaves current-day archives untouched (their content may still be updating)
-    and silently skips archives that are not valid ZIP files.
-    """
+    """Extract one top-level archive, returning a record or ``None`` if skipped."""
     # The embedded file-datetime (YYYYMMDDThhmm[ss]) is the last such token in
     # the name; earlier digit runs (e.g. the GPS id) must not be matched.
     matches = re.findall(r"(\d{8})T\d{4,6}", zip_path.stem)
@@ -821,16 +684,7 @@ async def _run_download_over_ranges(
     ranges: List[Tuple[str, str]],
     **kwargs: Any,
 ) -> Tuple[Dict[str, int], List[Dict[str, Any]]]:
-    """Run :meth:`DataQuery.run_group_download_async` once per date window.
-
-    Shared by :func:`download_zip_async` and
-    :func:`run_group_download_chunked_async`.
-
-    Returns:
-        ``(totals, per_chunk)`` where ``totals`` aggregates the download counts
-        across all windows and ``per_chunk`` holds one summary dict (dates,
-        status, error, counts) per window, in order.
-    """
+    """Run :meth:`DataQuery.run_group_download_async` once per date window."""
     totals = {"total_files": 0, "successful_downloads": 0, "failed_downloads": 0}
     per_chunk: List[Dict[str, Any]] = []
 
@@ -858,12 +712,7 @@ async def _run_download_over_ranges(
 
 
 def _aggregate_chunk_status(per_chunk: List[Dict[str, Any]]) -> str:
-    """Combine per-window statuses into one ``success``/``partial``/``error``.
-
-    Windows that merely had no available files (a quiet window, reported by
-    the API as an error) are ignored so they don't mark an otherwise clean
-    multi-window run as ``partial``.
-    """
+    """Combine per-window statuses into one ``success``/``partial``/``error``."""
     relevant = [
         c["status"] for c in per_chunk if not (c["status"] == "error" and c.get("error") == NO_FILES_FOUND_ERROR)
     ]
@@ -883,39 +732,7 @@ async def download_zip_async(
     remove_zip_after_extract: bool = True,
     **kwargs: Any,
 ) -> Dict[str, Any]:
-    """Download all files in a group and unzip any ZIP archives as they arrive.
-
-    Runs :meth:`DataQuery.run_group_download_async` over the
-    ``[start_date, end_date]`` range, splitting it into calendar-month windows
-    because the ``available-files`` endpoint rejects ranges longer than one
-    month. Each ``.zip`` archive is extracted in a worker thread the moment its
-    download completes, so unzipping overlaps with the downloads of the files
-    still in flight instead of waiting for the whole batch to finish. A final
-    sweep extracts any archives not already handled by the per-file hook.
-
-    Note that with ``remove_zip_after_extract=True`` the archives are gone
-    after the run, so re-running the same range downloads them again (the
-    downloader can't see they were already fetched).
-
-    Args:
-        dq: An already-constructed ``DataQuery`` instance (used inside its own
-            ``async with`` context by the caller).
-        group_id: Group ID to download files from.
-        start_date: Inclusive start date in YYYYMMDD format.
-        end_date: Inclusive end date in YYYYMMDD format.
-        destination_dir: Base destination directory for downloads. Files are
-            written to ``destination_dir / group_id``.
-        remove_zip_after_extract: When True (default), delete each ``.zip``
-            archive after it has been successfully extracted.
-        **kwargs: Forwarded as-is to ``DataQuery.run_group_download_async``.
-
-    Returns:
-        Dict with the aggregated ``status``/``counts``, a ``chunks`` list of
-        per-window summaries, an ``extracted`` list describing each archive
-        that was unzipped, and an ``extraction_errors`` list for archives that
-        downloaded fine but could not be extracted (any entry here downgrades
-        an overall ``success`` to ``partial``).
-    """
+    """Download all files in a group and unzip any ZIP archives as they arrive."""
     ranges = _split_into_monthly_ranges(start_date, end_date)
 
     today = datetime.now().strftime("%Y%m%d")
@@ -931,13 +748,9 @@ async def download_zip_async(
         if key in processed:
             return
         processed.add(key)
-        # Run the blocking unzip off the event loop so concurrent downloads
-        # keep progressing while this archive is extracted.
         try:
             record = await asyncio.to_thread(_extract_single_zip, local_path, today, remove_zip_after_extract)
         except Exception as exc:
-            # Leave the archive for the final sweep to retry; only the sweep
-            # records a definitive extraction error.
             processed.discard(key)
             logger.warning(
                 "Extraction failed, will retry in final sweep",
@@ -960,10 +773,6 @@ async def download_zip_async(
 
     group_dir = destination_dir / group_id
 
-    # Fallback sweep: extract any archives the per-file hook did not handle
-    # (e.g. files whose local path was unavailable, or first-attempt extraction
-    # failures). Already-extracted zips were removed/deduplicated, so this is
-    # idempotent.
     if group_dir.is_dir():
         # Snapshot the top-level archives before extracting so nested zips
         # unpacked from these archives are left untouched (no recursion).
@@ -1005,27 +814,7 @@ async def run_group_download_chunked_async(
     chunk_days: int = DEFAULT_WRITTEN_RESEARCH_CHUNK_DAYS,
     **kwargs: Any,
 ) -> Dict[str, Any]:
-    """Run :meth:`DataQuery.run_group_download_async` in date-range chunks.
-
-    The ``[start_date, end_date]`` range is split into ``chunk_days``-sized
-    windows (see :func:`split_date_range_into_chunks`) so each call to the
-    ``available-files`` endpoint covers a smaller window. Results are
-    aggregated into a single summary dict.
-
-    Args:
-        dq: An already-constructed ``DataQuery`` instance (will be used inside
-            its own ``async with`` context by the caller).
-        group_id: Group ID to download files from.
-        start_date: Inclusive start date in YYYYMMDD format.
-        end_date: Inclusive end date in YYYYMMDD format.
-        chunk_days: Days per chunk (default:
-            ``DEFAULT_WRITTEN_RESEARCH_CHUNK_DAYS``).
-        **kwargs: Forwarded as-is to ``DataQuery.run_group_download_async``.
-
-    Returns:
-        Dict with aggregated ``totals`` and a ``chunks`` list of per-chunk
-        ``OperationReport`` dumps.
-    """
+    """Run :meth:`DataQuery.run_group_download_async` in date-range chunks."""
     chunks = split_date_range_into_chunks(start_date, end_date, chunk_days)
     totals, per_chunk = await _run_download_over_ranges(dq, group_id, chunks, **kwargs)
 

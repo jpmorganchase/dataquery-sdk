@@ -1,18 +1,10 @@
-"""
-Local DQ function registry (reference lookup, no API call).
-
-Loads ``data/function.json`` and exposes helpers to look up DataQuery
-function syntax, parameters, and categories without contacting the API.
-"""
+"""Local DQ function registry (reference lookup, no API call)."""
 
 import json
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-# Static, frozen dataset of the 158 DataQuery functions. Derived from the
-# glossary in skills/dataquery/references/functions.md; edit that file and
-# regenerate by hand if the function list ever changes.
 _FUNCTION_JSON = Path(__file__).resolve().parent / "data" / "function.json"
 _function_registry: Optional[Dict[str, Dict[str, Any]]] = None
 

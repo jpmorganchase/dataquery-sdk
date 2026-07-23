@@ -1,5 +1,4 @@
-"""HTTP transport building blocks: OAuth/bearer auth, rate limiting, retry /
-circuit breaker, and connection pool monitoring."""
+"""HTTP transport building blocks: OAuth/bearer auth, rate limiting, retry / circuit breaker, and connection pool monitoring."""
 
 from __future__ import annotations
 

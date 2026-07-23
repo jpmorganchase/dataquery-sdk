@@ -1,6 +1,4 @@
-"""
-Custom exceptions for the DATAQUERY SDK.
-"""
+"""Custom exceptions for the DATAQUERY SDK."""
 
 from typing import Any, Dict, Optional
 
@@ -178,10 +176,7 @@ class PaginationError(DataQueryError):
 
 
 class APIResponseError(DataQueryError):
-    """Raised when the API returns an ``errors``/``error`` envelope inside an
-    otherwise successful (2xx) HTTP response — e.g. an invalid page token
-    (``498 Unrecognized Page Token``). Distinct from HTTP-status errors, which
-    surface as :class:`AuthenticationError`, :class:`NotFoundError`, etc."""
+    """Raised when the API returns an ``errors``/``error`` envelope inside an otherwise successful (2xx) HTTP response — e.g. an invalid page token (``498 Unrecognized Page Token``)."""
 
     def __init__(
         self,

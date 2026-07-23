@@ -1,13 +1,4 @@
-"""
-Parallel range downloader.
-
-Downloads one file as ``num_parts`` parallel HTTP range requests, where each
-range competes for a single ``global_semaphore`` shared across all files being
-downloaded concurrently. Total in-flight HTTP requests =
-``max_concurrent × num_parts`` rather than a hierarchical file-then-parts model.
-
-Used by ``DataQuery.run_group_download_async`` for bulk date-range downloads.
-"""
+"""Parallel range downloader."""
 
 from __future__ import annotations
 
@@ -78,11 +69,7 @@ async def _probe_size(
     file_datetime: Optional[str],
     global_semaphore: asyncio.Semaphore,
 ) -> Optional[_ProbeResult]:
-    """Issue a 1-byte range probe to learn file size and filename.
-
-    Returns ``None`` when the server doesn't honor ranges or the file is below
-    the small-file threshold — caller should fall back to single-stream.
-    """
+    """Issue a 1-byte range probe to learn file size and filename."""
     async with global_semaphore:
         async with await client._enter_request_cm("GET", url, params=params, headers=C.PROBE_HEADERS) as probe_resp:
             await client._handle_response(probe_resp)
@@ -104,12 +91,7 @@ async def _probe_size(
 
 
 class _ProgressReporter:
-    """Tracks total bytes downloaded and throttles callback/log dispatch.
-
-    Safe to mutate from concurrent range workers because all increments happen
-    on the event loop thread (chunks are read via ``async for``, so there are no
-    preemption points inside ``add_bytes``).
-    """
+    """Tracks total bytes downloaded and throttles callback/log dispatch."""
 
     def __init__(
         self,
@@ -229,12 +211,7 @@ def _salvage(
     bytes_downloaded: int,
     start_time: float,
 ) -> Optional[DownloadResult]:
-    """Recover a partially-failed download.
-
-    If all bytes arrived despite the failure, promote the temp file to the
-    final destination and return a COMPLETED result. Otherwise unlink the
-    temp file and return None.
-    """
+    """Recover a partially-failed download."""
     try:
         if not (temp_destination and temp_destination.exists()):
             return None
@@ -268,14 +245,7 @@ async def download_file_multipart(
     num_parts: int,
     progress_callback: Optional[Callable] = None,
 ) -> DownloadResult:
-    """Download one file via parallel HTTP range requests into a preallocated temp file.
-
-    Each part runs concurrently without external concurrency control. Small
-    files (< ``SMALL_FILE_THRESHOLD``) and servers that don't honor ranges fall
-    back to ``client._download_file_single_stream``. On unrecoverable failure
-    the partial temp file is salvaged when all bytes arrived, otherwise a
-    ``FAILED`` result is returned.
-    """
+    """Download one file via parallel HTTP range requests into a preallocated temp file."""
     params: dict = {"file-group-id": file_group_id}
     if file_datetime:
         params["file-datetime"] = file_datetime
@@ -386,16 +356,7 @@ async def download_file_parallel(
     global_semaphore: asyncio.Semaphore,
     progress_callback: Optional[Callable] = None,
 ) -> Optional[DownloadResult]:
-    """Download one file using parallel range requests under a shared semaphore.
-
-    Each HTTP range competes for ``global_semaphore``, so the caller controls
-    total API-wide concurrency regardless of how many files are running in
-    parallel. Falls back to a single-stream download for files under 10 MB or
-    when the server doesn't advertise a content range.
-
-    Returns a ``DownloadResult`` (``COMPLETED`` or ``ALREADY_EXISTS``) on
-    success, or ``None`` on unrecoverable failure (already logged).
-    """
+    """Download one file using parallel range requests under a shared semaphore."""
     if file_datetime:
         validate_file_datetime(file_datetime)
     if not num_parts or num_parts <= 0:
@@ -560,8 +521,6 @@ async def _download_one_with_stagger(
             and result is not None
             and result.status.value in ("completed", "already_exists")
         ):
-            # Post-processing (e.g. unzip) runs here so it overlaps with the
-            # downloads of other files still in flight under the gather().
             try:
                 await on_file_complete(result)
             except Exception as cb_err:  # pragma: no cover - defensive
@@ -614,20 +573,7 @@ async def download_files_with_retry(
     progress_callback: Optional[Callable] = None,
     on_file_complete: Optional[Callable[[DownloadResult], Awaitable[None]]] = None,
 ) -> tuple[list[DownloadResult], list[dict], int]:
-    """Run a staggered, retrying batch of parallel-range downloads.
-
-    Each file dispatches to :func:`download_file_parallel` under a shared
-    ``global_semaphore`` so total in-flight HTTP requests stay capped across
-    the batch. Files are launched ``intelligent_delay`` seconds apart to
-    spread the burst against the API rate limiter. Failures are retried up
-    to ``max_retries`` times with exponential backoff (``base_retry_delay``).
-
-    When ``on_file_complete`` is provided it is awaited for each successfully
-    downloaded file as soon as that file finishes, so post-processing (e.g.
-    unzipping) overlaps with the downloads of files still in flight.
-
-    Returns ``(successful, failed, retry_count)``.
-    """
+    """Run a staggered, retrying batch of parallel-range downloads."""
 
     async def _launch(batch: list[dict]) -> list:
         tasks = [

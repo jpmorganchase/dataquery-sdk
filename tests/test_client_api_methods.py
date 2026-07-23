@@ -933,9 +933,7 @@ async def test_get_next_page_resolves_host_absolute_links(monkeypatch):
         return resp
 
     monkeypatch.setattr(client, "_make_authenticated_request", pager)
-    page = GroupList(
-        **{"groups": [], "links": [{"next": "/research/dataquery-authe/api/v2/groups?page=2"}]}
-    )
+    page = GroupList(**{"groups": [], "links": [{"next": "/research/dataquery-authe/api/v2/groups?page=2"}]})
     await client.get_next_page_async(page)
     assert captured["url"] == "https://api.example.com/research/dataquery-authe/api/v2/groups?page=2"
 

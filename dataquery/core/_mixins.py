@@ -1,21 +1,4 @@
-"""
-Mixins composed into ``DataQueryClient``.
-
-Each mixin owns one concern. The concrete client inherits from all of them so
-the public surface (``client.list_instruments_async`` etc.) stays unchanged
-while ``client.py`` itself only carries HTTP plumbing, auth, and downloads.
-
-Mixins fall into two groups:
-
-- **Read-only query mixins** (``InstrumentsMixin``, ``MetadataMixin``,
-  ``TimeSeriesMixin``, ``GridMixin``) — depend on three private methods of
-  the concrete client: ``_build_api_url``, ``_enter_request_cm``,
-  ``_handle_response``. The ``_RequestProto`` base provides typed stubs so
-  ``mypy`` is happy.
-
-- **Pure transformation** (``DataFrameMixin``) — no HTTP at all; converts API
-  response objects to ``pandas.DataFrame``. Only relies on ``self.logger``.
-"""
+"""Mixins composed into ``DataQueryClient``."""
 
 from __future__ import annotations
 
@@ -85,12 +68,7 @@ P = TypeVar("P", bound=Paginated)
 
 
 class _RequestProto:
-    """Static typing shim for HTTP helpers the query mixins call on ``self``.
-
-    The concrete ``DataQueryClient`` provides real implementations; the stubs
-    here exist only so ``mypy`` can resolve attribute access inside the mixin
-    method bodies.
-    """
+    """Static typing shim for HTTP helpers the query mixins call on ``self``."""
 
     def _build_api_url(self, endpoint: str) -> str:  # pragma: no cover - stub
         raise NotImplementedError
@@ -110,43 +88,11 @@ class _RequestProto:
 
 
 class PaginationMixin(_RequestProto):
-    """Client-driven and SDK-driven pagination over any ``Paginated`` response.
-
-    The DataQuery v2 API returns ``links[].next`` cursor URLs on every paged
-    endpoint. Two styles are supported:
-
-    - **Client-driven** (:meth:`get_next_page_async`): the caller owns the
-      loop. Fetch the first page with the normal single-page method, read
-      ``page.next_link`` (surfaced to you), then hand the page back to
-      ``get_next_page_async`` to fetch the next one. Nothing is fetched until
-      you ask, so the client decides how far to page.
-    - **SDK-driven** (:meth:`iter_pages`): the SDK walks every page for you,
-      with loop detection and a page cap. The ``iter_*`` / ``*_all_*`` helpers
-      build on this.
-    """
+    """Client-driven and SDK-driven pagination over any ``Paginated`` response."""
 
     @staticmethod
     def _build_page(model_cls: Type[P], payload: Any) -> P:
-        """Construct a paginated response, handling DataQuery's non-data envelopes.
-
-        A paged endpoint can answer with data, or with an out-of-band envelope.
-        An envelope is recognised structurally: it carries **none** of the
-        model's own fields (by name or wire alias).
-
-        - ``{"errors": [{"code", "message", "description"}, ...]}`` (or a single
-          ``{"error": {...}}``) — a real failure returned inside a 2xx response,
-          such as ``498 Unrecognized Page Token``. Raised as
-          :class:`APIResponseError`.
-        - ``{"info": {"code": "204", "description": "...no content available."}}``
-          — a "no content" signal (``info`` is a declared field). Built into an
-          empty page (no records, no ``links``) so pagination simply stops.
-        - Any other unrecognisable body (``{}``, ``{"message": "..."}``) also
-          raises :class:`APIResponseError` — a malformed 2xx must fail loudly
-          rather than masquerade as an empty page.
-
-        A data payload that merely *carries* an extra ``errors`` field alongside
-        recognised fields is built normally (models allow extra fields).
-        """
+        """Construct a paginated response, handling DataQuery's non-data envelopes."""
         if isinstance(payload, dict):
             known: set = set()
             for name, field in model_cls.model_fields.items():
@@ -169,43 +115,13 @@ class PaginationMixin(_RequestProto):
         return model_cls(**payload)
 
     async def get_next_page_async(self, page: P) -> Optional[P]:
-        """Fetch the page after ``page``, or ``None`` if it is the last page.
-
-        This is the manual, client-driven counterpart to :meth:`iter_pages`.
-        The returned page is the same type as ``page`` and carries its own
-        ``links`` / ``items`` / ``page_size`` plus ``next_link`` for the page
-        after it, so the caller can keep paging::
-
-            page = await client.list_instruments_async(group_id)
-            while page is not None:
-                handle(page.instruments)
-                page = await client.get_next_page_async(page)
-
-        Args:
-            page: The page whose ``links[].next`` should be followed. Passing a
-                page with no next link returns ``None``.
-
-        Returns:
-            The next page (same type as ``page``), or ``None`` when ``page`` is
-            the last page.
-
-        Raises:
-            APIResponseError: If the server answers with an error envelope or
-                an unrecognizable body (see :meth:`_build_page`).
-            PaginationError: If the ``next`` link points at a different host
-                than the page's API surface — authenticated requests are never
-                sent off-host.
-        """
+        """Fetch the page after ``page``, or ``None`` if it is the last page."""
         next_url = page.get_next_link()
         if not next_url:
             return None
 
-        # Resolve against the surface the page came from (files vs JSON API).
-        # The DataQuery API returns links relative to the API base — with or
-        # without a leading slash, but WITHOUT the context path (e.g.
-        # "/group/time-series?...&page=..." must resolve under
-        # ".../research/dataquery-authe/api/v2"). If a link does already carry
-        # the base's context path, join at the host root so it isn't doubled.
+        # Relative next-links omit the API context path, so resolve them against
+        # the base; if a link already carries that path, join at host root to avoid doubling it.
         base = self._page_base_url(page)
         if next_url.startswith(("http://", "https://")):
             absolute = next_url
@@ -231,12 +147,7 @@ class PaginationMixin(_RequestProto):
             return self._build_page(type(page), payload)
 
     def _page_base_url(self, page: Paginated) -> str:
-        """Base URL a page's relative links resolve against.
-
-        ``FileList`` pages come from the File Delivery surface
-        (``files_api_base_url``); every other paginated response comes from the
-        JSON Data API (``api_base_url``).
-        """
+        """Base URL a page's relative links resolve against."""
         if isinstance(page, FileList):
             return self._build_files_api_url("")
         return self._build_api_url("")
@@ -248,24 +159,7 @@ class PaginationMixin(_RequestProto):
         max_pages: int = PAGINATION_DEFAULT_MAX_PAGES,
         raise_on_cap: bool = True,
     ) -> AsyncIterator[P]:
-        """Yield each page of a paginated endpoint, following ``links[].next``.
-
-        Args:
-            fetch_first: Zero-arg coroutine returning the first page. Subsequent
-                pages are fetched by GET-ing each ``next`` URL directly.
-            max_pages: Hard cap on pages walked. Guards against pathological
-                servers that loop ``next`` indefinitely.
-            raise_on_cap: When ``True`` (default), raise :class:`PaginationError`
-                if ``max_pages`` is reached. Set ``False`` to silently truncate.
-
-        Yields:
-            Each page response in order.
-
-        Raises:
-            PaginationError: If ``raise_on_cap`` is ``True`` and ``max_pages``
-                is reached, or if the server returns a previously-seen ``next``
-                URL (loop detected).
-        """
+        """Yield each page of a paginated endpoint, following ``links[].next``."""
         page = await fetch_first()
         page_count = 1
         items_so_far = _page_item_count(page)
@@ -735,10 +629,7 @@ class SearchMixin(_RequestProto):
     """Natural-language catalog search via POST /search."""
 
     async def search_async(self, query: str) -> Dict[str, Any]:
-        """Search the DataQuery catalog using a natural-language query.
-
-        POSTs ``{"query": query}`` to ``/search`` and returns the parsed JSON body.
-        """
+        """Search the DataQuery catalog using a natural-language query."""
         if not query or not query.strip():
             raise ValueError("query must be a non-empty string")
 
@@ -753,16 +644,10 @@ class SearchMixin(_RequestProto):
 
 
 class DataFrameMixin:
-    """Pandas conversion methods for API response objects.
-
-    Pure data transformation — no dependency on the HTTP client, auth, or
-    rate limiter. Consumers must expose ``self.logger`` (a ``structlog``
-    bound logger).
-    """
+    """Pandas conversion methods for API response objects."""
 
     logger: "structlog.BoundLogger"
 
-    # Canonical column order for the tidy (long-format) time-series frame.
     _TS_CORE_COLUMNS = [
         "date",
         "value",
@@ -791,11 +676,7 @@ class DataFrameMixin:
         numeric_columns: Optional[List[str]] = None,
         custom_transformations: Optional[Dict[str, Callable]] = None,
     ) -> "pd.DataFrame":
-        """Convert any API response into a pandas DataFrame.
-
-        Handles Pydantic models, lists, dicts, and primitives. Accepts optional
-        date / numeric column hints plus custom per-column callables.
-        """
+        """Convert any API response into a pandas DataFrame."""
         if not HAS_PANDAS:
             raise ImportError("pandas is required for DataFrame conversion. Install it with: pip install pandas")
 
@@ -858,20 +739,7 @@ class DataFrameMixin:
         )
 
     def time_series_to_dataframe(self, time_series: Any, include_metadata: bool = False) -> "pd.DataFrame":
-        """Convert a time-series response into a tidy (long-format) DataFrame.
-
-        Produces one row per (instrument, attribute, observation) with a parsed
-        datetime ``date`` and numeric ``value``, plus the instrument and
-        attribute identifiers needed to disambiguate rows. With
-        ``include_metadata=True`` additional columns (CUSIP/ISIN, group,
-        last-published, message) are added.
-
-        Handles the nested ``TimeSeriesResponse`` shape
-        (``instruments -> attributes -> time_series``) whether passed as a
-        Pydantic model, an aliased dict, or a snake_case dict. A flat list of
-        ``{"date": ..., "value": ...}`` records is also accepted. An empty
-        response yields an empty DataFrame with the expected columns.
-        """
+        """Convert a time-series response into a tidy (long-format) DataFrame."""
         if not HAS_PANDAS:
             raise ImportError("pandas is required for DataFrame conversion. Install it with: pip install pandas")
 
@@ -911,11 +779,7 @@ class DataFrameMixin:
         return None
 
     def _unwrap_time_series(self, time_series: Any) -> Any:
-        """Pull the data payload out of a response wrapper.
-
-        Prefers the nested ``instruments`` container; otherwise unwraps the
-        legacy ``data``/``series``/``time_series`` carriers.
-        """
+        """Pull the data payload out of a response wrapper."""
         instruments = self._ts_get(time_series, "instruments")
         if instruments is not None:
             return instruments
@@ -926,12 +790,7 @@ class DataFrameMixin:
         return time_series
 
     def _as_instrument_list(self, payload: Any) -> Optional[List[Any]]:
-        """Return the payload as a list of instruments, or ``None`` if it is flat.
-
-        Instruments are recognised by carrying an ``attributes`` member; a flat
-        list of observation records (no ``attributes``) returns ``None`` so the
-        caller builds the frame directly.
-        """
+        """Return the payload as a list of instruments, or ``None`` if it is flat."""
         if payload is None:
             return []
         items = list(payload) if isinstance(payload, (list, tuple)) else [payload]
@@ -991,11 +850,7 @@ class DataFrameMixin:
 
     @staticmethod
     def _split_point(point: Any) -> tuple:
-        """Split a single observation into ``(date, value)``.
-
-        Accepts ``[date, value]`` pairs, ``{"date": ..., "value": ...}`` dicts,
-        and ``TimeSeriesDataPoint`` models.
-        """
+        """Split a single observation into ``(date, value)``."""
         if isinstance(point, (list, tuple)):
             date = point[0] if len(point) > 0 else None
             value = point[1] if len(point) > 1 else None
@@ -1031,7 +886,6 @@ class DataFrameMixin:
             else:
                 return pd.DataFrame({"value": [data]})
 
-        # Chunk through large inputs to keep peak memory bounded.
         chunk_size = 1000
         all_records: list = []
         for i in range(0, len(data), chunk_size):

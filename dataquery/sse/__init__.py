@@ -1,5 +1,4 @@
-"""Server-Sent Events (SSE) client, event-id persistence, and the
-notification-driven download manager."""
+"""Server-Sent Events (SSE) client, event-id persistence, and the notification-driven download manager."""
 
 from __future__ import annotations
 

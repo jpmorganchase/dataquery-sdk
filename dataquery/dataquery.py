@@ -1,9 +1,4 @@
-"""
-Main DataQuery class for the DATAQUERY SDK.
-
-This module provides the main DataQuery class that serves as the primary interface
-for all API interactions, encapsulating the client and providing high-level operations.
-"""
+"""Main DataQuery class for the DATAQUERY SDK."""
 
 import asyncio
 import time
@@ -56,12 +51,7 @@ class ConfigManager:
     """Configuration manager for DATAQUERY SDK."""
 
     def __init__(self, env_file: Optional[Path] = None):
-        """
-        Initialize ConfigManager.
-
-        Args:
-            env_file: Optional path to .env file. If None, will look for .env in current directory.
-        """
+        """Initialize ConfigManager."""
         self.env_file = env_file
 
     def get_client_config(self) -> ClientConfig:
@@ -108,18 +98,7 @@ class ProgressTracker:
 
 
 class _SyncProxy:
-    """Synchronous facade over a :class:`DataQuery` instance.
-
-    Exposes every ``*_async`` method on the parent without the suffix, e.g.::
-
-        dq = DataQuery()
-        groups = dq.sync.list_groups()           # blocks
-        result = dq.sync.download_file(...)      # blocks
-
-    Each call wraps the coroutine in :meth:`DataQuery._run_sync`. Lookups are
-    dynamic, so methods added to ``DataQuery`` after this class is defined are
-    automatically available on ``dq.sync`` without further changes.
-    """
+    """Synchronous facade over a :class:`DataQuery` instance."""
 
     __slots__ = ("_dq",)
 
@@ -144,19 +123,7 @@ class _SyncProxy:
 
 
 class DataQuery:
-    """
-    Main DataQuery class for all API interactions.
-
-    This class serves as the primary interface for the DATAQUERY SDK,
-    encapsulating the client and providing high-level operations for
-    listing, searching, downloading, and managing data files.
-    Supports both async and sync operations with proper event loop management.
-
-    Sync namespace:
-        Prefer ``dq.sync.<method>(...)`` over the legacy ``dq.<method>()``
-        wrappers — the namespace makes it explicit you're calling into a
-        blocking adapter rather than an async coroutine.
-    """
+    """Main DataQuery class for all API interactions."""
 
     def __init__(
         self,
@@ -165,13 +132,7 @@ class DataQuery:
         client_secret: Optional[str] = None,
         **overrides: Any,
     ):
-        """
-        Initialize DataQuery with configuration.
-
-        Args:
-            config_or_env_file: Either a ClientConfig object, a Path, or a str to .env file.
-                               If None, will look for .env in current directory.
-        """
+        """Initialize DataQuery with configuration."""
         load_dotenv()
 
         if isinstance(config_or_env_file, ClientConfig):
@@ -218,14 +179,7 @@ class DataQuery:
 
     @property
     def sync(self) -> "_SyncProxy":
-        """Synchronous facade — call any ``*_async`` method without the suffix.
-
-        Example::
-
-            dq = DataQuery()
-            with dq:
-                groups = dq.sync.list_groups(limit=10)
-        """
+        """Synchronous facade — call any ``*_async`` method without the suffix."""
         if self._sync_proxy is None:
             self._sync_proxy = _SyncProxy(self)
         return self._sync_proxy
@@ -271,33 +225,11 @@ class DataQuery:
         await self.close_async()
 
     def _run_sync(self, coro):
-        """
-        Run an async coroutine to completion and return its result.
-
-        The coroutine runs on a persistent background event loop (one per
-        :class:`DataQuery` instance) rather than a throwaway loop, so the
-        aiohttp session created on the first call remains usable on every
-        subsequent call. Raises ``RuntimeError`` if invoked from within a
-        running event loop — use the ``*_async`` method there instead.
-
-        Args:
-            coro: Coroutine to run
-
-        Returns:
-            Result of the coroutine
-        """
+        """Run an async coroutine to completion and return its result."""
         return self._sync_runner.run(coro)
 
     async def list_groups_async(self, limit: Optional[int] = 100) -> List[Group]:
-        """
-        List all available data groups with pagination support.
-
-        Args:
-            limit: Maximum number of groups to return (default: 100). If None, returns all groups.
-
-        Returns:
-            List of group information
-        """
+        """List all available data groups with pagination support."""
         await self.connect_async()
 
         client = self._ensure_client()
@@ -312,45 +244,13 @@ class DataQuery:
         *,
         page: Optional[str] = None,
     ) -> GroupList:
-        """
-        Return a single page of groups for client-driven pagination.
-
-        Exposes the full :class:`GroupList` page (``links``, ``items``,
-        ``page_size``, ``next_link``) so the caller can page manually with
-        :meth:`get_next_page_async`, rather than letting the SDK walk every
-        page. Contrast :meth:`list_groups_async`, which returns a bare list.
-
-        Args:
-            limit: Maximum number of groups per page (server-side cap).
-            page: Optional ``next``-link cursor from a prior page.
-
-        Returns:
-            The requested :class:`GroupList` page.
-        """
+        """Return a single page of groups for client-driven pagination."""
         await self.connect_async()
         client = self._ensure_client()
         return await client.list_groups_page_async(limit=limit, page=page)
 
     async def get_next_page_async(self, page: P) -> Optional[P]:
-        """
-        Fetch the page after ``page``, or ``None`` if it is the last page.
-
-        Client-driven pagination: read ``page.next_link`` off any paged
-        response and hand the response back here to get the next page (same
-        type). Returns ``None`` once there is no next link, so it composes
-        into a plain ``while`` loop::
-
-            page = await dq.list_instruments_async(group_id)
-            while page is not None:
-                handle(page.instruments)
-                page = await dq.get_next_page_async(page)
-
-        Args:
-            page: The page whose ``next`` link should be followed.
-
-        Returns:
-            The next page (same type as ``page``), or ``None`` at the end.
-        """
+        """Fetch the page after ``page``, or ``None`` if it is the last page."""
         await self.connect_async()
         client = self._ensure_client()
         return await client.get_next_page_async(page)
@@ -363,21 +263,7 @@ class DataQuery:
         *,
         page: Optional[str] = None,
     ) -> List[Group]:
-        """
-        Search groups by keywords (single page).
-
-        Args:
-            keywords: Search keywords
-            limit: Maximum number of results per page (default: 100)
-            offset: Number of results to skip — kept for backwards compatibility.
-                Prefer ``page`` (cursor) or :meth:`search_all_groups_async`
-                / :meth:`iter_search_groups_async` for full-result iteration.
-            page: Optional ``next``-link cursor returned by a prior page's
-                ``links[].next``.
-
-        Returns:
-            List of matching groups for the requested page.
-        """
+        """Search groups by keywords (single page)."""
         await self.connect_async()
         client = self._ensure_client()
         return await client.search_groups_async(keywords, limit, offset, page=page)
@@ -389,22 +275,7 @@ class DataQuery:
         *,
         page: Optional[str] = None,
     ) -> GroupList:
-        """
-        Return a single page of keyword search results for client-driven pagination.
-
-        Exposes the full :class:`GroupList` page (``links``, ``items``,
-        ``page_size``, ``next_link``) so the caller can page manually with
-        :meth:`get_next_page_async`, matching every other paged endpoint.
-        Contrast :meth:`search_groups_async`, which returns a bare list.
-
-        Args:
-            keywords: Search keywords.
-            limit: Maximum number of results per page (server-side cap).
-            page: Optional ``next``-link cursor from a prior page.
-
-        Returns:
-            The requested :class:`GroupList` page.
-        """
+        """Return a single page of keyword search results for client-driven pagination."""
         await self.connect_async()
         client = self._ensure_client()
         return await client.search_groups_page_async(keywords, limit=limit, page=page)
@@ -438,21 +309,7 @@ class DataQuery:
             yield g
 
     async def list_files_async(self, group_id: str, file_group_id: Optional[str] = None) -> List[FileInfo]:
-        """
-        List all files in a group, walking every page.
-
-        The file catalog is paginated; this aggregates every page into one
-        list (with the shared walker's loop detection and page cap). For
-        page-by-page control use :meth:`list_files_page_async` +
-        :meth:`get_next_page_async`.
-
-        Args:
-            group_id: Group ID to list files for
-            file_group_id: Optional specific file ID to filter by
-
-        Returns:
-            List of file information across all pages
-        """
+        """List all files in a group, walking every page."""
         await self.connect_async()
         client = self._ensure_client()
         return await client.list_all_files_async(group_id, file_group_id)
@@ -464,37 +321,13 @@ class DataQuery:
         *,
         page: Optional[str] = None,
     ) -> FileList:
-        """
-        Return a single page of files for client-driven pagination.
-
-        Exposes the full :class:`FileList` page (``links``, ``items``,
-        ``page_size``, ``next_link``) so the caller can page manually with
-        :meth:`get_next_page_async`, matching every other paged endpoint.
-        Contrast :meth:`list_files_async`, which returns a bare list.
-
-        Args:
-            group_id: Group ID to list files for.
-            file_group_id: Optional specific file ID to filter by.
-            page: Optional ``next``-link cursor from a prior page.
-
-        Returns:
-            The requested :class:`FileList` page.
-        """
+        """Return a single page of files for client-driven pagination."""
         await self.connect_async()
         client = self._ensure_client()
         return await client.list_files_async(group_id, file_group_id, page=page)
 
     async def check_availability_async(self, file_group_id: str, file_datetime: str) -> AvailabilityInfo:
-        """
-        Check file availability for a specific datetime.
-
-        Args:
-            file_group_id: File ID to check availability for
-            file_datetime: File datetime in YYYYMMDD, YYYYMMDDTHHMM, or YYYYMMDDTHHMMSS format
-
-        Returns:
-            Availability response with status for the datetime
-        """
+        """Check file availability for a specific datetime."""
         await self.connect_async()
         client = self._ensure_client()
         return await client.check_availability_async(file_group_id, file_datetime)
@@ -508,27 +341,7 @@ class DataQuery:
         num_parts: int = 1,
         progress_callback: Optional[Callable] = None,
     ) -> DownloadResult:
-        """
-        Download a specific file using parallel HTTP range requests.
-
-        Args:
-            file_group_id: File ID to download
-            file_datetime: Optional datetime of the file (YYYYMMDD, YYYYMMDDTHHMM, or YYYYMMDDTHHMMSS)
-            destination_path: Optional download destination directory. The filename will be extracted
-                             from the Content-Disposition header in the response. If not provided,
-                             uses the default download directory from configuration.
-            options: Download options
-            num_parts: Number of parallel parts to split the file into (default 1,
-                single-stream). Set >1 to enable parallel HTTP range requests.
-                Note: files smaller than 10 MB always download as a single
-                stream regardless of ``num_parts`` — the byte-range overhead
-                outweighs any speedup at that size. The same fallback applies
-                when the server doesn't honor HTTP range requests.
-            progress_callback: Optional progress callback function
-
-        Returns:
-            DownloadResult with download information
-        """
+        """Download a specific file using parallel HTTP range requests."""
         await self.connect_async()
 
         if destination_path and options is None:
@@ -558,29 +371,13 @@ class DataQuery:
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """
-        List available files by date range.
-
-        Args:
-            group_id: Group ID to list files for
-            file_group_id: Optional specific file ID to filter by
-            start_date: Optional start date in YYYYMMDD format
-            end_date: Optional end date in YYYYMMDD format
-
-        Returns:
-            List of available file information
-        """
+        """List available files by date range."""
         await self.connect_async()
         client = self._ensure_client()
         return await client.list_available_files_async(group_id, file_group_id, start_date, end_date)
 
     async def health_check_async(self) -> bool:
-        """
-        Check if the API is healthy.
-
-        Returns:
-            True if API is healthy
-        """
+        """Check if the API is healthy."""
         await self.connect_async()
         client = self._ensure_client()
         return await client.health_check_async()
@@ -591,17 +388,7 @@ class DataQuery:
         instrument_id: Optional[str] = None,
         page: Optional[str] = None,
     ) -> "InstrumentsResponse":
-        """
-        Request the complete list of instruments and identifiers for a given dataset.
-
-        Args:
-            group_id: Catalog data group identifier
-            instrument_id: Optional instrument identifier to filter results
-            page: Optional page token for pagination
-
-        Returns:
-            InstrumentsResponse containing the list of instruments
-        """
+        """Request the complete list of instruments and identifiers for a given dataset."""
         await self.connect_async()
         client = self._ensure_client()
         return await client.list_instruments_async(group_id, instrument_id, page)
@@ -609,17 +396,7 @@ class DataQuery:
     async def search_instruments_async(
         self, group_id: str, keywords: str, page: Optional[str] = None
     ) -> "InstrumentsResponse":
-        """
-        Search within a dataset using keywords to create subsets of matching instruments.
-
-        Args:
-            group_id: Catalog data group identifier
-            keywords: Keywords to narrow scope of results
-            page: Optional page token for pagination
-
-        Returns:
-            InstrumentsResponse containing the matching instruments
-        """
+        """Search within a dataset using keywords to create subsets of matching instruments."""
         await self.connect_async()
         client = self._ensure_client()
         return await client.search_instruments_async(group_id, keywords, page)
@@ -638,25 +415,7 @@ class DataQuery:
         nan_treatment: str = "NA_NOTHING",
         page: Optional[str] = None,
     ) -> "TimeSeriesResponse":
-        """
-        Retrieve time-series data for explicit list of instruments and attributes using identifiers.
-
-        Args:
-            instruments: List of instrument identifiers
-            attributes: List of attribute identifiers
-            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL); default ALL
-            format: Response format (JSON)
-            start_date: Start date in YYYYMMDD or TODAY-Nx format
-            end_date: End date in YYYYMMDD or TODAY-Nx format
-            calendar: Calendar convention
-            frequency: Frequency convention
-            conversion: Conversion convention
-            nan_treatment: Missing data treatment
-            page: Optional page token for pagination
-
-        Returns:
-            TimeSeriesResponse containing the time series data
-        """
+        """Retrieve time-series data for explicit list of instruments and attributes using identifiers."""
         await self.connect_async()
         client = self._ensure_client()
         return await client.get_instrument_time_series_async(
@@ -686,24 +445,7 @@ class DataQuery:
         data: str = "ALL",
         page: Optional[str] = None,
     ) -> "TimeSeriesResponse":
-        """
-        Retrieve time-series data using an explicit list of traditional DataQuery expressions.
-
-        Args:
-            expressions: List of traditional DataQuery expressions
-            format: Response format (JSON)
-            start_date: Start date in YYYYMMDD or TODAY-Nx format
-            end_date: End date in YYYYMMDD or TODAY-Nx format
-            calendar: Calendar convention
-            frequency: Frequency convention
-            conversion: Conversion convention
-            nan_treatment: Missing data treatment
-            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL); default ALL
-            page: Optional page token for pagination
-
-        Returns:
-            TimeSeriesResponse containing the time series data
-        """
+        """Retrieve time-series data using an explicit list of traditional DataQuery expressions."""
         await self.connect_async()
         client = self._ensure_client()
         return await client.get_expressions_time_series_async(
@@ -720,16 +462,7 @@ class DataQuery:
         )
 
     async def get_group_filters_async(self, group_id: str, page: Optional[str] = None) -> "FiltersResponse":
-        """
-        Request the unique list of filter dimensions that are available for a given dataset.
-
-        Args:
-            group_id: Catalog data group identifier
-            page: Optional page token for pagination
-
-        Returns:
-            FiltersResponse containing the available filters
-        """
+        """Request the unique list of filter dimensions that are available for a given dataset."""
         await self.connect_async()
         client = self._ensure_client()
         return await client.get_group_filters_async(group_id, page)
@@ -740,17 +473,7 @@ class DataQuery:
         instrument_id: Optional[str] = None,
         page: Optional[str] = None,
     ) -> "AttributesResponse":
-        """
-        Request the unique list of analytic attributes for each instrument of a given dataset.
-
-        Args:
-            group_id: Catalog data group identifier
-            instrument_id: Optional instrument identifier to filter results
-            page: Optional page token for pagination
-
-        Returns:
-            AttributesResponse containing the attributes for each instrument
-        """
+        """Request the unique list of analytic attributes for each instrument of a given dataset."""
         await self.connect_async()
         client = self._ensure_client()
         return await client.get_group_attributes_async(group_id, instrument_id, page)
@@ -770,26 +493,7 @@ class DataQuery:
         nan_treatment: str = "NA_NOTHING",
         page: Optional[str] = None,
     ) -> "TimeSeriesResponse":
-        """
-        Request time-series data across a subset of instruments and analytics of a given dataset.
-
-        Args:
-            group_id: Catalog data group identifier
-            attributes: List of attribute identifiers
-            filter: Optional filter string (e.g., "currency(USD)")
-            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL); default ALL
-            format: Response format (JSON)
-            start_date: Start date in YYYYMMDD or TODAY-Nx format
-            end_date: End date in YYYYMMDD or TODAY-Nx format
-            calendar: Calendar convention
-            frequency: Frequency convention
-            conversion: Conversion convention
-            nan_treatment: Missing data treatment
-            page: Optional page token for pagination
-
-        Returns:
-            TimeSeriesResponse containing the time series data
-        """
+        """Request time-series data across a subset of instruments and analytics of a given dataset."""
         await self.connect_async()
         client = self._ensure_client()
         return await client.get_group_time_series_async(
@@ -813,33 +517,13 @@ class DataQuery:
         grid_id: Optional[str] = None,
         date: Optional[str] = None,
     ) -> "GridDataResponse":
-        """
-        Retrieve grid data using an expression or a grid ID.
-
-        Args:
-            expr: The grid expression (mutually exclusive with grid_id)
-            grid_id: The grid ID (mutually exclusive with expr)
-            date: Optional specific snapshot date in YYYYMMDD format
-
-        Returns:
-            GridDataResponse containing the grid data
-
-        Raises:
-            ValueError: If both expr and grid_id are provided or neither is provided
-        """
+        """Retrieve grid data using an expression or a grid ID."""
         await self.connect_async()
         client = self._ensure_client()
         return await client.get_grid_data_async(expr, grid_id, date)
 
     async def search_async(self, query: str) -> Dict[str, Any]:
-        """Search the DataQuery catalog using a natural-language query.
-
-        Args:
-            query: Free-text query (e.g. "10-year US treasury yield").
-
-        Returns:
-            Parsed JSON response from POST ``/search``.
-        """
+        """Search the DataQuery catalog using a natural-language query."""
         await self.connect_async()
         client = self._ensure_client()
         return await client.search_async(query)
@@ -1023,36 +707,7 @@ class DataQuery:
         file_group_id: Optional[Union[str, List[str]]] = None,
         on_file_complete: Optional[Callable[["DownloadResult"], Awaitable[None]]] = None,
     ) -> OperationReport:
-        """
-        Download all files in a group for a date range using parallel HTTP range requests.
-
-        Total concurrent HTTP requests = max_concurrent × num_parts, providing true
-        parallelism across all file parts rather than hierarchical file-then-parts
-        concurrency.
-
-        Args:
-            group_id: Group ID to download files from
-            start_date: Start date in YYYYMMDD format
-            end_date: End date in YYYYMMDD format
-            destination_dir: Destination directory for downloads
-            max_concurrent: Maximum concurrent files (multiplied by num_parts for total concurrency)
-            num_parts: Number of HTTP range parts per file (default 1, single-stream).
-                Set >1 to enable parallel HTTP range requests.
-            progress_callback: Optional progress callback for individual parts aggregation
-            delay_between_downloads: Delay in seconds between starting each file download (default 0.2s for 5 TPS)
-            max_retries: Maximum number of retry attempts for failed downloads (default 3)
-            file_group_id: Optional restriction to specific file-group-id(s). Accepts a
-                single id or a list of ids. When a list is supplied, availability is
-                queried in parallel per id and the union of dates is downloaded.
-            on_file_complete: Optional async callback awaited for each file as soon as
-                it finishes downloading (status ``completed``/``already_exists``). Runs
-                concurrently with the downloads still in flight, so post-processing such
-                as unzipping overlaps with subsequent downloads rather than waiting for
-                the whole batch.
-
-        Returns:
-            Dictionary with download results and statistics
-        """
+        """Download all files in a group for a date range using parallel HTTP range requests."""
         operation_start_time = time.time()
 
         logger.info(
@@ -1287,15 +942,7 @@ class DataQuery:
 
     @staticmethod
     def _split_into_monthly_ranges(from_date: str, to_date: str) -> List[Tuple[str, str]]:
-        """Split a date range into monthly chunks.
-
-        Args:
-            from_date: Start date in YYYYMMDD format
-            to_date: End date in YYYYMMDD format
-
-        Returns:
-            List of (start_date, end_date) tuples, each covering at most one month.
-        """
+        """Split a date range into monthly chunks."""
         start = datetime.strptime(from_date, "%Y%m%d").date()
         end = datetime.strptime(to_date, "%Y%m%d").date()
 
@@ -1328,29 +975,7 @@ class DataQuery:
         progress_callback: Optional[Callable] = None,
         chunk_delay: float = 2.0,
     ) -> OperationReport:
-        """
-        Download files for a group across a large date range by splitting into monthly chunks.
-
-        If the date range is within a single month it downloads directly.
-        If the range spans multiple months it splits into monthly chunks and downloads
-        each month sequentially, with a configurable delay between chunks to allow
-        rate limits to recover.
-
-        Args:
-            group_id: Group ID to download files from
-            start_date: Start date in YYYYMMDD format (e.g. "20240101")
-            end_date: End date in YYYYMMDD format (e.g. "20251231")
-            destination_dir: Destination directory for downloads
-            max_concurrent: Maximum concurrent file downloads per chunk (default: 5)
-            num_parts: Number of parallel parts per file download (default: 1)
-            delay_between_downloads: Delay in seconds between file downloads (default: 0.2 for 5 TPS)
-            max_retries: Maximum retry attempts for failed downloads (default: 3)
-            progress_callback: Optional progress callback for individual files
-            chunk_delay: Delay in seconds between monthly chunks (default: 2.0)
-
-        Returns:
-            Dictionary with aggregated download results and per-chunk details.
-        """
+        """Download files for a group across a large date range by splitting into monthly chunks."""
         operation_start = time.time()
 
         monthly_ranges = self._split_into_monthly_ranges(start_date, end_date)
@@ -1478,12 +1103,7 @@ class DataQuery:
         return summary
 
     def _calculate_rate_limit_capacity(self) -> Dict[str, Any]:
-        """
-        Calculate the rate limit capacity without reducing concurrency.
-
-        Returns:
-            Dictionary with rate limit capacity information
-        """
+        """Calculate the rate limit capacity without reducing concurrency."""
         if not self._client:
             return {
                 "requests_per_minute": 1000,
@@ -1530,20 +1150,7 @@ class DataQuery:
         rate_limit_capacity: Dict[str, Any],
         base_delay: float,
     ) -> float:
-        """
-        Calculate intelligent delay that ensures rate limit compliance while maintaining concurrency.
-
-        Burst capacity is the absolute number of requests that can be made immediately,
-        not per minute or per second. It's a one-time allowance before throttling begins.
-
-        Args:
-            total_concurrent_requests: Total number of concurrent requests
-            rate_limit_capacity: Rate limit capacity information
-            base_delay: Base delay requested by user
-
-        Returns:
-            Intelligent delay that ensures rate limit compliance
-        """
+        """Calculate intelligent delay that ensures rate limit compliance while maintaining concurrency."""
         try:
             requests_per_minute = rate_limit_capacity["requests_per_minute"]
             burst_capacity = rate_limit_capacity["burst_capacity"]
@@ -1597,18 +1204,7 @@ class DataQuery:
             return base_delay
 
     def _calculate_safe_concurrency_limit(self, requested_concurrency: int) -> int:
-        """
-        Calculate a safe concurrency limit that respects rate limiting constraints.
-
-        This method ensures that the total concurrent HTTP requests don't overwhelm
-        the rate limiter, which could cause request queuing or failures.
-
-        Args:
-            requested_concurrency: The desired number of concurrent requests
-
-        Returns:
-            Safe concurrency limit that respects rate limiting
-        """
+        """Calculate a safe concurrency limit that respects rate limiting constraints."""
         if not self._client:
             return requested_concurrency
 
@@ -1664,15 +1260,7 @@ class DataQuery:
             return max(1, min(10, requested_concurrency // 4))
 
     def _get_rate_limit_recommendations(self, requested_concurrency: int) -> Dict[str, Any]:
-        """
-        Get recommendations for optimizing rate limit settings for the requested concurrency.
-
-        Args:
-            requested_concurrency: Desired concurrent requests
-
-        Returns:
-            Dictionary with recommendations
-        """
+        """Get recommendations for optimizing rate limit settings for the requested concurrency."""
         if not self._client:
             return {}
 
@@ -1751,12 +1339,7 @@ class DataQuery:
         return tracker.create_progress_callback()
 
     def get_rate_limit_info(self) -> Dict[str, Any]:
-        """
-        Get current rate limit configuration and status.
-
-        Returns:
-            Dictionary with rate limit information
-        """
+        """Get current rate limit configuration and status."""
         if not self._client:
             return {"error": "Client not connected"}
 
@@ -1786,16 +1369,7 @@ class DataQuery:
             return {"error": f"Failed to get rate limit info: {e}"}
 
     def optimize_concurrency_for_rate_limits(self, max_concurrent: int, num_parts: int) -> Dict[str, Any]:
-        """
-        Get optimized concurrency settings that respect rate limits.
-
-        Args:
-            max_concurrent: Desired maximum concurrent files
-            num_parts: Desired number of parts per file
-
-        Returns:
-            Dictionary with optimized settings and recommendations
-        """
+        """Get optimized concurrency settings that respect rate limits."""
         requested_concurrency = max_concurrent * num_parts
         safe_concurrency = self._calculate_safe_concurrency_limit(requested_concurrency)
         recommendations = self._get_rate_limit_recommendations(requested_concurrency)
@@ -1840,7 +1414,6 @@ class DataQuery:
             if self._client:
                 self._run_sync(self.close_async())
         finally:
-            # The runner lazily restarts if the client is reused afterwards.
             self._sync_runner.close()
 
     def list_groups(self, limit: Optional[int] = 100) -> List[Group]:
@@ -1916,27 +1489,7 @@ class DataQuery:
         num_parts: int = 1,
         progress_callback: Optional[Callable] = None,
     ) -> DownloadResult:
-        """
-        Synchronous wrapper for download_file.
-        Note: Will raise an error if called from within an existing event loop.
-
-        Args:
-            file_group_id: File ID to download
-            file_datetime: Optional datetime of the file (YYYYMMDD, YYYYMMDDTHHMM, or YYYYMMDDTHHMMSS)
-            destination_path: Optional download destination directory. The filename will be extracted
-                             from the Content-Disposition header in the response. If not provided,
-                             uses the default download directory from configuration.
-            options: Download options
-            num_parts: Number of parallel parts to split the file into (default 1,
-                single-stream). Set >1 to enable parallel HTTP range requests.
-                Note: files smaller than 10 MB always download as a single
-                stream regardless of ``num_parts``, and the same fallback
-                applies when the server doesn't honor HTTP range requests.
-            progress_callback: Optional progress callback function
-
-        Returns:
-            DownloadResult with download information
-        """
+        """Synchronous wrapper for download_file."""
         return self._run_sync(
             self.download_file_async(
                 file_group_id,
@@ -1968,31 +1521,11 @@ class DataQuery:
         instrument_id: Optional[str] = None,
         page: Optional[str] = None,
     ) -> "InstrumentsResponse":
-        """
-        Request the complete list of instruments and identifiers for a given dataset.
-
-        Args:
-            group_id: Catalog data group identifier
-            instrument_id: Optional instrument identifier to filter results
-            page: Optional page token for pagination
-
-        Returns:
-            InstrumentsResponse containing the list of instruments
-        """
+        """Request the complete list of instruments and identifiers for a given dataset."""
         return self._run_sync(self.list_instruments_async(group_id, instrument_id, page))
 
     def search_instruments(self, group_id: str, keywords: str, page: Optional[str] = None) -> "InstrumentsResponse":
-        """
-        Search within a dataset using keywords to create subsets of matching instruments.
-
-        Args:
-            group_id: Catalog data group identifier
-            keywords: Keywords to narrow scope of results
-            page: Optional page token for pagination
-
-        Returns:
-            InstrumentsResponse containing the matching instruments
-        """
+        """Search within a dataset using keywords to create subsets of matching instruments."""
         return self._run_sync(self.search_instruments_async(group_id, keywords, page))
 
     def get_instrument_time_series(
@@ -2009,25 +1542,7 @@ class DataQuery:
         nan_treatment: str = "NA_NOTHING",
         page: Optional[str] = None,
     ) -> "TimeSeriesResponse":
-        """
-        Retrieve time-series data for explicit list of instruments and attributes using identifiers.
-
-        Args:
-            instruments: List of instrument identifiers
-            attributes: List of attribute identifiers
-            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL); default ALL
-            format: Response format (JSON)
-            start_date: Start date in YYYYMMDD or TODAY-Nx format
-            end_date: End date in YYYYMMDD or TODAY-Nx format
-            calendar: Calendar convention
-            frequency: Frequency convention
-            conversion: Conversion convention
-            nan_treatment: Missing data treatment
-            page: Optional page token for pagination
-
-        Returns:
-            TimeSeriesResponse containing the time series data
-        """
+        """Retrieve time-series data for explicit list of instruments and attributes using identifiers."""
         return self._run_sync(
             self.get_instrument_time_series_async(
                 instruments,
@@ -2057,24 +1572,7 @@ class DataQuery:
         data: str = "ALL",
         page: Optional[str] = None,
     ) -> "TimeSeriesResponse":
-        """
-        Retrieve time-series data using an explicit list of traditional DataQuery expressions.
-
-        Args:
-            expressions: List of traditional DataQuery expressions
-            format: Response format (JSON)
-            start_date: Start date in YYYYMMDD or TODAY-Nx format
-            end_date: End date in YYYYMMDD or TODAY-Nx format
-            calendar: Calendar convention
-            frequency: Frequency convention
-            conversion: Conversion convention
-            nan_treatment: Missing data treatment
-            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL); default ALL
-            page: Optional page token for pagination
-
-        Returns:
-            TimeSeriesResponse containing the time series data
-        """
+        """Retrieve time-series data using an explicit list of traditional DataQuery expressions."""
         return self._run_sync(
             self.get_expressions_time_series_async(
                 expressions,
@@ -2091,16 +1589,7 @@ class DataQuery:
         )
 
     def get_group_filters(self, group_id: str, page: Optional[str] = None) -> "FiltersResponse":
-        """
-        Request the unique list of filter dimensions that are available for a given dataset.
-
-        Args:
-            group_id: Catalog data group identifier
-            page: Optional page token for pagination
-
-        Returns:
-            FiltersResponse containing the available filters
-        """
+        """Request the unique list of filter dimensions that are available for a given dataset."""
         return self._run_sync(self.get_group_filters_async(group_id, page))
 
     def get_group_attributes(
@@ -2109,17 +1598,7 @@ class DataQuery:
         instrument_id: Optional[str] = None,
         page: Optional[str] = None,
     ) -> "AttributesResponse":
-        """
-        Request the unique list of analytic attributes for each instrument of a given dataset.
-
-        Args:
-            group_id: Catalog data group identifier
-            instrument_id: Optional instrument identifier to filter results
-            page: Optional page token for pagination
-
-        Returns:
-            AttributesResponse containing the attributes for each instrument
-        """
+        """Request the unique list of analytic attributes for each instrument of a given dataset."""
         return self._run_sync(self.get_group_attributes_async(group_id, instrument_id, page))
 
     def get_group_time_series(
@@ -2137,26 +1616,7 @@ class DataQuery:
         nan_treatment: str = "NA_NOTHING",
         page: Optional[str] = None,
     ) -> "TimeSeriesResponse":
-        """
-        Request time-series data across a subset of instruments and analytics of a given dataset.
-
-        Args:
-            group_id: Catalog data group identifier
-            attributes: List of attribute identifiers
-            filter: Optional filter string (e.g., "currency(USD)")
-            data: Data type (REFERENCE_DATA, NO_REFERENCE_DATA, ALL); default ALL
-            format: Response format (JSON)
-            start_date: Start date in YYYYMMDD or TODAY-Nx format
-            end_date: End date in YYYYMMDD or TODAY-Nx format
-            calendar: Calendar convention
-            frequency: Frequency convention
-            conversion: Conversion convention
-            nan_treatment: Missing data treatment
-            page: Optional page token for pagination
-
-        Returns:
-            TimeSeriesResponse containing the time series data
-        """
+        """Request time-series data across a subset of instruments and analytics of a given dataset."""
         return self._run_sync(
             self.get_group_time_series_async(
                 group_id,
@@ -2180,20 +1640,7 @@ class DataQuery:
         grid_id: Optional[str] = None,
         date: Optional[str] = None,
     ) -> "GridDataResponse":
-        """
-        Retrieve grid data using an expression or a grid ID.
-
-        Args:
-            expr: The grid expression (mutually exclusive with grid_id)
-            grid_id: The grid ID (mutually exclusive with expr)
-            date: Optional specific snapshot date in YYYYMMDD format
-
-        Returns:
-            GridDataResponse containing the grid data
-
-        Raises:
-            ValueError: If both expr and grid_id are provided or neither is provided
-        """
+        """Retrieve grid data using an expression or a grid ID."""
         return self._run_sync(self.get_grid_data_async(expr, grid_id, date))
 
     def search(self, query: str) -> Dict[str, Any]:
