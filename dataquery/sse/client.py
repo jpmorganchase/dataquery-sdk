@@ -157,6 +157,7 @@ class SSEClient:
     async def _get_headers(self) -> dict:
         headers = await self.auth_manager.get_headers()
         headers["Accept"] = "text/event-stream"
+        headers.update(self.config.get_custom_headers())
         if self._last_event_id is not None:
             headers["Last-Event-ID"] = self._last_event_id
         return headers

@@ -668,6 +668,39 @@ class TestDataQueryClientConnections:
             mock_session.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_connect_includes_x_user_agent_header(self):
+        """Session default headers carry X-User-Agent when configured."""
+        config = ClientConfig(base_url="https://api.example.com", x_user_agent="MyApp/1.0")
+        client = create_test_client(config)
+
+        with (
+            patch("aiohttp.ClientSession") as mock_session,
+            patch("aiohttp.TCPConnector"),
+        ):
+            mock_session.return_value = AsyncMock()
+
+            await client.connect()
+
+            headers = mock_session.call_args.kwargs["headers"]
+            assert headers["X-User-Agent"] == "MyApp/1.0"
+
+    @pytest.mark.asyncio
+    async def test_connect_omits_x_user_agent_header_when_unset(self):
+        """Session default headers omit X-User-Agent when not configured."""
+        client = create_test_client()
+
+        with (
+            patch("aiohttp.ClientSession") as mock_session,
+            patch("aiohttp.TCPConnector"),
+        ):
+            mock_session.return_value = AsyncMock()
+
+            await client.connect()
+
+            headers = mock_session.call_args.kwargs["headers"]
+            assert "X-User-Agent" not in headers
+
+    @pytest.mark.asyncio
     async def test_connect_with_proxy(self):
         """Test connection with proxy."""
         config = ClientConfig(

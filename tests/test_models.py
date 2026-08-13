@@ -35,6 +35,16 @@ class TestClientConfigCoverage:
         config = ClientConfig(base_url="https://api.example.com", context_path="")
         assert config.api_base_url == "https://api.example.com"
 
+    def test_get_custom_headers_with_x_user_agent(self):
+        """X-User-Agent header is returned when configured."""
+        config = ClientConfig(base_url="https://api.example.com", x_user_agent="MyApp/1.0")
+        assert config.get_custom_headers() == {"X-User-Agent": "MyApp/1.0"}
+
+    def test_get_custom_headers_without_x_user_agent(self):
+        """No custom headers are returned when x_user_agent is unset."""
+        config = ClientConfig(base_url="https://api.example.com")
+        assert config.get_custom_headers() == {}
+
 
 class TestEnumCoverage:
     """Test enum classes for coverage."""

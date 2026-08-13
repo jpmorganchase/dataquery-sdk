@@ -1,6 +1,6 @@
 """DATAQUERY SDK - Python SDK for DATAQUERY Data API."""
 
-__version__ = "1.2.3"
+__version__ = "1.2.4"
 __author__ = "DATAQUERY SDK Team"
 __email__ = "dataquery_support@jpmorgan.com"
 __license__ = "MIT"

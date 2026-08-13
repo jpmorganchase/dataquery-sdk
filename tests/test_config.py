@@ -170,6 +170,30 @@ class TestEnvConfig:
             config = EnvConfig.create_client_config()
             assert config.grant_type == "password"
 
+    def test_env_config_create_client_config_x_user_agent(self):
+        """DATAQUERY_X_USER_AGENT populates the x_user_agent config field."""
+        with patch.dict(
+            os.environ,
+            {
+                "DATAQUERY_BASE_URL": "https://api.example.com",
+                "DATAQUERY_X_USER_AGENT": "MyApp/1.0",
+            },
+        ):
+            config = EnvConfig.create_client_config()
+            assert config.x_user_agent == "MyApp/1.0"
+            assert config.get_custom_headers() == {"X-User-Agent": "MyApp/1.0"}
+
+    def test_env_config_create_client_config_x_user_agent_default(self):
+        """x_user_agent defaults to None when the env var is unset."""
+        with patch.dict(
+            os.environ,
+            {"DATAQUERY_BASE_URL": "https://api.example.com"},
+            clear=True,
+        ):
+            config = EnvConfig.create_client_config()
+            assert config.x_user_agent is None
+            assert config.get_custom_headers() == {}
+
     def test_env_config_get_download_options(self):
         """Test get_download_options method."""
         options = EnvConfig.get_download_options()
