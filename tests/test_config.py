@@ -541,3 +541,123 @@ class TestEnvConfigSingleSourceOfTruth:
         for field_name in ClientConfig.model_fields:
             env_key = _env_name_for(field_name)
             assert f"DATAQUERY_{env_key}=" in content, f"Missing {env_key} in template"
+
+
+class TestUserEnvFile:
+    """Tests for the user-level credential file (``~/.dataquery/.env``)."""
+
+    @pytest.fixture(autouse=True)
+    def restore_dataquery_env(self):
+        """``load_dotenv`` writes straight to ``os.environ``; put it back after."""
+        saved = {k: v for k, v in os.environ.items() if k.startswith("DATAQUERY_")}
+        yield
+        for key in [k for k in os.environ if k.startswith("DATAQUERY_")]:
+            if key not in saved:
+                del os.environ[key]
+        os.environ.update(saved)
+
+    @pytest.fixture
+    def user_config_dir(self, tmp_path, monkeypatch):
+        """Point ``EnvConfig.user_env_file()`` at a throwaway directory."""
+        config_dir = tmp_path / "dataquery-home"
+        monkeypatch.setenv("DATAQUERY_CONFIG_DIR", str(config_dir))
+        return config_dir
+
+    def test_user_config_dir_defaults_to_home(self, monkeypatch):
+        """Without an override the file lives under ~/.dataquery."""
+        monkeypatch.delenv("DATAQUERY_CONFIG_DIR", raising=False)
+        with patch("dataquery.config.env._USER_CONFIG_DIR_DEFAULT", "~/.dataquery"):
+            assert EnvConfig.user_env_file() == Path.home() / ".dataquery" / ".env"
+
+    def test_save_then_load_round_trip(self, user_config_dir, monkeypatch):
+        """Saved credentials come back verbatim through the environment."""
+        env_file = EnvConfig.save_user_env({"CLIENT_ID": "cid", "CLIENT_SECRET": "s3cr3t/with+pad=="})
+        assert env_file == user_config_dir / ".env"
+
+        monkeypatch.delenv("DATAQUERY_CLIENT_ID", raising=False)
+        monkeypatch.delenv("DATAQUERY_CLIENT_SECRET", raising=False)
+        assert EnvConfig.load_user_env_file() is True
+        assert os.environ["DATAQUERY_CLIENT_ID"] == "cid"
+        assert os.environ["DATAQUERY_CLIENT_SECRET"] == "s3cr3t/with+pad=="
+
+    @pytest.mark.parametrize(
+        "secret",
+        [
+            "plain-secret-123",
+            "s3cr3t/with+slashes=and==pad",
+            'quote"inside',
+            "space inside",
+            "back\\slash",
+            "#hash-leading",
+            "line\nbreak",
+            "${HOME}-not-expanded",
+            "has'single-and-${HOME}",
+        ],
+    )
+    def test_awkward_secrets_survive_the_round_trip(self, secret, user_config_dir, monkeypatch):
+        """Quoting must survive spaces, quotes, newlines and ${VAR} alike."""
+        EnvConfig.save_user_env({"CLIENT_SECRET": secret})
+        monkeypatch.delenv("DATAQUERY_CLIENT_SECRET", raising=False)
+        EnvConfig.load_user_env_file()
+        assert os.environ["DATAQUERY_CLIENT_SECRET"] == secret
+
+    def test_saved_entries_stay_on_one_line(self, user_config_dir):
+        """A multi-line secret must not break the line-based merge."""
+        env_file = EnvConfig.save_user_env({"CLIENT_SECRET": "line\nbreak"})
+        lines = env_file.read_text().splitlines()
+        assert [ln for ln in lines if "CLIENT_SECRET" in ln] == ['DATAQUERY_CLIENT_SECRET="line\\nbreak"']
+        assert all(ln.startswith("#") or "=" in ln or ln == "" for ln in lines)
+
+    def test_save_is_owner_only(self, user_config_dir):
+        """Credentials on disk must not be world- or group-readable."""
+        env_file = EnvConfig.save_user_env({"CLIENT_SECRET": "s"})
+        assert env_file.stat().st_mode & 0o077 == 0
+        assert env_file.parent.stat().st_mode & 0o077 == 0
+
+    def test_save_skips_empty_values(self, user_config_dir):
+        """Unset credentials are not written as empty assignments."""
+        env_file = EnvConfig.save_user_env({"CLIENT_ID": "cid", "BEARER_TOKEN": None, "OAUTH_AUD": ""})
+        content = env_file.read_text()
+        assert "DATAQUERY_CLIENT_ID=cid" in content
+        assert "BEARER_TOKEN" not in content
+        assert "OAUTH_AUD" not in content
+
+    def test_save_merges_without_clobbering(self, user_config_dir):
+        """Re-saving rewrites the key in place and leaves other lines alone."""
+        env_file = EnvConfig.user_env_file()
+        env_file.parent.mkdir(parents=True, exist_ok=True)
+        env_file.write_text("# hand written\nDATAQUERY_CLIENT_ID=old\nUNRELATED=keep\nDATAQUERY_CLIENT_ID=dupe\n")
+
+        EnvConfig.save_user_env({"CLIENT_ID": "new", "OAUTH_AUD": "aud-1"})
+        lines = env_file.read_text().splitlines()
+
+        assert "# hand written" in lines
+        assert "UNRELATED=keep" in lines
+        assert [ln for ln in lines if ln.startswith("DATAQUERY_CLIENT_ID=")] == ["DATAQUERY_CLIENT_ID=new"]
+        assert "DATAQUERY_OAUTH_AUD=aud-1" in lines
+
+    def test_load_user_env_file_missing(self, user_config_dir):
+        """A missing file is a no-op, not an error."""
+        assert EnvConfig.load_user_env_file() is False
+
+    def test_saved_credentials_feed_create_client_config(self, user_config_dir, monkeypatch):
+        """The point of the file: a later SDK call needs no environment."""
+        EnvConfig.save_user_env({"CLIENT_ID": "saved-id", "CLIENT_SECRET": "saved-secret"})
+        for key in ("DATAQUERY_CLIENT_ID", "DATAQUERY_CLIENT_SECRET"):
+            monkeypatch.delenv(key, raising=False)
+
+        config = EnvConfig.create_client_config()
+
+        assert config.client_id == "saved-id"
+        assert config.get_client_secret() == "saved-secret"
+        assert config.has_oauth_credentials is True
+
+    def test_environment_wins_over_saved_credentials(self, user_config_dir, monkeypatch):
+        """The saved file is a fallback; a real env var still takes priority."""
+        EnvConfig.save_user_env({"CLIENT_ID": "saved-id", "CLIENT_SECRET": "saved-secret"})
+        monkeypatch.setenv("DATAQUERY_CLIENT_ID", "env-id")
+
+        config = EnvConfig.create_client_config()
+
+        assert config.client_id == "env-id"
+        assert config.get_client_secret() == "saved-secret"

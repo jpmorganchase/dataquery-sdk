@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
-from typing import Any, Dict, Optional, Union, get_args, get_origin
+from typing import Any, Dict, List, Mapping, Optional, Union, get_args, get_origin
 
 from dotenv import load_dotenv
 from pydantic_core import PydanticUndefined
@@ -29,6 +30,37 @@ _SENSITIVE_FIELDS = frozenset(
         "aud",
     }
 )
+
+# User-level config: credentials saved once (e.g. by `dataquery mcp-connect
+# --save-credentials`) and reused by every later SDK call in any process.
+_USER_CONFIG_DIR_ENV = "DATAQUERY_CONFIG_DIR"
+_USER_CONFIG_DIR_DEFAULT = "~/.dataquery"
+_USER_ENV_FILENAME = ".env"
+
+_USER_ENV_HEADER = [
+    "# DataQuery SDK credentials.",
+    "# Written by `dataquery mcp-connect --save-credentials`; loaded as a",
+    "# fallback only, so shell env vars and a local .env still win.",
+    "# Values are read literally: ${VAR} is not expanded here.",
+    "",
+]
+
+_ENV_LINE_RE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=")
+
+# Characters common in ids, secrets and URLs that need no .env quoting.
+_UNQUOTED_EXTRA_CHARS = "._-:/@+~"
+
+
+def _format_env_value(value: str) -> str:
+    """Render a value for a ``.env`` line, quoting only when it needs it."""
+    if value and all(ch.isalnum() or ch in _UNQUOTED_EXTRA_CHARS for ch in value):
+        return value
+    if "'" not in value and "\n" not in value and "\r" not in value:
+        return f"'{value}'"
+    # Escapes keep the entry on a single physical line, which the line-based
+    # merge in ``save_user_env`` depends on.
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
+    return f'"{escaped}"'
 
 
 def _env_name_for(field_name: str) -> str:
@@ -75,6 +107,77 @@ class EnvConfig:
             env_file = Path(".env")
         if env_file.exists():
             load_dotenv(env_file)
+
+    @classmethod
+    def user_config_dir(cls) -> Path:
+        """Directory holding user-level SDK config (``$DATAQUERY_CONFIG_DIR`` or ``~/.dataquery``)."""
+        raw = os.getenv(_USER_CONFIG_DIR_ENV) or _USER_CONFIG_DIR_DEFAULT
+        return Path(raw).expanduser()
+
+    @classmethod
+    def user_env_file(cls) -> Path:
+        """Path of the user-level ``.env`` holding saved credentials."""
+        return cls.user_config_dir() / _USER_ENV_FILENAME
+
+    @classmethod
+    def load_user_env_file(cls) -> bool:
+        """Load the user-level ``.env`` as a fallback; never overrides what is already set."""
+        env_file = cls.user_env_file()
+        if not env_file.exists():
+            return False
+        # interpolate=False: values here are literal secrets, and dotenv's
+        # ${VAR} expansion runs after unquoting, so no quoting style escapes it.
+        load_dotenv(env_file, override=False, interpolate=False)
+        return True
+
+    @classmethod
+    def save_user_env(cls, values: Mapping[str, Optional[str]]) -> Path:
+        """Merge ``DATAQUERY_<key>=<value>`` pairs into the user-level ``.env``.
+
+        Keys are unprefixed (``CLIENT_ID``) and empty values are skipped. Lines
+        for a key being saved are rewritten in place, anything else already in
+        the file is preserved, and the file is (re)written owner-readable only.
+        """
+        updates: Dict[str, str] = {}
+        for key, value in values.items():
+            if value:
+                updates[f"{cls.PREFIX}{key}"] = value
+
+        env_file = cls.user_env_file()
+        env_file.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            env_file.parent.chmod(0o700)
+        except OSError:  # pragma: no cover - non-POSIX filesystem
+            pass
+
+        lines: List[str] = []
+        written: set[str] = set()
+        if env_file.exists():
+            for line in env_file.read_text().splitlines():
+                match = _ENV_LINE_RE.match(line)
+                line_key = match.group(1) if match else None
+                if line_key is None or line_key not in updates:
+                    lines.append(line)
+                elif line_key not in written:
+                    lines.append(f"{line_key}={_format_env_value(updates[line_key])}")
+                    written.add(line_key)
+                # else: drop a stale duplicate of a key just rewritten above
+        else:
+            lines.extend(_USER_ENV_HEADER)
+
+        for key, value in updates.items():
+            if key not in written:
+                lines.append(f"{key}={_format_env_value(value)}")
+
+        # O_CREAT mode only applies to new files, so chmod covers the rest.
+        fd = os.open(env_file, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as handle:
+            handle.write("\n".join(lines) + "\n")
+        try:
+            env_file.chmod(0o600)
+        except OSError:  # pragma: no cover - non-POSIX filesystem
+            pass
+        return env_file
 
     @classmethod
     def get_env_var(cls, key: str, default: Optional[str] = None) -> Optional[str]:
@@ -131,6 +234,11 @@ class EnvConfig:
 
         if env_file is not None:
             cls.load_env_file(env_file)
+
+        # Lowest precedence, loaded last so it fills only what is still unset:
+        # credentials saved by `mcp-connect --save-credentials`, which let a
+        # later DataQuery() authenticate with no environment of its own.
+        cls.load_user_env_file()
 
         if not cls.get_env_var("BASE_URL"):
             raise ConfigurationError(f"{cls.PREFIX}BASE_URL environment variable is required")

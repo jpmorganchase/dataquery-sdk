@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -196,3 +197,157 @@ async def test_cli_download_watch_quick_exit(monkeypatch, capsys):
 
     rc = await cli.cmd_download(args)
     assert rc == 0
+
+
+def _clear_dataquery_env():
+    for key in [k for k in os.environ if k.startswith("DATAQUERY_")]:
+        del os.environ[key]
+
+
+@pytest.fixture
+def mcp_env(tmp_path):
+    """Clean DATAQUERY_* environment with the saved-credential file redirected.
+
+    Plain ``os.environ`` rather than monkeypatch: the code under test exports
+    credentials directly, and ``monkeypatch.delenv`` would record and then
+    restore those on undo, leaking them into later tests.
+    """
+    saved = {k: v for k, v in os.environ.items() if k.startswith("DATAQUERY_")}
+    _clear_dataquery_env()
+    config_dir = tmp_path / "dataquery-home"
+    os.environ["DATAQUERY_CONFIG_DIR"] = str(config_dir)
+    yield config_dir / ".env"
+    _clear_dataquery_env()
+    os.environ.update(saved)
+
+
+def _mcp_args(*extra):
+    return _parser().parse_args(["mcp-connect", "--url", "https://mcp.example.com/mcp", *extra])
+
+
+def test_mcp_connect_flags_export_to_environment(mcp_env):
+    """Credential flags land in the process env, so later SDK use just works."""
+    savable = cli._export_mcp_credentials(_mcp_args("--client-id", "cid", "--client-secret", "sec"))
+
+    assert os.environ["DATAQUERY_CLIENT_ID"] == "cid"
+    assert os.environ["DATAQUERY_CLIENT_SECRET"] == "sec"
+    assert savable == ["CLIENT_ID", "CLIENT_SECRET"]
+
+
+def test_mcp_connect_flags_override_environment(mcp_env):
+    """An explicit flag beats whatever the MCP client exported."""
+    os.environ["DATAQUERY_CLIENT_ID"] = "from-env"
+
+    cli._export_mcp_credentials(_mcp_args("--client-id", "from-flag"))
+
+    assert os.environ["DATAQUERY_CLIENT_ID"] == "from-flag"
+
+
+def test_mcp_connect_savable_keys_exclude_model_defaults(mcp_env):
+    """Only values actually set are savable — not ClientConfig's own defaults."""
+    os.environ["DATAQUERY_OAUTH_AUD"] = "JPMC:URI:UAT"
+
+    savable = cli._export_mcp_credentials(_mcp_args("--bearer-token", "tok"))
+
+    assert savable == ["BEARER_TOKEN", "OAUTH_AUD"]
+    assert "BASE_URL" not in savable
+    assert "OAUTH_TOKEN_URL" not in savable
+
+
+@pytest.mark.asyncio
+async def test_mcp_connect_saves_credentials(mcp_env, capsys):
+    """--save-credentials persists the credentials and still starts the proxy."""
+    pytest.importorskip("fastmcp")
+    args = _mcp_args("--client-id", "cid", "--client-secret", "sec/ret==", "--save-credentials")
+
+    fake_proxy = MagicMock()
+    fake_proxy.run_async = AsyncMock(return_value=None)
+    with patch("fastmcp.FastMCP.as_proxy", return_value=fake_proxy) as as_proxy:
+        rc = await cli.cmd_mcp_connect(args)
+
+    assert rc == 0
+    assert as_proxy.called
+    fake_proxy.run_async.assert_awaited_once()
+
+    content = mcp_env.read_text()
+    assert "DATAQUERY_CLIENT_ID=cid" in content
+    assert "sec/ret==" in content
+    assert mcp_env.stat().st_mode & 0o077 == 0
+    # stdout is the JSON-RPC channel: the notice must go to stderr only.
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert str(mcp_env) in captured.err
+    assert "sec/ret==" not in captured.err
+
+
+@pytest.mark.asyncio
+async def test_mcp_connect_saves_credentials_from_environment(mcp_env):
+    """MCP and the SDK share one credential set: env-supplied vars save too."""
+    pytest.importorskip("fastmcp")
+    os.environ["DATAQUERY_CLIENT_ID"] = "env-cid"
+    os.environ["DATAQUERY_CLIENT_SECRET"] = "env-sec"
+    args = _mcp_args("--save-credentials")
+
+    fake_proxy = MagicMock()
+    fake_proxy.run_async = AsyncMock(return_value=None)
+    with patch("fastmcp.FastMCP.as_proxy", return_value=fake_proxy):
+        rc = await cli.cmd_mcp_connect(args)
+
+    assert rc == 0
+    content = mcp_env.read_text()
+    assert "DATAQUERY_CLIENT_ID=env-cid" in content
+    assert "DATAQUERY_CLIENT_SECRET=env-sec" in content
+
+
+@pytest.mark.asyncio
+async def test_mcp_connect_relaunch_reuses_saved_credentials(mcp_env, capsys):
+    """Re-launching with the flag but no env rewrites the file, without complaint."""
+    pytest.importorskip("fastmcp")
+    from dataquery.config import EnvConfig
+
+    EnvConfig.save_user_env({"CLIENT_ID": "saved-cid", "CLIENT_SECRET": "saved-sec"})
+    args = _mcp_args("--save-credentials")
+
+    fake_proxy = MagicMock()
+    fake_proxy.run_async = AsyncMock(return_value=None)
+    with patch("fastmcp.FastMCP.as_proxy", return_value=fake_proxy):
+        rc = await cli.cmd_mcp_connect(args)
+
+    assert rc == 0
+    assert "nothing to save" not in capsys.readouterr().err
+    # Saved credentials are exported, so in-process SDK use needs no env either.
+    assert os.environ["DATAQUERY_CLIENT_ID"] == "saved-cid"
+    assert "DATAQUERY_CLIENT_SECRET=saved-sec" in mcp_env.read_text()
+
+
+@pytest.mark.asyncio
+async def test_mcp_connect_without_save_flag_writes_nothing(mcp_env):
+    """Credentials only reach disk when explicitly asked for."""
+    pytest.importorskip("fastmcp")
+    args = _mcp_args("--client-id", "cid", "--client-secret", "sec")
+
+    fake_proxy = MagicMock()
+    fake_proxy.run_async = AsyncMock(return_value=None)
+    with patch("fastmcp.FastMCP.as_proxy", return_value=fake_proxy):
+        rc = await cli.cmd_mcp_connect(args)
+
+    assert rc == 0
+    assert not mcp_env.exists()
+
+
+def test_save_mcp_credentials_without_credentials_warns(mcp_env, capsys):
+    """Nothing to save is reported, not written as an empty file."""
+    cli._save_mcp_credentials([])
+
+    assert not mcp_env.exists()
+    assert "nothing to save" in capsys.readouterr().err
+
+
+def test_save_mcp_credentials_survives_write_failure(mcp_env, capsys):
+    """A save failure is reported but never breaks the MCP connection."""
+    with patch("dataquery.config.env.EnvConfig.save_user_env", side_effect=OSError("read-only fs")):
+        cli._save_mcp_credentials(["CLIENT_ID"])
+
+    err = capsys.readouterr().err
+    assert "could not write credentials" in err
+    assert "read-only fs" in err
