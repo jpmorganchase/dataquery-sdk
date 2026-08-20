@@ -51,5 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pagination models: `items`, `page-size`, and `info` fields, plus the `next_link` property and `get_self_link()` accessor, moved onto the shared `Paginated` mixin; `FileList` is now paginated; list fields default to empty instead of being required so partial/empty envelopes parse cleanly
 - New `APIResponseError` raised when a 2xx response carries an `errors`/`error` envelope (e.g. `498 Unrecognized Page Token`); an `info` `204` "no content" envelope now yields an empty page so pagination stops cleanly, while any other unrecognized body fails loudly
 - Exports: `Paginated`, `Link`, `APIResponseError` are now part of the public API
-
-
+## [1.2.4] - 2026-08-12
+- MCP: `mcp-connect` accepts `--client-id`, `--client-secret` and `--bearer-token` and exports them into the `DATAQUERY_*` environment of the process, so the MCP bridge and the SDK share one credential set instead of each needing its own setup
+ 
+ 

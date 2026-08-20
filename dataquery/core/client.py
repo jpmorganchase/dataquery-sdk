@@ -290,6 +290,7 @@ class DataQueryClient(
                     "User-Agent": f"DATAQUERY-SDK/{version}",
                     "Connection": "keep-alive",
                     "Accept-Encoding": "gzip, deflate",
+                    **self.config.get_custom_headers(),
                 },
                 "auto_decompress": True,
                 "raise_for_status": False,

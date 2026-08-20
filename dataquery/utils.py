@@ -171,6 +171,9 @@ DATAQUERY_DEFAULT_DIR=files
 # Default: DATAQUERY-SDK/1.2.1
 DATAQUERY_USER_AGENT=DATAQUERY-SDK/1.2.1
 
+# Optional custom X-User-Agent header sent on every API request
+# DATAQUERY_X_USER_AGENT=MyApp/1.0
+
 # Enable HTTP/2 support (true/false)
 # Default: true
 DATAQUERY_ENABLE_HTTP2=true

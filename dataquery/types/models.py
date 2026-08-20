@@ -51,6 +51,10 @@ class ClientConfig(BaseModel):
     )
     context_path: Optional[str] = Field(default="/research/dataquery-authe/api/v2", description="API context path")
     api_version: str = Field(default="2.0.0", description="API version")
+    x_user_agent: Optional[str] = Field(
+        default=None,
+        description="Optional value for the X-User-Agent header sent on each API request",
+    )
     files_base_url: Optional[str] = Field(
         default="https://api-dataquery.jpmchase.com",
         description="Separate base URL for file endpoints",
@@ -241,6 +245,13 @@ class ClientConfig(BaseModel):
             token = base64.b64encode(raw).decode("ascii")
             kwargs["proxy_headers"] = {"Proxy-Authorization": f"Basic {token}"}
         return kwargs
+
+    def get_custom_headers(self) -> Dict[str, str]:
+        """Return extra headers to attach to every API request (e.g. X-User-Agent)."""
+        headers: Dict[str, str] = {}
+        if self.x_user_agent:
+            headers["X-User-Agent"] = self.x_user_agent
+        return headers
 
     @property
     def api_base_url(self) -> str:

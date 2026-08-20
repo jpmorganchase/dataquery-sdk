@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import json
+import os
 import sys
 from collections.abc import AsyncGenerator
 from pathlib import Path
@@ -78,6 +79,64 @@ def _print_error(message: str, *, suggestion: Optional[str] = None) -> None:
     print(message, file=sys.stderr)
     print("\n--- JSON ---")
     print(json.dumps(envelope, indent=2))
+
+
+_MCP_CREDENTIAL_FLAGS = (
+    ("client_id", "CLIENT_ID"),
+    ("client_secret", "CLIENT_SECRET"),
+    ("bearer_token", "BEARER_TOKEN"),
+)
+
+# Endpoint settings saved alongside the credentials, so a later DataQuery()
+# mints tokens against the same environment instead of the PROD defaults.
+_MCP_SAVED_SETTINGS = ("BASE_URL", "OAUTH_TOKEN_URL", "OAUTH_AUD")
+
+
+def _export_mcp_credentials(args: argparse.Namespace) -> List[str]:
+    """Export ``mcp-connect`` credential flags into the ``DATAQUERY_*`` process env.
+
+    Flags win over anything already exported, so the rest of this process —
+    the token manager here, and any SDK use later on — resolves them the usual
+    way with no separate environment setup. Returns the unprefixed keys that
+    are actually set afterwards, in save order.
+    """
+    from dataquery.config import EnvConfig
+
+    for attr, env_key in _MCP_CREDENTIAL_FLAGS:
+        value = getattr(args, attr, None)
+        if value:
+            os.environ[f"{EnvConfig.PREFIX}{env_key}"] = value
+
+    keys = [env_key for _, env_key in _MCP_CREDENTIAL_FLAGS] + list(_MCP_SAVED_SETTINGS)
+    # os.environ rather than get_env_var: model defaults must not be persisted
+    # as if the user had chosen them.
+    return [key for key in keys if os.environ.get(f"{EnvConfig.PREFIX}{key}")]
+
+
+def _save_mcp_credentials(keys: List[str]) -> None:
+    """Persist the resolved credentials to the user-level ``.env``.
+
+    Best effort: a failure here is reported but never takes the MCP connection
+    down with it. Messages go to stderr — stdout is the JSON-RPC channel.
+    """
+    from dataquery.config import EnvConfig
+
+    if not any(key in keys for key in ("CLIENT_ID", "CLIENT_SECRET", "BEARER_TOKEN")):
+        print(
+            "--save-credentials: nothing to save; pass --client-id/--client-secret "
+            "or set DATAQUERY_CLIENT_ID/DATAQUERY_CLIENT_SECRET.",
+            file=sys.stderr,
+        )
+        return
+
+    values = {key: os.environ.get(f"{EnvConfig.PREFIX}{key}") for key in keys}
+    try:
+        env_file = EnvConfig.save_user_env(values)
+    except OSError as exc:
+        print(f"--save-credentials: could not write credentials: {exc}", file=sys.stderr)
+        return
+    saved = ", ".join(f"{EnvConfig.PREFIX}{key}" for key in keys)
+    print(f"Saved {saved} to {env_file} (owner-only)", file=sys.stderr)
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -294,12 +353,35 @@ def create_parser() -> argparse.ArgumentParser:
             "Bridge a desktop MCP client (stdio) to a remote streamable-HTTP MCP\n"
             "server, authenticating with an OAuth client-credentials (AuthE) token\n"
             "minted from the DATAQUERY_* environment. Point your MCP client's\n"
-            "`command` at:  dataquery mcp-connect --url <MCP_URL>"
+            "`command` at:  dataquery mcp-connect --url <MCP_URL>\n"
+            "\n"
+            "Credentials passed as flags are exported into the DATAQUERY_*\n"
+            "environment of this process; add --save-credentials to also write\n"
+            "them to ~/.dataquery/.env, which every later SDK call picks up so\n"
+            "no environment has to be set up again."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p_connect.add_argument("--url", required=True, help="Remote MCP endpoint URL")
     p_connect.add_argument("--name", default="dataquery-mcp", help="Proxy server name (default: dataquery-mcp)")
+    p_connect.add_argument("--client-id", default=None, help="OAuth client ID (exported as DATAQUERY_CLIENT_ID)")
+    p_connect.add_argument(
+        "--client-secret",
+        default=None,
+        help="OAuth client secret (exported as DATAQUERY_CLIENT_SECRET); visible in the process list, "
+        "so prefer DATAQUERY_CLIENT_SECRET or --env-file on shared machines",
+    )
+    p_connect.add_argument(
+        "--bearer-token",
+        default=None,
+        help="Bearer token to use instead of OAuth credentials (exported as DATAQUERY_BEARER_TOKEN)",
+    )
+    p_connect.add_argument(
+        "--save-credentials",
+        action="store_true",
+        help="Also save the resolved credentials to ~/.dataquery/.env (owner-only) so later SDK use "
+        "needs no environment variables",
+    )
 
     return parser
 
@@ -743,7 +825,17 @@ async def cmd_mcp_connect(args: argparse.Namespace) -> int:
     from dataquery.config import EnvConfig
     from dataquery.transport.auth import TokenManager
 
-    config = EnvConfig.create_client_config(env_file=Path(args.env_file) if getattr(args, "env_file", None) else None)
+    if getattr(args, "env_file", None):
+        EnvConfig.load_env_file(Path(args.env_file))
+    # Load saved credentials before exporting, so they too land in the process
+    # env and a re-launch with --save-credentials rewrites them instead of
+    # reporting nothing to save. Loaded last, so it never wins over the above.
+    EnvConfig.load_user_env_file()
+    savable = _export_mcp_credentials(args)
+    if getattr(args, "save_credentials", False):
+        _save_mcp_credentials(savable)
+
+    config = EnvConfig.create_client_config()
     token_manager = TokenManager(config)
 
     class _AutheAuth(httpx.Auth):
