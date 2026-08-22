@@ -52,6 +52,10 @@ DATAQUERY_BASE_URL=https://api-dataquery.jpmchase.com
 # DATAQUERY_FILES_BASE_URL=https://api-dataquery.jpmchase.com
 # DATAQUERY_FILES_CONTEXT_PATH=/research/dataquery-authe/api/v2
 
+# Optional: remote MCP endpoint bridged by `dataquery mcp-connect`
+# Defaults to the PROD endpoint below; override for another environment.
+# DATAQUERY_MCP_URL=https://api-dataquery.jpmchase.com/research/dataquery-authe/v2/mcp
+
 # =============================================================================
 # AUTHENTICATION: OAuth 2.0 Configuration (Recommended)
 # =============================================================================

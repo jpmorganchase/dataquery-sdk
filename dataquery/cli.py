@@ -353,7 +353,10 @@ def create_parser() -> argparse.ArgumentParser:
             "Bridge a desktop MCP client (stdio) to a remote streamable-HTTP MCP\n"
             "server, authenticating with an OAuth client-credentials (AuthE) token\n"
             "minted from the DATAQUERY_* environment. Point your MCP client's\n"
-            "`command` at:  dataquery mcp-connect --url <MCP_URL>\n"
+            "`command` at:  dataquery mcp-connect\n"
+            "\n"
+            "The endpoint defaults to the PROD MCP server; override it with --url\n"
+            "or DATAQUERY_MCP_URL to reach a different environment.\n"
             "\n"
             "Credentials passed as flags are exported into the DATAQUERY_*\n"
             "environment of this process; add --save-credentials to also write\n"
@@ -362,7 +365,11 @@ def create_parser() -> argparse.ArgumentParser:
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p_connect.add_argument("--url", required=True, help="Remote MCP endpoint URL")
+    p_connect.add_argument(
+        "--url",
+        default=None,
+        help="Remote MCP endpoint URL (default: DATAQUERY_MCP_URL, else the PROD MCP endpoint)",
+    )
     p_connect.add_argument("--name", default="dataquery-mcp", help="Proxy server name (default: dataquery-mcp)")
     p_connect.add_argument("--client-id", default=None, help="OAuth client ID (exported as DATAQUERY_CLIENT_ID)")
     p_connect.add_argument(
@@ -817,7 +824,7 @@ async def cmd_mcp_connect(args: argparse.Namespace) -> int:
             "The MCP bridge requires the 'mcp' extra. Install it with:\n"
             "    pip install 'dataquery-sdk[mcp]'\n"
             "or run it directly with:\n"
-            "    uvx --from 'dataquery-sdk[mcp]' dataquery mcp-connect --url <MCP_URL>",
+            "    uvx --from 'dataquery-sdk[mcp]' dataquery mcp-connect",
             file=sys.stderr,
         )
         return 1
@@ -836,6 +843,15 @@ async def cmd_mcp_connect(args: argparse.Namespace) -> int:
         _save_mcp_credentials(savable)
 
     config = EnvConfig.create_client_config()
+    # --url wins; otherwise DATAQUERY_MCP_URL, and failing that the model
+    # default (PROD). Only an explicitly emptied env var leaves it unset.
+    url = getattr(args, "url", None) or config.mcp_url
+    if not url:
+        print(
+            "No MCP endpoint configured: pass --url or set DATAQUERY_MCP_URL.",
+            file=sys.stderr,
+        )
+        return 1
     token_manager = TokenManager(config)
 
     class _AutheAuth(httpx.Auth):
@@ -852,7 +868,7 @@ async def cmd_mcp_connect(args: argparse.Namespace) -> int:
             request.headers["Authorization"] = header
             yield request
 
-    transport = StreamableHttpTransport(args.url, auth=_AutheAuth())
+    transport = StreamableHttpTransport(url, auth=_AutheAuth())
     proxy = FastMCP.as_proxy(transport, name=args.name)
     await proxy.run_async(transport="stdio", show_banner=False)
     return 0
