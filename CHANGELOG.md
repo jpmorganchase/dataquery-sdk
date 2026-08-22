@@ -53,5 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Exports: `Paginated`, `Link`, `APIResponseError` are now part of the public API
 ## [1.2.4] - 2026-08-12
 - MCP: `mcp-connect` accepts `--client-id`, `--client-secret` and `--bearer-token` and exports them into the `DATAQUERY_*` environment of the process, so the MCP bridge and the SDK share one credential set instead of each needing its own setup
+## [1.2.5] - 2026-08-21
+- MCP: `mcp-connect --url` is now optional 
  
  

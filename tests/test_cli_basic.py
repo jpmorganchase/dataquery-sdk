@@ -225,6 +225,71 @@ def _mcp_args(*extra):
     return _parser().parse_args(["mcp-connect", "--url", "https://mcp.example.com/mcp", *extra])
 
 
+async def _connect_and_capture_url(args):
+    """Run cmd_mcp_connect against a stub proxy; return (rc, endpoint URL)."""
+    fake_proxy = MagicMock()
+    fake_proxy.run_async = AsyncMock(return_value=None)
+    with patch("fastmcp.FastMCP.as_proxy", return_value=fake_proxy):
+        with patch("fastmcp.client.transports.StreamableHttpTransport") as transport:
+            rc = await cli.cmd_mcp_connect(args)
+    return rc, transport.call_args.args[0] if transport.call_args else None
+
+
+def test_mcp_connect_url_is_optional():
+    """--url may be omitted; the endpoint then comes from config."""
+    args = _parser().parse_args(["mcp-connect"])
+
+    assert args.url is None
+
+
+@pytest.mark.asyncio
+async def test_mcp_connect_defaults_to_prod_endpoint(mcp_env):
+    """No --url and no env var: the PROD MCP endpoint from ClientConfig is used."""
+    pytest.importorskip("fastmcp")
+
+    rc, url = await _connect_and_capture_url(_parser().parse_args(["mcp-connect"]))
+
+    assert rc == 0
+    assert url == "https://api-dataquery.jpmchase.com/research/dataquery-authe/v2/mcp"
+
+
+@pytest.mark.asyncio
+async def test_mcp_connect_url_env_var_overrides_default(mcp_env):
+    """DATAQUERY_MCP_URL points the bridge at another environment."""
+    pytest.importorskip("fastmcp")
+    os.environ["DATAQUERY_MCP_URL"] = "https://mcp-uat.example.com/mcp"
+
+    rc, url = await _connect_and_capture_url(_parser().parse_args(["mcp-connect"]))
+
+    assert rc == 0
+    assert url == "https://mcp-uat.example.com/mcp"
+
+
+@pytest.mark.asyncio
+async def test_mcp_connect_url_flag_wins_over_env_var(mcp_env):
+    """An explicit --url beats DATAQUERY_MCP_URL."""
+    pytest.importorskip("fastmcp")
+    os.environ["DATAQUERY_MCP_URL"] = "https://mcp-uat.example.com/mcp"
+
+    rc, url = await _connect_and_capture_url(_mcp_args())
+
+    assert rc == 0
+    assert url == "https://mcp.example.com/mcp"
+
+
+@pytest.mark.asyncio
+async def test_mcp_connect_without_any_endpoint_fails(mcp_env, capsys):
+    """An explicitly emptied DATAQUERY_MCP_URL is an error, not a silent PROD connect."""
+    pytest.importorskip("fastmcp")
+    os.environ["DATAQUERY_MCP_URL"] = ""
+
+    rc, url = await _connect_and_capture_url(_parser().parse_args(["mcp-connect"]))
+
+    assert rc == 1
+    assert url is None
+    assert "No MCP endpoint configured" in capsys.readouterr().err
+
+
 def test_mcp_connect_flags_export_to_environment(mcp_env):
     """Credential flags land in the process env, so later SDK use just works."""
     savable = cli._export_mcp_credentials(_mcp_args("--client-id", "cid", "--client-secret", "sec"))
