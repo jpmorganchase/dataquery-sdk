@@ -54,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.2.4] - 2026-08-12
 - MCP: `mcp-connect` accepts `--client-id`, `--client-secret` and `--bearer-token` and exports them into the `DATAQUERY_*` environment of the process, so the MCP bridge and the SDK share one credential set instead of each needing its own setup
 ## [1.2.5] - 2026-08-21
-- MCP: `mcp-connect --url` is now optional 
- 
- 
+- MCP: `mcp-connect --url` is now optional
+## [1.2.6] - 2026-09-24
+- Bug fixes
+- MCP: capped the `mcp` extra to `fastmcp>=2.14,<4` — fastmcp 4.x repackages onto `httpx2` and drops `FastMCP.as_proxy()`, which broke `mcp-connect`; installs now resolve to the 3.x line
