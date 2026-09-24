@@ -212,10 +212,20 @@ def _emit_stdout(message: Dict[str, Any]) -> None:
     sys.stdout.flush()
 
 
-async def run_mcp_proxy(url: str, env_file: Optional[Path] = None) -> int:
-    """Run the stdio <-> Streamable HTTP proxy until stdin closes."""
+async def run_mcp_proxy(url: Optional[str] = None, env_file: Optional[Path] = None) -> int:
+    """Run the stdio <-> Streamable HTTP proxy until stdin closes.
+
+    ``url`` defaults to ``DATAQUERY_MCP_URL``, and failing that to the PROD MCP
+    endpoint carried by :class:`ClientConfig`.
+    """
     _configure_stderr_logging()
     try:
+        if env_file is not None:
+            EnvConfig.load_env_file(env_file)
+        EnvConfig.load_user_env_file()
+        url = url or EnvConfig.get_env_var("MCP_URL")
+        if not url:
+            raise ConfigurationError("No MCP endpoint configured: pass a url or set DATAQUERY_MCP_URL")
         oauth = _build_oauth_manager(url, env_file)
         await oauth.authenticate()
     except (ConfigurationError, AuthenticationError) as exc:

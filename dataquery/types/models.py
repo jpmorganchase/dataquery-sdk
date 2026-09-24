@@ -63,6 +63,10 @@ class ClientConfig(BaseModel):
         default="/research/dataquery-authe/api/v2",
         description="Context path for the files host",
     )
+    mcp_url: Optional[str] = Field(
+        default="https://api-dataquery.jpmchase.com/research/dataquery-authe/v2/mcp",
+        description="Remote MCP endpoint bridged by `dataquery mcp-connect`",
+    )
 
     oauth_enabled: bool = Field(default=True, description="Enable OAuth authentication")
     oauth_token_url: Optional[str] = Field(

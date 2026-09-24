@@ -26,6 +26,7 @@ built in for both.
 - [Quick start — JSON Data API](#quick-start--json-data-api)
 - [Auto-download (SSE)](#auto-download-sse)
 - [CLI](#cli)
+- [MCP bridge (`mcp-connect`)](#mcp-bridge-mcp-connect)
 - [Configuration](#configuration)
 - [Logging](#logging)
 - [Error handling](#error-handling)
@@ -68,6 +69,9 @@ through one `DataQuery` client — pick the methods that match what you need.
 - **Retry + circuit breaker** — exponential backoff, configurable failure threshold
 - **Sync and async APIs** — every operation has `_async` and sync variants
 - **CLI** — `dataquery groups | files | availability | download | download-group | auth | config`
+- **MCP bridge** — `dataquery mcp-connect` connects any stdio MCP client
+  (Claude Desktop, Claude Code, …) to the remote DataQuery MCP server, minting
+  OAuth tokens for it
 
 ## New here? Three steps to your first download
 
@@ -99,6 +103,9 @@ pip install dataquery-sdk
 
 # With pandas DataFrame conversion
 pip install "dataquery-sdk[pandas]"
+
+# With the MCP bridge (dataquery mcp-connect)
+pip install "dataquery-sdk[mcp]"
 
 # With dev tooling (ruff, mypy, pytest)
 pip install "dataquery-sdk[dev]"
@@ -367,8 +374,134 @@ dataquery config template --output .env
 dataquery auth test
 ```
 
-Every subcommand accepts `--env-file PATH` (to point at a non-default `.env`) and
-most accept `--json` for machine-readable output.
+`--env-file PATH` (to point at a non-default `.env`) is a top-level flag, so it
+goes *before* the subcommand: `dataquery --env-file .env.prod groups`. Most
+subcommands accept `--json` for machine-readable output.
+
+## MCP bridge (`mcp-connect`)
+
+`dataquery mcp-connect` connects a desktop MCP client — Claude Desktop, Claude
+Code, or any stdio MCP host — to the remote DataQuery MCP server. It speaks
+stdio to the client and streamable HTTP to the server, stamping every outbound
+request with a fresh OAuth (AuthE) bearer token minted from your `DATAQUERY_*`
+credentials. Tokens are refreshed for the life of the session, and the MCP host
+itself never handles your client secret.
+
+It needs the `mcp` extra:
+
+```bash
+pip install "dataquery-sdk[mcp]"
+```
+
+### Wire it into an MCP client
+
+Add the server to your client's MCP config (`claude_desktop_config.json`,
+`.mcp.json`, or the equivalent for your host):
+
+```json
+{
+  "mcpServers": {
+    "dataquery": {
+      "command": "dataquery",
+      "args": ["mcp-connect", "--save-credentials"],
+      "env": {
+        "DATAQUERY_CLIENT_ID": "your_client_id",
+        "DATAQUERY_CLIENT_SECRET": "your_client_secret"
+      }
+    }
+  }
+}
+```
+
+`--save-credentials` copies the credentials it resolved into
+`~/.dataquery/.env` on the first launch (see [Credentials](#credentials)). From
+then on the bridge — and every other SDK call and CLI run on the machine —
+finds them there, so you can drop the `env` block from the config and keep your
+secret out of a file your MCP client reads on every start:
+
+```json
+{
+  "mcpServers": {
+    "dataquery": {
+      "command": "dataquery",
+      "args": ["mcp-connect"]
+    }
+  }
+}
+```
+
+To skip installing anything, run it straight from PyPI with `uvx`:
+
+```json
+{
+  "mcpServers": {
+    "dataquery": {
+      "command": "uvx",
+      "args": ["--from", "dataquery-sdk[mcp]", "dataquery", "mcp-connect", "--save-credentials"],
+      "env": {
+        "DATAQUERY_CLIENT_ID": "your_client_id",
+        "DATAQUERY_CLIENT_SECRET": "your_client_secret"
+      }
+    }
+  }
+}
+```
+
+### Endpoint
+
+`--url` is optional. The endpoint resolves as `--url` → `DATAQUERY_MCP_URL` →
+the production server
+`https://api-dataquery.jpmchase.com/research/dataquery-authe/v2/mcp`:
+
+```bash
+# Production (no arguments needed)
+dataquery mcp-connect
+
+# Another environment
+dataquery mcp-connect --url https://host/research/dataquery-authe/v2/mcp
+DATAQUERY_MCP_URL=https://host/research/dataquery-authe/v2/mcp dataquery mcp-connect
+```
+
+### Credentials
+
+Credentials resolve exactly as they do everywhere else in the SDK — flags win,
+then the process environment (what your MCP client exports), then a `.env`,
+then the saved user-level file:
+
+```bash
+# From the environment (recommended)
+dataquery mcp-connect
+
+# From flags — visible in the process list, so avoid on shared machines
+dataquery mcp-connect --client-id ID --client-secret SECRET
+
+# From a non-default .env (top-level flag: before the subcommand)
+dataquery --env-file .env.prod mcp-connect
+
+# Bearer token instead of OAuth
+dataquery mcp-connect --bearer-token TOKEN
+```
+
+Pass `--save-credentials` once and the resolved credentials are written to
+`~/.dataquery/.env` (owner-only `0600` file in a `0700` directory; override the
+directory with `DATAQUERY_CONFIG_DIR`). Every later SDK call and CLI run reads
+that file as a last-resort fallback, so a plain `DataQuery()` in a script
+authenticates with no environment of its own — while shell variables and a
+local `.env` still take precedence over it.
+
+### Flags
+
+| Flag | Default | Purpose |
+|---|---|---|
+| `--url URL` | `DATAQUERY_MCP_URL`, else the PROD endpoint | Remote MCP endpoint |
+| `--name NAME` | `dataquery-mcp` | Proxy server name reported to the MCP client |
+| `--client-id ID` | _(from env)_ | OAuth client ID; exported as `DATAQUERY_CLIENT_ID` |
+| `--client-secret SECRET` | _(from env)_ | OAuth client secret; exported as `DATAQUERY_CLIENT_SECRET` |
+| `--bearer-token TOKEN` | _(from env)_ | Use a bearer token instead of OAuth |
+| `--save-credentials` | off | Also persist the resolved credentials to `~/.dataquery/.env` |
+
+Because stdout carries the JSON-RPC channel, all logging and diagnostics go to
+stderr — look in your MCP client's server log when something fails.
 
 ## Configuration
 
@@ -384,6 +517,16 @@ All environment variables use the `DATAQUERY_` prefix.
 | `DATAQUERY_CLIENT_SECRET` | _(none)_ | Required for OAuth |
 | `DATAQUERY_BEARER_TOKEN` | _(none)_ | Alternative to OAuth |
 | `DATAQUERY_OAUTH_ENABLED` | `true` | Set `false` to use bearer-token mode |
+
+**Endpoints**
+
+| Variable | Default | Notes |
+|---|---|---|
+| `DATAQUERY_BASE_URL` | `https://api-dataquery.jpmchase.com` | Host for both API surfaces |
+| `DATAQUERY_FILES_BASE_URL` | same as `BASE_URL` | Override only if file endpoints live on another host |
+| `DATAQUERY_OAUTH_TOKEN_URL` | `https://authe.jpmorgan.com/as/token.oauth2` | Token endpoint |
+| `DATAQUERY_OAUTH_AUD` | PROD audience | Set to the value provisioned for your client |
+| `DATAQUERY_MCP_URL` | PROD MCP endpoint | Endpoint used by [`mcp-connect`](#mcp-bridge-mcp-connect); `--url` overrides it |
 
 **HTTP / retry / rate limit**
 
@@ -548,6 +691,17 @@ async with DataQuery() as dq:
   if that directory was wiped, the next start has nothing to resume from. Use
   `manager.clear_event_id()` (or `dataquery download --watch --reset-event-id`)
   only when you intentionally want a clean slate.
+
+**MCP client shows the server as failed**
+
+- `The MCP bridge requires the 'mcp' extra` in the server log means `fastmcp`
+  is missing — `pip install "dataquery-sdk[mcp]"`, or use the `uvx` form.
+- MCP hosts usually launch the command with a minimal environment, so a
+  `.env` in your shell's working directory may not be visible. Put the
+  credentials in the server's `env` block, or run `dataquery mcp-connect
+  --save-credentials` once from a terminal where they do resolve.
+- Auth failures surface as `Could not obtain an OAuth token`; verify the same
+  credentials with `dataquery auth test` before debugging the bridge.
 
 ## Date formats
 

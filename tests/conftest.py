@@ -3,6 +3,7 @@ Pytest configuration and shared fixtures for DataQuery SDK tests.
 """
 
 import asyncio
+import os
 import shutil
 import tempfile
 from pathlib import Path
@@ -11,6 +12,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
+from dataquery.config import env as env_module
 from dataquery.core.client import DataQueryClient
 from dataquery.types.models import ClientConfig
 
@@ -50,6 +52,28 @@ def pytest_pyfunc_call(pyfuncitem):  # noqa: D401
                 asyncio.set_event_loop(None)
         return True
     return None
+
+
+@pytest.fixture(scope="session", autouse=True)
+def isolated_user_config_dir():
+    """Point the user-level config dir at a temp dir for the whole session.
+
+    Config resolution falls back to ``~/.dataquery/.env``; without this, a
+    developer who ran ``mcp-connect --save-credentials`` would see their real
+    credentials leak into tests that assert on defaults.
+    """
+    temp_dir = tempfile.mkdtemp(prefix="dataquery_test_home_")
+    previous = os.environ.get("DATAQUERY_CONFIG_DIR")
+    os.environ["DATAQUERY_CONFIG_DIR"] = temp_dir
+    # Also override the default: plenty of tests run under
+    # ``patch.dict(os.environ, {}, clear=True)``, which drops the env var.
+    with patch.object(env_module, "_USER_CONFIG_DIR_DEFAULT", temp_dir):
+        yield Path(temp_dir)
+    if previous is None:
+        os.environ.pop("DATAQUERY_CONFIG_DIR", None)
+    else:
+        os.environ["DATAQUERY_CONFIG_DIR"] = previous
+    shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 @pytest.fixture(scope="session")
