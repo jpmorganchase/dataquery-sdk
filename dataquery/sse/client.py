@@ -12,7 +12,7 @@ import aiohttp
 
 from .. import constants as C
 from ..transport.auth import OAuthManager
-from ..types.models import ClientConfig
+from ..types.models import ClientConfig, merge_headers
 from .event_store import SSEEventIdStore
 
 logger = logging.getLogger(__name__)
@@ -157,10 +157,10 @@ class SSEClient:
     async def _get_headers(self) -> dict:
         headers = await self.auth_manager.get_headers()
         headers["Accept"] = "text/event-stream"
-        headers.update(self.config.get_custom_headers())
         if self._last_event_id is not None:
             headers["Last-Event-ID"] = self._last_event_id
-        return headers
+        # Custom headers go underneath, so they can never replace the stream's own headers.
+        return merge_headers(self.config.get_custom_headers(), headers)
 
     def _base_delay(self) -> float:
         """The reconnect floor: the server-supplied ``retry:`` hint, otherwise the configured ``reconnect_delay``."""

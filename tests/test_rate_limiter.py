@@ -453,3 +453,49 @@ class TestRateLimiterEdgeCases:
             # Simulate some work
             await asyncio.sleep(0.01)
             return operation_id
+
+
+class TestAcquireDoesNotHoldLockWhileSleeping:
+    """The bucket lock must not be held across the wait in acquire()."""
+
+    @pytest.mark.asyncio
+    async def test_lock_is_free_while_a_waiter_sleeps(self):
+        rl = _make_rate_limiter(requests_per_minute=60, burst_capacity=1)
+        assert await rl.acquire(timeout=0.1)  # drain the bucket
+
+        waiter = asyncio.create_task(rl.acquire(timeout=5.0, operation="waiter"))
+        await asyncio.sleep(0.05)  # let the waiter reach its sleep
+        try:
+            assert not waiter.done()  # it really is waiting, not returning early
+            assert not rl._get_lock().locked()
+        finally:
+            waiter.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await waiter
+
+    @pytest.mark.asyncio
+    async def test_other_callers_are_not_blocked_by_a_waiter(self):
+        """shutdown() takes the same lock and must not queue behind a sleeping waiter."""
+        rl = _make_rate_limiter(requests_per_minute=60, burst_capacity=1)
+        assert await rl.acquire(timeout=0.1)
+
+        waiter = asyncio.create_task(rl.acquire(timeout=5.0, operation="waiter"))
+        await asyncio.sleep(0.05)
+
+        started = time.monotonic()
+        await asyncio.wait_for(rl.shutdown(), timeout=0.5)
+        assert time.monotonic() - started < 0.25
+
+        waiter.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await waiter
+
+    @pytest.mark.asyncio
+    async def test_concurrent_acquires_do_not_overspend_tokens(self):
+        """Releasing the lock around the sleep must not let two tasks take one token."""
+        rl = _make_rate_limiter(requests_per_minute=60, burst_capacity=3)
+
+        results = await asyncio.gather(*(rl.acquire(timeout=0.05) for _ in range(6)))
+
+        assert sum(1 for granted in results if granted) == 3
+        assert rl.state.tokens < 1.0

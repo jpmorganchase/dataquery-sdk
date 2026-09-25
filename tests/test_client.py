@@ -668,23 +668,6 @@ class TestDataQueryClientConnections:
             mock_session.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_connect_includes_x_user_agent_header(self):
-        """Session default headers carry X-User-Agent when configured."""
-        config = ClientConfig(base_url="https://api.example.com", x_user_agent="MyApp/1.0")
-        client = create_test_client(config)
-
-        with (
-            patch("aiohttp.ClientSession") as mock_session,
-            patch("aiohttp.TCPConnector"),
-        ):
-            mock_session.return_value = AsyncMock()
-
-            await client.connect()
-
-            headers = mock_session.call_args.kwargs["headers"]
-            assert headers["X-User-Agent"] == "MyApp/1.0"
-
-    @pytest.mark.asyncio
     async def test_connect_omits_x_user_agent_header_when_unset(self):
         """Session default headers omit X-User-Agent when not configured."""
         client = create_test_client()
@@ -699,6 +682,62 @@ class TestDataQueryClientConnections:
 
             headers = mock_session.call_args.kwargs["headers"]
             assert "X-User-Agent" not in headers
+
+    @pytest.mark.asyncio
+    async def test_connect_includes_custom_headers(self):
+        """Session default headers carry every custom header alongside the SDK defaults."""
+        config = ClientConfig(
+            base_url="https://api.example.com",
+            custom_headers={"X-User-Agent": "MyApp/1.0", "X-Team": "rates", "X-Request-Source": "batch"},
+        )
+        client = create_test_client(config)
+
+        with (
+            patch("aiohttp.ClientSession") as mock_session,
+            patch("aiohttp.TCPConnector"),
+        ):
+            mock_session.return_value = AsyncMock()
+
+            await client.connect()
+
+            headers = mock_session.call_args.kwargs["headers"]
+            assert headers["X-Team"] == "rates"
+            assert headers["X-Request-Source"] == "batch"
+            assert headers["X-User-Agent"] == "MyApp/1.0"
+            assert headers["User-Agent"].startswith("DATAQUERY-SDK/")
+
+    @pytest.mark.asyncio
+    async def test_connect_custom_header_replaces_sdk_default_case_insensitively(self):
+        """A custom user-agent replaces the SDK's instead of going out as a second one."""
+        config = ClientConfig(base_url="https://api.example.com", custom_headers={"user-agent": "MyApp/1.0"})
+        client = create_test_client(config)
+
+        with (
+            patch("aiohttp.ClientSession") as mock_session,
+            patch("aiohttp.TCPConnector"),
+        ):
+            mock_session.return_value = AsyncMock()
+
+            await client.connect()
+
+            headers = mock_session.call_args.kwargs["headers"]
+            assert {k: v for k, v in headers.items() if k.lower() == "user-agent"} == {"user-agent": "MyApp/1.0"}
+
+    @pytest.mark.asyncio
+    async def test_connect_rejects_invalid_custom_header_before_opening_connector(self):
+        config = ClientConfig(base_url="https://api.example.com", custom_headers={"Bad Name": "x"})
+        client = create_test_client(config)
+
+        with (
+            patch("aiohttp.ClientSession") as mock_session,
+            patch("aiohttp.TCPConnector") as mock_connector,
+        ):
+            with pytest.raises(ConfigurationError, match="Invalid HTTP header name"):
+                await client.connect()
+
+            mock_connector.assert_not_called()
+            mock_session.assert_not_called()
+            assert client.session is None
 
     @pytest.mark.asyncio
     async def test_connect_with_proxy(self):
