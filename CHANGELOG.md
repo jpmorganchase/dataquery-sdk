@@ -58,3 +58,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.2.6] - 2026-09-24
 - Bug fixes
 - MCP: capped the `mcp` extra to `fastmcp>=2.14,<4` — fastmcp 4.x repackages onto `httpx2` and drops `FastMCP.as_proxy()`, which broke `mcp-connect`; installs now resolve to the 3.x line
+## [Unreleased]
+- Headers: new per-client `ClientConfig.custom_headers` sends extra headers (e.g. `X-User-Agent`) on every DataQuery API request (JSON, file and SSE). SDK-owned headers (`Authorization`, the SSE `Accept` / `Last-Event-ID`) always win, and invalid headers raise `ConfigurationError` before the first request without echoing their values
+- Breaking: the `x_user_agent` option and the `DATAQUERY_X_USER_AGENT` env var are removed — pass `custom_headers={"X-User-Agent": ...}` on `ClientConfig` or as a `DataQuery(...)` kwarg, so each client in a process can identify itself differently

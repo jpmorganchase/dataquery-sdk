@@ -50,6 +50,7 @@ DataQuery SDK provides several model classes for configuration and data handling
 | `max_retries` | `int` | `3` | `DATAQUERY_MAX_RETRIES` | Maximum number of retries |
 | `circuit_breaker_threshold` | `int` | `5` | `DATAQUERY_CIRCUIT_BREAKER_THRESHOLD` | Number of failures before circuit breaker opens |
 | `log_level` | `str` | `"INFO"` | `DATAQUERY_LOG_LEVEL` | Logging level |
+| `custom_headers` | `Dict[str, str]` | `{}` | — *(per client only)* | Extra headers sent on every API request, e.g. `X-User-Agent` |
 
 !!! success "Simplified Configuration"
     With pre-configured defaults, you only need to provide `client_id` and `client_secret`!

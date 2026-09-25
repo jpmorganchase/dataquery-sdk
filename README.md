@@ -567,6 +567,43 @@ async with DataQuery(client_id="...", client_secret="...", timeout=60.0) as dq:
     ...
 ```
 
+### Custom request headers
+
+Headers are configured per client, on `ClientConfig` or as `DataQuery(...)`
+kwargs, and are never read from the environment, so several clients in one
+process can identify themselves differently. They are sent on every DataQuery
+API request (JSON, file and SSE), but not on the OAuth token request.
+
+```python
+config = ClientConfig(
+    client_id="...",
+    client_secret="...",
+    custom_headers={
+        "X-User-Agent": "RiskEngine/2.1",
+        "X-Team": "rates",
+        "X-Request-Source": "nightly-batch",
+    },
+)
+
+async with DataQuery(config) as dq:
+    ...
+
+# Or as kwargs:
+async with DataQuery(custom_headers={"X-User-Agent": "RiskEngine/2.1"}) as dq:
+    ...
+```
+
+- A custom header replaces an SDK default of the same name (e.g. `User-Agent`),
+  but never `Authorization`, which comes from `client_id`/`client_secret` or
+  `bearer_token`, and never the SSE stream's `Accept` / `Last-Event-ID`.
+- Invalid headers (a bad name, CR/LF in a value, a name repeated in another
+  case, `Authorization`) raise `ConfigurationError` before the first request.
+  The error names the header but never shows its value.
+- Kwarg overrides are written onto the `ClientConfig` you pass in, so give each
+  client its own config instead of sharing one.
+- The `x_user_agent` option and `DATAQUERY_X_USER_AGENT` are gone; send
+  `X-User-Agent` through `custom_headers` like any other header.
+
 ## Logging
 
 The SDK logs through [structlog](https://www.structlog.org/) and emits

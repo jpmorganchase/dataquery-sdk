@@ -106,24 +106,33 @@ async def test_get_headers_omits_last_event_id_when_unset():
 
 
 @pytest.mark.asyncio
-async def test_get_headers_includes_x_user_agent_when_configured():
-    config = ClientConfig(
-        base_url="https://api.example.com",
-        context_path="/api/v2",
-        oauth_enabled=False,
-        bearer_token="T",
-        x_user_agent="MyApp/1.0",
-    )
-    client = SSEClient(config=config, auth_manager=_make_auth_manager())
-    headers = await client._get_headers()
-    assert headers["X-User-Agent"] == "MyApp/1.0"
-
-
-@pytest.mark.asyncio
 async def test_get_headers_omits_x_user_agent_when_unset():
     client = SSEClient(config=_make_config(), auth_manager=_make_auth_manager())
     headers = await client._get_headers()
     assert "X-User-Agent" not in headers
+
+
+@pytest.mark.asyncio
+async def test_get_headers_includes_custom_headers():
+    config = _make_config()
+    config.custom_headers = {"X-User-Agent": "MyApp/1.0", "X-Team": "rates"}
+    client = SSEClient(config=config, auth_manager=_make_auth_manager())
+    headers = await client._get_headers()
+    assert headers["X-User-Agent"] == "MyApp/1.0"
+    assert headers["X-Team"] == "rates"
+    assert headers["Accept"] == "text/event-stream"
+
+
+@pytest.mark.asyncio
+async def test_custom_headers_cannot_replace_stream_headers():
+    """Accept / Last-Event-ID stay the stream's own, whatever case the custom entry uses."""
+    config = _make_config()
+    config.custom_headers = {"accept": "application/json", "last-event-id": "0"}
+    client = SSEClient(config=config, auth_manager=_make_auth_manager())
+    client._last_event_id = "42"
+    headers = await client._get_headers()
+    stream_headers = {k: v for k, v in headers.items() if k.lower() in ("accept", "last-event-id")}
+    assert stream_headers == {"Accept": "text/event-stream", "Last-Event-ID": "42"}
 
 
 # ---------------------------------------------------------------------------

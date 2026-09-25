@@ -52,6 +52,7 @@ from ..types.models import (
     GroupList,
     InstrumentsResponse,
     TimeSeriesResponse,
+    merge_headers,
 )
 from ..utils import (
     format_file_size,
@@ -260,6 +261,8 @@ class DataQueryClient(
     async def connect(self):
         """Initialize HTTP session with optimized configuration."""
         if self.session is None:
+            # Resolved first: a bad custom header fails here, before any connector is opened.
+            custom_headers = self.config.get_custom_headers()
             timeout = aiohttp.ClientTimeout(total=self.config.timeout, connect=300.0, sock_read=self.config.timeout)
 
             connector = aiohttp.TCPConnector(
@@ -286,12 +289,16 @@ class DataQueryClient(
             session_kwargs = {
                 "timeout": timeout,
                 "connector": connector,
-                "headers": {
-                    "User-Agent": f"DATAQUERY-SDK/{version}",
-                    "Connection": "keep-alive",
-                    "Accept-Encoding": "gzip, deflate",
-                    **self.config.get_custom_headers(),
-                },
+                # Custom headers layer over these defaults, so a client may replace e.g. User-Agent;
+                # per-request headers (Authorization, Range) still win over both.
+                "headers": merge_headers(
+                    {
+                        "User-Agent": f"DATAQUERY-SDK/{version}",
+                        "Connection": "keep-alive",
+                        "Accept-Encoding": "gzip, deflate",
+                    },
+                    custom_headers,
+                ),
                 "auto_decompress": True,
                 "raise_for_status": False,
             }

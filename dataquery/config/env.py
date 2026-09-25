@@ -21,6 +21,13 @@ _DEFAULT_OVERRIDES: Dict[str, str] = {
     "TOKEN_STORAGE_DIR": ".tokens",
 }
 
+# Per-client settings: set on ClientConfig (or passed to DataQuery), never read
+# from the environment, so clients in one process can send different headers.
+_CLIENT_ONLY_FIELDS = frozenset({"custom_headers"})
+
+# ClientConfig fields that map to a DATAQUERY_* env var.
+_ENV_FIELDS = {name: field for name, field in ClientConfig.model_fields.items() if name not in _CLIENT_ONLY_FIELDS}
+
 _SENSITIVE_FIELDS = frozenset(
     {
         "client_id",
@@ -80,7 +87,7 @@ def _unwrap_optional(annotation: Any) -> Any:
 def _build_defaults() -> Dict[str, Optional[str]]:
     """Compute the ``EnvConfig.DEFAULTS`` table from the model."""
     defaults: Dict[str, Optional[str]] = {}
-    for field_name, field in ClientConfig.model_fields.items():
+    for field_name, field in _ENV_FIELDS.items():
         env_key = _env_name_for(field_name)
         if field.default is PydanticUndefined or field.default is None:
             defaults[env_key] = None
@@ -244,7 +251,7 @@ class EnvConfig:
             raise ConfigurationError(f"{cls.PREFIX}BASE_URL environment variable is required")
 
         kwargs: Dict[str, Any] = {}
-        for field_name, field in ClientConfig.model_fields.items():
+        for field_name, field in _ENV_FIELDS.items():
             kwargs[field_name] = cls._read_field(field_name, field)
 
         if kwargs.get("oauth_enabled") and not kwargs.get("oauth_token_url"):
@@ -352,6 +359,10 @@ class EnvConfig:
             errors.append("REQUESTS_PER_MINUTE must be positive")
         if config.burst_capacity <= 0:
             errors.append("BURST_CAPACITY must be positive")
+        try:
+            config.get_custom_headers()
+        except ConfigurationError as exc:
+            errors.append(str(exc))
 
         if errors:
             raise ConfigurationError(f"Configuration validation failed: {'; '.join(errors)}")
@@ -370,7 +381,7 @@ class EnvConfig:
             "# Defaults shown are the values used when the variable is unset.",
             "",
         ]
-        for field_name, field in ClientConfig.model_fields.items():
+        for field_name, field in _ENV_FIELDS.items():
             env_key = _env_name_for(field_name)
             default = cls.DEFAULTS.get(env_key)
             description = (field.description or "").strip()

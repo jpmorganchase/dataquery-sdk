@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
+from dataquery.types.exceptions import ConfigurationError
 from dataquery.types.models import (
     AuthenticationErrorResponse,
     Available,
@@ -19,6 +20,7 @@ from dataquery.types.models import (
     Information,
     TokenStatus,
     Unavailable,
+    merge_headers,
 )
 
 
@@ -35,15 +37,70 @@ class TestClientConfigCoverage:
         config = ClientConfig(base_url="https://api.example.com", context_path="")
         assert config.api_base_url == "https://api.example.com"
 
-    def test_get_custom_headers_with_x_user_agent(self):
-        """X-User-Agent header is returned when configured."""
-        config = ClientConfig(base_url="https://api.example.com", x_user_agent="MyApp/1.0")
-        assert config.get_custom_headers() == {"X-User-Agent": "MyApp/1.0"}
+    def test_get_custom_headers_returns_configured_headers(self):
+        """X-User-Agent is an ordinary custom header."""
+        config = ClientConfig(
+            base_url="https://api.example.com",
+            custom_headers={"X-User-Agent": "MyApp/1.0", "X-Team": "rates"},
+        )
+        assert config.get_custom_headers() == {"X-User-Agent": "MyApp/1.0", "X-Team": "rates"}
 
-    def test_get_custom_headers_without_x_user_agent(self):
-        """No custom headers are returned when x_user_agent is unset."""
+    def test_get_custom_headers_empty_by_default(self):
         config = ClientConfig(base_url="https://api.example.com")
         assert config.get_custom_headers() == {}
+
+    def test_get_custom_headers_returns_a_copy(self):
+        config = ClientConfig(base_url="https://api.example.com", custom_headers={"X-Team": "rates"})
+        config.get_custom_headers()["X-Team"] = "changed"
+        assert config.custom_headers == {"X-Team": "rates"}
+
+    def test_custom_headers_are_per_config(self):
+        """Headers belong to one ClientConfig; another config never sees them."""
+        a = ClientConfig(base_url="https://api.example.com", custom_headers={"X-User-Agent": "AppA/1.0"})
+        b = ClientConfig(base_url="https://api.example.com", custom_headers={"X-Team": "fx"})
+        assert a.get_custom_headers() == {"X-User-Agent": "AppA/1.0"}
+        assert b.get_custom_headers() == {"X-Team": "fx"}
+
+    @pytest.mark.parametrize("name", ["Bad Name", "X-Team:", "", "Émoji", "X\nInjected"])
+    def test_invalid_header_name_rejected(self, name):
+        config = ClientConfig(base_url="https://api.example.com", custom_headers={name: "value"})
+        with pytest.raises(ConfigurationError, match="Invalid HTTP header name"):
+            config.get_custom_headers()
+
+    @pytest.mark.parametrize("value", ["s3cret\r\nX-Evil: 1", "s3cret\n", "s3cret\0"])
+    def test_header_value_with_control_characters_rejected_without_echo(self, value):
+        config = ClientConfig(base_url="https://api.example.com", custom_headers={"X-Api-Key": value})
+        with pytest.raises(ConfigurationError, match="'X-Api-Key' must have a string value") as exc_info:
+            config.get_custom_headers()
+        assert "s3cret" not in str(exc_info.value)
+
+    def test_non_string_value_assigned_after_construction_rejected(self):
+        """Assignment skips pydantic validation, so the check runs where headers are used."""
+        config = ClientConfig(base_url="https://api.example.com")
+        config.custom_headers = {"X-Retry": 3}
+        with pytest.raises(ConfigurationError, match="'X-Retry' must have a string value"):
+            config.get_custom_headers()
+
+    @pytest.mark.parametrize("name", ["Authorization", "authorization"])
+    def test_authorization_header_rejected(self, name):
+        config = ClientConfig(base_url="https://api.example.com", custom_headers={name: "Bearer abc"})
+        with pytest.raises(ConfigurationError, match="set by the SDK") as exc_info:
+            config.get_custom_headers()
+        assert "Bearer abc" not in str(exc_info.value)
+
+    def test_case_insensitive_duplicate_rejected(self):
+        config = ClientConfig(base_url="https://api.example.com", custom_headers={"X-Team": "a", "x-team": "b"})
+        with pytest.raises(ConfigurationError, match="appears more than once"):
+            config.get_custom_headers()
+
+
+class TestMergeHeaders:
+    def test_later_layer_wins_case_insensitively(self):
+        merged = merge_headers({"User-Agent": "sdk", "Connection": "keep-alive"}, {"user-agent": "MyApp/1.0"})
+        assert merged == {"user-agent": "MyApp/1.0", "Connection": "keep-alive"}
+
+    def test_no_layers_gives_empty_dict(self):
+        assert merge_headers() == {}
 
 
 class TestEnumCoverage:

@@ -2,15 +2,23 @@
 
 import asyncio
 import base64
+import re
 import time
 from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Union, cast
+from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple, Union, cast
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from .. import constants as C
+from .exceptions import ConfigurationError
+
+# RFC 9110 field-name token.
+_HEADER_NAME_RE = re.compile(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+")
+
+# Sent by the SDK on every request, so a custom value would never reach the server.
+_SDK_OWNED_HEADERS = frozenset({"authorization"})
 
 
 def _reveal_secret(value: Union[str, SecretStr, None]) -> Optional[str]:
@@ -20,6 +28,19 @@ def _reveal_secret(value: Union[str, SecretStr, None]) -> Optional[str]:
     if isinstance(value, SecretStr):
         return value.get_secret_value()
     return value
+
+
+def merge_headers(*layers: Mapping[str, str]) -> Dict[str, str]:
+    """Merge header mappings left to right, later layers winning.
+
+    Names compare case-insensitively, as in HTTP, so ``user-agent`` replaces
+    ``User-Agent`` instead of both going on the wire.
+    """
+    merged: Dict[str, Tuple[str, str]] = {}
+    for layer in layers:
+        for name, value in layer.items():
+            merged[name.lower()] = (name, value)
+    return dict(merged.values())
 
 
 class DownloadStatus(str, Enum):
@@ -51,9 +72,10 @@ class ClientConfig(BaseModel):
     )
     context_path: Optional[str] = Field(default="/research/dataquery-authe/api/v2", description="API context path")
     api_version: str = Field(default="2.0.0", description="API version")
-    x_user_agent: Optional[str] = Field(
-        default=None,
-        description="Optional value for the X-User-Agent header sent on each API request",
+    custom_headers: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Extra headers sent on every API request (e.g. X-User-Agent); "
+        "set per client, never read from the environment",
     )
     files_base_url: Optional[str] = Field(
         default="https://api-dataquery.jpmchase.com",
@@ -251,11 +273,28 @@ class ClientConfig(BaseModel):
         return kwargs
 
     def get_custom_headers(self) -> Dict[str, str]:
-        """Return extra headers to attach to every API request (e.g. X-User-Agent)."""
-        headers: Dict[str, str] = {}
-        if self.x_user_agent:
-            headers["X-User-Agent"] = self.x_user_agent
-        return headers
+        """Return a validated copy of ``custom_headers``, the extra headers sent on every API request.
+
+        Raises :class:`ConfigurationError` for a header that cannot be sent as given. The message
+        names the header but never echoes its value, which may be a secret.
+        """
+        seen: set[str] = set()
+        for name, value in self.custom_headers.items():
+            if not isinstance(name, str) or not _HEADER_NAME_RE.fullmatch(name):
+                raise ConfigurationError(f"Invalid HTTP header name: {name!r}")
+            if not isinstance(value, str) or any(ch in value for ch in "\r\n\0"):
+                raise ConfigurationError(f"Header {name!r} must have a string value without CR, LF or NUL characters")
+            key = name.lower()
+            if key in _SDK_OWNED_HEADERS:
+                raise ConfigurationError(
+                    f"Header {name!r} is set by the SDK; configure client_id/client_secret or bearer_token instead"
+                )
+            if key in seen:
+                raise ConfigurationError(
+                    f"Header {name!r} appears more than once in custom_headers (names are case-insensitive)"
+                )
+            seen.add(key)
+        return dict(self.custom_headers)
 
     @property
     def api_base_url(self) -> str:

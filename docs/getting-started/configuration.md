@@ -206,6 +206,29 @@ config = ClientConfig(
 )
 ```
 
+### Custom Request Headers
+
+Extra headers are set per client and are never read from environment variables,
+so each client in a process can send its own. They go on every DataQuery API
+request (JSON, file and SSE), but not on the OAuth token request.
+
+```python
+config = ClientConfig(
+    client_id="your_client_id",
+    client_secret="your_client_secret",
+    custom_headers={"X-User-Agent": "RiskEngine/2.1", "X-Team": "rates"},
+)
+
+# Equivalent kwargs form
+async with DataQuery(custom_headers={"X-User-Agent": "RiskEngine/2.1", "X-Team": "rates"}) as dq:
+    pass
+```
+
+A custom header may replace an SDK default such as `User-Agent`, but never
+`Authorization` (configure credentials instead) or the SSE stream's `Accept` /
+`Last-Event-ID`. Invalid headers raise `ConfigurationError` before the first
+request, without echoing the header value.
+
 ## Advanced Configuration
 
 ### Connection Settings

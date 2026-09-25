@@ -156,6 +156,28 @@ def test_overrides_applied_basic():
         assert dq.client_config.max_retries == 5
 
 
+def test_header_overrides_applied_per_instance():
+    """Header kwargs land on each instance's own config."""
+    a = DataQuery(
+        ClientConfig(base_url="https://api.example.com", oauth_enabled=False, bearer_token="t"),
+        custom_headers={"X-User-Agent": "AppA/1.0"},
+    )
+    b = DataQuery(
+        ClientConfig(base_url="https://api.example.com", oauth_enabled=False, bearer_token="t"),
+        custom_headers={"X-Team": "fx"},
+    )
+    assert a.client_config.get_custom_headers() == {"X-User-Agent": "AppA/1.0"}
+    assert b.client_config.get_custom_headers() == {"X-Team": "fx"}
+
+
+def test_invalid_header_override_raises_at_init():
+    """Kwargs skip pydantic validation, so bad headers must still fail before the first request."""
+    cfg = ClientConfig(base_url="https://api.example.com", oauth_enabled=False, bearer_token="t")
+    with pytest.raises(ConfigurationError, match="set by the SDK") as exc_info:
+        DataQuery(cfg, custom_headers={"Authorization": "Bearer abc"})
+    assert "Bearer abc" not in str(exc_info.value)
+
+
 @pytest.mark.asyncio
 async def test_async_context_manager_calls_connect_and_close():
     dq = DataQuery(

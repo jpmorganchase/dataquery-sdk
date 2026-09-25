@@ -170,28 +170,18 @@ class TestEnvConfig:
             config = EnvConfig.create_client_config()
             assert config.grant_type == "password"
 
-    def test_env_config_create_client_config_x_user_agent(self):
-        """DATAQUERY_X_USER_AGENT populates the x_user_agent config field."""
+    def test_env_config_create_client_config_ignores_header_env_vars(self):
+        """Headers are per-client config: the environment never supplies them."""
         with patch.dict(
             os.environ,
             {
                 "DATAQUERY_BASE_URL": "https://api.example.com",
                 "DATAQUERY_X_USER_AGENT": "MyApp/1.0",
+                "DATAQUERY_CUSTOM_HEADERS": '{"X-Team": "rates"}',
             },
         ):
             config = EnvConfig.create_client_config()
-            assert config.x_user_agent == "MyApp/1.0"
-            assert config.get_custom_headers() == {"X-User-Agent": "MyApp/1.0"}
-
-    def test_env_config_create_client_config_x_user_agent_default(self):
-        """x_user_agent defaults to None when the env var is unset."""
-        with patch.dict(
-            os.environ,
-            {"DATAQUERY_BASE_URL": "https://api.example.com"},
-            clear=True,
-        ):
-            config = EnvConfig.create_client_config()
-            assert config.x_user_agent is None
+            assert config.custom_headers == {}
             assert config.get_custom_headers() == {}
 
     def test_env_config_get_download_options(self):
@@ -359,6 +349,19 @@ class TestEnvConfig:
         with pytest.raises(ConfigurationError, match="POOL_CONNECTIONS must be positive"):
             EnvConfig.validate_config(config)
 
+    def test_env_config_validate_config_invalid_custom_header(self):
+        """A header that cannot be sent fails validation without echoing its value."""
+        config = ClientConfig(
+            base_url="https://api.example.com",
+            oauth_enabled=False,
+            bearer_token="test_token",
+            custom_headers={"X-Api-Key": "s3cret\n"},
+        )
+
+        with pytest.raises(ConfigurationError, match="'X-Api-Key' must have a string value") as exc_info:
+            EnvConfig.validate_config(config)
+        assert "s3cret" not in str(exc_info.value)
+
     def test_env_config_validate_config_invalid_pool_maxsize(self):
         """Test validate_config with invalid pool maxsize."""
         config = ClientConfig(
@@ -503,11 +506,21 @@ class TestEnvConfigSingleSourceOfTruth:
     parallel maintenance required.
     """
 
-    def test_defaults_table_covers_every_model_field(self):
-        from dataquery.config.env import _env_name_for
+    def test_client_only_fields_are_the_header_settings(self):
+        """Only the per-client header settings are kept out of the environment."""
+        from dataquery.config.env import _CLIENT_ONLY_FIELDS
+
+        assert _CLIENT_ONLY_FIELDS == {"custom_headers"}
+        assert _CLIENT_ONLY_FIELDS <= set(ClientConfig.model_fields)
+
+    def test_defaults_table_covers_every_env_backed_field(self):
+        from dataquery.config.env import _CLIENT_ONLY_FIELDS, _env_name_for
 
         for field_name in ClientConfig.model_fields:
             env_key = _env_name_for(field_name)
+            if field_name in _CLIENT_ONLY_FIELDS:
+                assert env_key not in EnvConfig.DEFAULTS, f"Client-only field '{field_name}' leaked into DEFAULTS"
+                continue
             assert env_key in EnvConfig.DEFAULTS, (
                 f"Field '{field_name}' missing from EnvConfig.DEFAULTS — the model and the env table have drifted."
             )
@@ -517,9 +530,11 @@ class TestEnvConfigSingleSourceOfTruth:
         (modulo lowercase booleans and the explicit override list)."""
         from pydantic_core import PydanticUndefined
 
-        from dataquery.config.env import _DEFAULT_OVERRIDES, _env_name_for
+        from dataquery.config.env import _CLIENT_ONLY_FIELDS, _DEFAULT_OVERRIDES, _env_name_for
 
         for field_name, field in ClientConfig.model_fields.items():
+            if field_name in _CLIENT_ONLY_FIELDS:
+                continue  # never read from the environment
             env_key = _env_name_for(field_name)
             if env_key in _DEFAULT_OVERRIDES:
                 continue  # explicit override — see _DEFAULT_OVERRIDES docstring
@@ -531,16 +546,27 @@ class TestEnvConfigSingleSourceOfTruth:
             else:
                 assert actual == str(field.default)
 
-    def test_env_template_includes_every_field(self, tmp_path):
-        """Auto-generated template must mention every model field once."""
-        from dataquery.config.env import _env_name_for
+    def test_env_template_includes_every_env_backed_field(self, tmp_path):
+        """Auto-generated template must mention every env-backed field, and no client-only one."""
+        from dataquery.config.env import _CLIENT_ONLY_FIELDS, _env_name_for
 
         template = tmp_path / ".env.template"
         EnvConfig.create_env_template(template)
         content = template.read_text()
         for field_name in ClientConfig.model_fields:
             env_key = _env_name_for(field_name)
-            assert f"DATAQUERY_{env_key}=" in content, f"Missing {env_key} in template"
+            if field_name in _CLIENT_ONLY_FIELDS:
+                assert f"DATAQUERY_{env_key}=" not in content, f"Client-only {env_key} in template"
+            else:
+                assert f"DATAQUERY_{env_key}=" in content, f"Missing {env_key} in template"
+
+    def test_handwritten_env_template_omits_header_settings(self, tmp_path):
+        """The ``dataquery config template`` output no longer advertises header env vars."""
+        from dataquery.utils import create_env_template
+
+        content = create_env_template(tmp_path / ".env.template").read_text()
+        assert "DATAQUERY_X_USER_AGENT" not in content
+        assert "DATAQUERY_CUSTOM_HEADERS" not in content
 
 
 class TestUserEnvFile:
