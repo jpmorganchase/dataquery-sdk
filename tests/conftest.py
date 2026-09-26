@@ -698,3 +698,15 @@ def async_session_factory():
         return session
 
     return create_session
+
+
+@pytest.fixture
+def mcp_app_dirs(tmp_path, monkeypatch):
+    """(home, app-data) under tmp_path: every MCP app config the installer knows resolves there."""
+    from dataquery import mcp_install
+
+    home = tmp_path / "home"
+    app_data = tmp_path / "appdata"
+    monkeypatch.setattr(Path, "home", lambda: home)
+    monkeypatch.setattr(mcp_install, "_app_data_dir", lambda: app_data)
+    return home, app_data

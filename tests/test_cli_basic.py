@@ -1,12 +1,14 @@
 import argparse
 import json
 import os
+import tomllib
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from dataquery import cli
+from dataquery import cli, mcp_install
 
 
 def _parser():
@@ -416,3 +418,188 @@ def test_save_mcp_credentials_survives_write_failure(mcp_env, capsys):
     err = capsys.readouterr().err
     assert "could not write credentials" in err
     assert "read-only fs" in err
+
+
+# ---------------------------------------------------------------------------
+# mcp-install
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def install_env(mcp_env, monkeypatch):
+    """mcp_env, with the mcp extra reported present and stdin not a terminal."""
+    monkeypatch.setattr(cli, "_mcp_extra_installed", lambda: True)
+    monkeypatch.setattr(cli.sys, "stdin", SimpleNamespace(isatty=lambda: False))
+    return mcp_env
+
+
+def _install_args(*extra):
+    return _parser().parse_args(["mcp-install", *extra])
+
+
+def test_mcp_install_saves_credentials_and_writes_a_secret_free_entry(install_env, tmp_path, capsys):
+    config_file = tmp_path / "mcp.json"
+    rc = cli.cmd_mcp_install(
+        _install_args("--config-file", str(config_file), "--client-id", "cid", "--client-secret", "sec/ret==")
+    )
+
+    assert rc == 0
+    saved = install_env.read_text()
+    assert "DATAQUERY_CLIENT_ID=cid" in saved
+    assert "sec/ret==" in saved
+    assert install_env.stat().st_mode & 0o077 == 0
+    entry = json.loads(config_file.read_text())["mcpServers"]["dataquery"]
+    assert entry["args"][-1] == "mcp-connect"
+    assert "env" not in entry
+    assert "sec/ret==" not in config_file.read_text()
+    out = capsys.readouterr().out
+    assert f"Added 'dataquery' in {config_file}" in out
+    assert "sec/ret==" not in out
+
+
+def test_mcp_install_defaults_to_claude_desktop(install_env, mcp_app_dirs, capsys):
+    _, app_data = mcp_app_dirs
+
+    rc = cli.cmd_mcp_install(_install_args("--client-id", "cid", "--client-secret", "sec"))
+
+    assert rc == 0
+    desktop = app_data / "Claude" / "claude_desktop_config.json"
+    assert "dataquery" in json.loads(desktop.read_text())["mcpServers"]
+    assert "Restart Claude Desktop" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "app, servers_key, label",
+    [("cursor", "mcpServers", "Cursor"), ("vscode", "servers", "VS Code")],
+)
+def test_mcp_install_json_apps(install_env, mcp_app_dirs, capsys, app, servers_key, label):
+    rc = cli.cmd_mcp_install(_install_args("--app", app, "--client-id", "cid", "--client-secret", "sec"))
+
+    assert rc == 0
+    path = mcp_install.JSON_APPS[app].config_path()
+    entry = json.loads(path.read_text())[servers_key]["dataquery"]
+    assert entry["type"] == "stdio"
+    assert entry["args"][-1] == "mcp-connect"
+    assert f"Restart {label}" in capsys.readouterr().out
+
+
+def test_mcp_install_chatgpt_writes_the_shared_codex_config(install_env, mcp_app_dirs, capsys):
+    home, _ = mcp_app_dirs
+
+    rc = cli.cmd_mcp_install(_install_args("--app", "chatgpt", "--client-id", "cid", "--client-secret", "s3cr3t-value"))
+
+    assert rc == 0
+    text = (home / ".codex" / "config.toml").read_text()
+    assert tomllib.loads(text)["mcp_servers"]["dataquery"]["args"][-1] == "mcp-connect"
+    assert "s3cr3t-value" not in text
+    assert "s3cr3t-value" in install_env.read_text()
+    assert "ChatGPT desktop app" in capsys.readouterr().out
+
+
+def test_mcp_install_rejects_an_unsafe_server_name(capsys):
+    with pytest.raises(SystemExit):
+        _install_args("--name", "data query")
+    assert "invalid server name" in capsys.readouterr().err
+
+
+def test_mcp_install_every_app_is_handled():
+    assert set(cli.MCP_INSTALL_APPS) == set(mcp_install.JSON_APPS) | {"claude-code", "chatgpt"}
+
+
+def test_mcp_install_claude_code(install_env, monkeypatch, capsys):
+    calls = []
+    monkeypatch.setattr(mcp_install, "add_to_claude_code", lambda name, entry: calls.append((name, entry)))
+
+    rc = cli.cmd_mcp_install(
+        _install_args("--app", "claude-code", "--name", "dq-uat", "--url", "https://uat/mcp", "--bearer-token", "tok")
+    )
+
+    assert rc == 0
+    [(name, entry)] = calls
+    assert name == "dq-uat"
+    assert entry["args"][-3:] == ["mcp-connect", "--url", "https://uat/mcp"]
+    assert "DATAQUERY_BEARER_TOKEN=tok" in install_env.read_text()
+    assert "claude mcp list" in capsys.readouterr().out
+
+
+def test_mcp_install_prompts_for_missing_credentials(install_env, tmp_path, monkeypatch):
+    monkeypatch.setattr(cli.sys, "stdin", SimpleNamespace(isatty=lambda: True))
+    monkeypatch.setattr("builtins.input", lambda prompt: "cid")
+    secret_prompts = []
+    monkeypatch.setattr(cli.getpass, "getpass", lambda prompt: secret_prompts.append(prompt) or "sec")
+
+    rc = cli.cmd_mcp_install(_install_args("--config-file", str(tmp_path / "mcp.json")))
+
+    assert rc == 0
+    assert secret_prompts == ["DataQuery client secret: "]  # read without echo
+    assert "DATAQUERY_CLIENT_SECRET=sec" in install_env.read_text()
+
+
+def test_mcp_install_prompts_only_for_what_is_missing(install_env, tmp_path, monkeypatch):
+    monkeypatch.setattr(cli.sys, "stdin", SimpleNamespace(isatty=lambda: True))
+    monkeypatch.setattr("builtins.input", lambda prompt: pytest.fail("client ID was already given"))
+    monkeypatch.setattr(cli.getpass, "getpass", lambda prompt: "sec")
+
+    rc = cli.cmd_mcp_install(_install_args("--config-file", str(tmp_path / "mcp.json"), "--client-id", "cid"))
+
+    assert rc == 0
+
+
+def test_mcp_install_rerun_reuses_saved_credentials(install_env, tmp_path, monkeypatch):
+    """Re-running refreshes the entry without asking again."""
+    from dataquery.config import EnvConfig
+
+    EnvConfig.save_user_env({"CLIENT_ID": "cid", "CLIENT_SECRET": "sec"})
+    monkeypatch.setattr(cli.sys, "stdin", SimpleNamespace(isatty=lambda: True))
+    monkeypatch.setattr("builtins.input", lambda prompt: pytest.fail("prompted"))
+    monkeypatch.setattr(cli.getpass, "getpass", lambda prompt: pytest.fail("prompted"))
+
+    rc = cli.cmd_mcp_install(_install_args("--config-file", str(tmp_path / "mcp.json")))
+
+    assert rc == 0
+
+
+def test_mcp_install_without_credentials_off_a_terminal_fails(install_env, tmp_path, capsys):
+    config_file = tmp_path / "mcp.json"
+    rc = cli.cmd_mcp_install(_install_args("--config-file", str(config_file), "--client-id", "cid"))
+
+    assert rc == 1
+    assert "No credentials" in capsys.readouterr().err
+    assert not config_file.exists()
+    assert not install_env.exists()
+
+
+def test_mcp_install_requires_the_mcp_extra(install_env, tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(cli, "_mcp_extra_installed", lambda: False)
+    config_file = tmp_path / "mcp.json"
+    rc = cli.cmd_mcp_install(
+        _install_args("--config-file", str(config_file), "--client-id", "cid", "--client-secret", "sec")
+    )
+
+    assert rc == 1
+    assert "pip install 'dataquery-sdk[mcp]'" in capsys.readouterr().err
+    assert not config_file.exists()
+    assert not install_env.exists()
+
+
+def test_mcp_install_reports_an_unusable_config_file(install_env, tmp_path, capsys):
+    config_file = tmp_path / "mcp.json"
+    config_file.write_text("{not json")
+    rc = cli.cmd_mcp_install(
+        _install_args("--config-file", str(config_file), "--client-id", "cid", "--client-secret", "sec")
+    )
+
+    assert rc == 1
+    assert "not valid JSON" in capsys.readouterr().err
+    assert config_file.read_text() == "{not json"
+
+
+def test_mcp_install_app_and_config_file_are_exclusive():
+    with pytest.raises(SystemExit):
+        _install_args("--app", "claude-code", "--config-file", "mcp.json")
+
+
+def test_main_dispatches_mcp_install():
+    with patch.object(cli, "cmd_mcp_install", return_value=0) as cmd, patch("sys.argv", ["dataquery", "mcp-install"]):
+        assert cli.main() == 0
+    cmd.assert_called_once()

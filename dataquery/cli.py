@@ -2,6 +2,8 @@
 
 import argparse
 import asyncio
+import getpass
+import importlib.util
 import json
 import os
 import sys
@@ -137,6 +139,44 @@ def _save_mcp_credentials(keys: List[str]) -> None:
         return
     saved = ", ".join(f"{EnvConfig.PREFIX}{key}" for key in keys)
     print(f"Saved {saved} to {env_file} (owner-only)", file=sys.stderr)
+
+
+def _has_mcp_credentials(keys: List[str]) -> bool:
+    """A bearer token, or a complete OAuth client ID + secret pair."""
+    return "BEARER_TOKEN" in keys or {"CLIENT_ID", "CLIENT_SECRET"} <= set(keys)
+
+
+def _mcp_extra_installed() -> bool:
+    return importlib.util.find_spec("fastmcp") is not None
+
+
+# `mcp-install --app` targets: the JSON-config apps, plus Claude Code (its CLI) and ChatGPT (the Codex TOML).
+MCP_INSTALL_APPS = ("claude-desktop", "claude-code", "chatgpt", "cursor", "vscode")
+
+
+def _mcp_server_name(value: str) -> str:
+    from dataquery.mcp_install import SERVER_NAME_RE
+
+    if not SERVER_NAME_RE.fullmatch(value):
+        raise argparse.ArgumentTypeError(f"invalid server name {value!r}: use letters, digits, '-' and '_' only")
+    return value
+
+
+def _prompt_for_mcp_credentials() -> None:
+    """On a terminal, ask for whichever OAuth client credential is still missing (the secret unechoed)."""
+    from dataquery.config import EnvConfig
+
+    if not sys.stdin.isatty():
+        return
+    for key, label, ask in (
+        ("CLIENT_ID", "DataQuery client ID: ", input),
+        ("CLIENT_SECRET", "DataQuery client secret: ", getpass.getpass),
+    ):
+        env_key = f"{EnvConfig.PREFIX}{key}"
+        if not os.environ.get(env_key):
+            value = ask(label).strip()
+            if value:
+                os.environ[env_key] = value
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -389,6 +429,47 @@ def create_parser() -> argparse.ArgumentParser:
         help="Also save the resolved credentials to ~/.dataquery/.env (owner-only) so later SDK use "
         "needs no environment variables",
     )
+
+    p_install = subparsers.add_parser(
+        "mcp-install",
+        help="One-time MCP setup: save your credentials and add the DataQuery server to your MCP app",
+        description=(
+            "Save your DataQuery credentials to ~/.dataquery/.env (owner-only) and add a\n"
+            "server that runs this environment's `dataquery mcp-connect` to your MCP\n"
+            "app's user config. No secrets go into that config. Missing credentials are\n"
+            "prompted for on a terminal, the secret without echo. Re-run any time to\n"
+            "update the credentials or the entry."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    target = p_install.add_mutually_exclusive_group()
+    target.add_argument(
+        "--app",
+        choices=MCP_INSTALL_APPS,
+        default="claude-desktop",
+        help="MCP app to configure (default: claude-desktop); chatgpt is the ChatGPT desktop app, "
+        "whose config the Codex CLI and IDE extension share",
+    )
+    target.add_argument(
+        "--config-file",
+        type=Path,
+        default=None,
+        help="Add the server to this mcpServers JSON file instead, for any other app",
+    )
+    p_install.add_argument(
+        "--name",
+        type=_mcp_server_name,
+        default="dataquery",
+        help="Server name in the MCP config (default: dataquery)",
+    )
+    p_install.add_argument("--url", default=None, help="MCP endpoint for mcp-connect (default: the PROD endpoint)")
+    p_install.add_argument("--client-id", default=None, help="OAuth client ID (prompted for when missing)")
+    p_install.add_argument(
+        "--client-secret",
+        default=None,
+        help="OAuth client secret; visible in the process list, so prefer the prompt",
+    )
+    p_install.add_argument("--bearer-token", default=None, help="Use a bearer token instead of OAuth")
 
     return parser
 
@@ -874,6 +955,64 @@ async def cmd_mcp_connect(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_mcp_install(args: argparse.Namespace) -> int:
+    """Save the credentials once and add the DataQuery MCP server to an MCP app's user config."""
+    from dataquery import mcp_install
+    from dataquery.config import EnvConfig
+    from dataquery.types.exceptions import ConfigurationError
+
+    if not _mcp_extra_installed():
+        print(
+            "The MCP bridge needs the 'mcp' extra. Install it, then re-run:\n    pip install 'dataquery-sdk[mcp]'",
+            file=sys.stderr,
+        )
+        return 1
+
+    if getattr(args, "env_file", None):
+        EnvConfig.load_env_file(Path(args.env_file))
+    # Already-saved credentials count, so re-running only refreshes the entry.
+    EnvConfig.load_user_env_file()
+    keys = _export_mcp_credentials(args)
+    if not _has_mcp_credentials(keys):
+        _prompt_for_mcp_credentials()
+        keys = _export_mcp_credentials(args)
+    if not _has_mcp_credentials(keys):
+        print(
+            "No credentials: pass --client-id and --client-secret (or --bearer-token), set "
+            "DATAQUERY_CLIENT_ID and DATAQUERY_CLIENT_SECRET, or run in a terminal to be prompted.",
+            file=sys.stderr,
+        )
+        return 1
+
+    entry = mcp_install.server_entry(args.url)
+    try:
+        # Saved first: an entry without credentials behind it would fail on every launch.
+        env_file = EnvConfig.save_user_env({key: os.environ.get(f"{EnvConfig.PREFIX}{key}") for key in keys})
+        print(f"Saved {', '.join(f'{EnvConfig.PREFIX}{key}' for key in keys)} to {env_file} (owner-only)")
+        if args.config_file is not None:
+            replaced = mcp_install.add_to_config_file(args.config_file, args.name, entry)
+            print(f"{'Updated' if replaced else 'Added'} '{args.name}' in {args.config_file}")
+            print("Restart your MCP app to load it.")
+        elif args.app == "claude-code":
+            mcp_install.add_to_claude_code(args.name, entry)
+            print(f"Added '{args.name}' to Claude Code (user scope); check it with: claude mcp list")
+        elif args.app == "chatgpt":
+            path, replaced = mcp_install.add_to_codex(args.name, entry)
+            print(f"{'Updated' if replaced else 'Added'} '{args.name}' in {path}")
+            print("Restart the ChatGPT desktop app (or Codex) to load it; ChatGPT on the web can't run local servers.")
+        else:
+            app = mcp_install.JSON_APPS[args.app]
+            path, replaced = app.add(args.name, entry)
+            print(f"{'Updated' if replaced else 'Added'} '{args.name}' in {path}")
+            print(f"Restart {app.label} to load it.")
+    except (ConfigurationError, OSError) as exc:
+        print(f"mcp-install: {exc}", file=sys.stderr)
+        return 1
+    print("The server runs:", " ".join([entry["command"], *entry["args"]]))
+    print("No secrets were written to the MCP config; mcp-connect reads them from the saved file.")
+    return 0
+
+
 def main_sync(ns: argparse.Namespace) -> int:
     if ns.command == "config":
         if ns.config_command == "show":
@@ -919,6 +1058,8 @@ def main() -> int:
         return asyncio.run(cmd_auth_test(args))
     if args.command == "function-help":
         return cmd_function_help(args)
+    if args.command == "mcp-install":
+        return cmd_mcp_install(args)
 
     handler = _ASYNC_COMMANDS.get(args.command)
     if handler is None:
