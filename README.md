@@ -395,8 +395,39 @@ pip install "dataquery-sdk[mcp]"
 
 ### Wire it into an MCP client
 
-Add the server to your client's MCP config (`claude_desktop_config.json`,
-`.mcp.json`, or the equivalent for your host):
+**One-time setup (recommended).** Install, then run `mcp-install` once:
+
+```bash
+pip install "dataquery-sdk[mcp]"
+dataquery mcp-install                  # Claude Desktop (the default)
+dataquery mcp-install --app <app>      # one of the apps below
+dataquery mcp-install --config-file ~/.some-app/mcp.json   # any other app with an mcpServers JSON file
+```
+
+| `--app` | Where the server goes |
+|---|---|
+| `claude-desktop` | Claude Desktop's `claude_desktop_config.json` |
+| `claude-code` | Claude Code, user scope (via `claude mcp add-json`) |
+| `chatgpt` | `~/.codex/config.toml`, which the ChatGPT desktop app shares with the Codex CLI and IDE extension; ChatGPT on the web can't run local servers |
+| `cursor` | `~/.cursor/mcp.json` |
+| `vscode` | VS Code's user-profile `mcp.json` (default profile) |
+
+It prompts for your client ID and secret (the secret without echo) and saves
+them to `~/.dataquery/.env`, owner-only (see [Credentials](#credentials)). It
+then adds a `dataquery` server to the app's user config. The entry runs this
+environment's `dataquery mcp-connect` by absolute path, because GUI apps don't
+see your shell's `PATH`, and it contains no secrets. Other servers and settings
+in the file are kept. Restart the app to load it.
+
+- Re-run it any time to update the credentials or the entry.
+- `--client-id`/`--client-secret` or `--bearer-token` skip the prompt, but flags
+  are visible in the process list.
+- `--url` and `--name` register another environment alongside the first.
+- Run it from an environment you keep (pip or pipx), not a throwaway `uvx` one,
+  because the entry points at that environment's executable.
+
+**Manual setup.** Or add the server to your client's MCP config yourself
+(`claude_desktop_config.json`, `.mcp.json`, or the equivalent for your host):
 
 ```json
 {
