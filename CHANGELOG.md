@@ -60,3 +60,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MCP: capped the `mcp` extra to `fastmcp>=2.14,<4` — fastmcp 4.x repackages onto `httpx2` and drops `FastMCP.as_proxy()`, which broke `mcp-connect`; installs now resolve to the 3.x line
 ## [1.2.7] - 2026-09-25
 - MCP: new `dataquery mcp-install` one-time setup — saves your credentials to `~/.dataquery/.env` (prompting on a terminal, the secret unechoed) and adds a secret-free server running this environment's `mcp-connect` to Claude Desktop (default) or, with `--app`, Claude Code (user scope), ChatGPT desktop / Codex (`~/.codex/config.toml`), Cursor or VS Code, or to any `mcpServers` JSON file (`--config-file`); re-running updates it
+## [1.2.8] - 2026-09-26
+- MCP: `mcp-connect` retries a request once with a fresh OAuth token when the endpoint answers 401, so a cached token the server no longer accepts (revoked, or issued for other credentials) no longer breaks the connection
+- MCP: `mcp-connect` caches its OAuth token under `~/.dataquery/tokens/<credential fingerprint>/` instead of `./downloads/.tokens` relative to wherever the MCP app launched it; an explicit `DATAQUERY_TOKEN_STORAGE_DIR` with `DATAQUERY_TOKEN_STORAGE_ENABLED=true` still wins

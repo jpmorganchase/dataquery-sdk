@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import getpass
+import hashlib
 import importlib.util
 import json
 import os
@@ -894,10 +895,55 @@ def cmd_function_help(args: argparse.Namespace) -> int:
     return 0
 
 
+def _mcp_token_storage_dir(config: Any) -> Path:
+    """Token cache for ``mcp-connect``, fixed per credential set.
+
+    MCP apps launch the bridge from arbitrary working directories, so the
+    SDK default (``<download_dir>/.tokens``, relative) would pick up whatever
+    token happens to sit there, possibly one issued for other credentials.
+    """
+    from dataquery.config import EnvConfig
+
+    fingerprint = "\n".join([config.client_id or "", config.oauth_token_url or "", config.aud or ""])
+    return EnvConfig.user_config_dir() / "tokens" / hashlib.sha256(fingerprint.encode()).hexdigest()[:16]
+
+
+def _authe_auth(token_manager: Any) -> Any:
+    """httpx auth stamping an AuthE bearer token per request, retrying once on 401."""
+    import httpx
+
+    async def valid_header() -> str:
+        header = await token_manager.get_valid_token()
+        if not header:
+            raise DataQueryError(
+                "Could not obtain an OAuth token \u2014 check DATAQUERY_CLIENT_ID, "
+                "DATAQUERY_CLIENT_SECRET, DATAQUERY_OAUTH_TOKEN_URL and "
+                "DATAQUERY_OAUTH_AUD."
+            )
+        return header
+
+    class _AutheAuth(httpx.Auth):
+        async def async_auth_flow(self, request: httpx.Request) -> AsyncGenerator[httpx.Request, httpx.Response]:
+            header = await valid_header()
+            request.headers["Authorization"] = header
+            response = yield request
+            if response.status_code != 401 or token_manager.config.has_bearer_token:
+                return
+            # The server rejected a token that still looks valid locally
+            # (revoked, or cached for other credentials): drop it unless a
+            # concurrent request already replaced it, then retry once.
+            current = token_manager.current_token
+            if current is not None and current.to_authorization_header() == header:
+                token_manager.clear_token()
+            request.headers["Authorization"] = await valid_header()
+            yield request
+
+    return _AutheAuth()
+
+
 async def cmd_mcp_connect(args: argparse.Namespace) -> int:
     """Bridge a desktop MCP client (stdio) to a remote streamable-HTTP MCP server."""
     try:
-        import httpx
         from fastmcp import FastMCP
         from fastmcp.client.transports import StreamableHttpTransport
     except ImportError:
@@ -933,23 +979,15 @@ async def cmd_mcp_connect(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 1
+    # An explicitly configured, enabled token store wins; the env default
+    # (".tokens") is relative to the launch directory, so it does not count.
+    if not (config.token_storage_enabled and os.environ.get(f"{EnvConfig.PREFIX}TOKEN_STORAGE_DIR")):
+        config = config.model_copy(
+            update={"token_storage_dir": str(_mcp_token_storage_dir(config)), "token_storage_enabled": True}
+        )
     token_manager = TokenManager(config)
 
-    class _AutheAuth(httpx.Auth):
-        """Stamp a fresh AuthE bearer token (from the SDK TokenManager) per request."""
-
-        async def async_auth_flow(self, request: httpx.Request) -> AsyncGenerator[httpx.Request, httpx.Response]:
-            header = await token_manager.get_valid_token()
-            if not header:
-                raise DataQueryError(
-                    "Could not obtain an OAuth token \u2014 check DATAQUERY_CLIENT_ID, "
-                    "DATAQUERY_CLIENT_SECRET, DATAQUERY_OAUTH_TOKEN_URL and "
-                    "DATAQUERY_OAUTH_AUD."
-                )
-            request.headers["Authorization"] = header
-            yield request
-
-    transport = StreamableHttpTransport(url, auth=_AutheAuth())
+    transport = StreamableHttpTransport(url, auth=_authe_auth(token_manager))
     proxy = FastMCP.as_proxy(transport, name=args.name)
     await proxy.run_async(transport="stdio", show_banner=False)
     return 0
