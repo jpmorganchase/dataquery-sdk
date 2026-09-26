@@ -603,3 +603,110 @@ def test_main_dispatches_mcp_install():
     with patch.object(cli, "cmd_mcp_install", return_value=0) as cmd, patch("sys.argv", ["dataquery", "mcp-install"]):
         assert cli.main() == 0
     cmd.assert_called_once()
+
+
+def _stub_token_manager(*headers, bearer=False):
+    """TokenManager stand-in handing out ``headers`` in order; clear_token drops the current one."""
+    issued = iter(headers)
+    tm = MagicMock()
+    tm.config.has_bearer_token = bearer
+    tm.current_token = None
+
+    async def get_valid_token():
+        if tm.current_token is None:
+            header = next(issued)
+            tm.current_token = MagicMock(**{"to_authorization_header.return_value": header})
+        return tm.current_token.to_authorization_header()
+
+    def clear_token():
+        tm.current_token = None
+
+    tm.get_valid_token = AsyncMock(side_effect=get_valid_token)
+    tm.clear_token = MagicMock(side_effect=clear_token)
+    return tm
+
+
+async def _send_through_authe_auth(tm, statuses):
+    """POST once through ``_authe_auth``; return (final status, Authorization headers seen)."""
+    httpx = pytest.importorskip("httpx")
+    seen = []
+    replies = iter(statuses)
+
+    def handler(request):
+        seen.append(request.headers["Authorization"])
+        return httpx.Response(next(replies))
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler), auth=cli._authe_auth(tm)) as client:
+        resp = await client.post("https://mcp.example.com/mcp", json={"jsonrpc": "2.0"})
+    return resp.status_code, seen
+
+
+@pytest.mark.asyncio
+async def test_mcp_connect_auth_replaces_rejected_token_and_retries():
+    """A 401 on a locally-valid (e.g. stale cached) token fetches a new one and retries once."""
+    tm = _stub_token_manager("Bearer stale", "Bearer fresh")
+
+    status, seen = await _send_through_authe_auth(tm, [401, 200])
+
+    assert status == 200
+    assert seen == ["Bearer stale", "Bearer fresh"]
+    tm.clear_token.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_mcp_connect_auth_retries_only_once():
+    tm = _stub_token_manager("Bearer a", "Bearer b", "Bearer c")
+
+    status, seen = await _send_through_authe_auth(tm, [401, 401])
+
+    assert status == 401
+    assert seen == ["Bearer a", "Bearer b"]
+
+
+@pytest.mark.asyncio
+async def test_mcp_connect_auth_does_not_retry_static_bearer_token():
+    """A configured DATAQUERY_BEARER_TOKEN cannot be refreshed, so a 401 is final."""
+    tm = _stub_token_manager("Bearer static", bearer=True)
+
+    status, seen = await _send_through_authe_auth(tm, [401])
+
+    assert status == 401
+    assert seen == ["Bearer static"]
+    tm.clear_token.assert_not_called()
+
+
+async def _connect_and_capture_config(args):
+    """Run cmd_mcp_connect against a stub proxy; return the config its TokenManager got."""
+    from dataquery.transport import auth
+
+    with patch.object(auth, "TokenManager", wraps=auth.TokenManager) as token_manager:
+        await _connect_and_capture_url(args)
+    return token_manager.call_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_mcp_connect_caches_token_under_user_config_dir(mcp_env, tmp_path, monkeypatch):
+    """The token cache is independent of the launch directory and keyed by credentials."""
+    pytest.importorskip("fastmcp")
+    monkeypatch.chdir(tmp_path)
+
+    first = await _connect_and_capture_config(_mcp_args("--client-id", "cid-1", "--client-secret", "sec"))
+    second = await _connect_and_capture_config(_mcp_args("--client-id", "cid-2"))
+
+    tokens_dir = mcp_env.parent / "tokens"
+    assert first.token_storage_enabled
+    assert Path(first.token_storage_dir).parent == tokens_dir
+    assert Path(second.token_storage_dir).parent == tokens_dir
+    assert first.token_storage_dir != second.token_storage_dir
+    assert not (tmp_path / "downloads").exists()
+
+
+@pytest.mark.asyncio
+async def test_mcp_connect_honors_explicit_token_storage_dir(mcp_env, tmp_path):
+    pytest.importorskip("fastmcp")
+    os.environ["DATAQUERY_TOKEN_STORAGE_DIR"] = str(tmp_path / "mine")
+    os.environ["DATAQUERY_TOKEN_STORAGE_ENABLED"] = "true"
+
+    config = await _connect_and_capture_config(_mcp_args("--client-id", "cid", "--client-secret", "sec"))
+
+    assert config.token_storage_dir == str(tmp_path / "mine")
