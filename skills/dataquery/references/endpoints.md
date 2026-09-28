@@ -151,7 +151,7 @@ dataquery function-help --list         # all 158 functions
 
 ---
 
-## File API (Bulk Data Files)
+## File Delivery API (Published Files)
 
 These commands work with **published files** (parquet, CSV, etc.) rather than time-series API responses. Use them when the user wants raw bulk data — daily catalogs, full-history snapshots, or any pre-published file.
 
@@ -163,14 +163,24 @@ dataquery files --group-id FI_GO_NOTE_BOND --limit 10 --json
 ```
 Returns: file_group_id, file_type, description. Use this to discover what files a dataset publishes.
 
-### 14. Check File Availability
+### 14. List Available Files by Date Range
+Endpoint: `GET group/files/available-files`
 ```bash
-dataquery availability --file-group-id DQ_FI_GO_NOTE_BOND_CATALOG --file-datetime 20260606
+# Every file published for the group in May
+dataquery available-files --group-id FI_GO_NOTE_BOND --start-date 20260501 --end-date 20260531 --json
+
+# One file type only
+dataquery available-files --group-id FI_GO_NOTE_BOND --file-group-id DQ_FI_GO_NOTE_BOND_CATALOG --start-date 20260501 --end-date 20260531
+```
+Returns one record per file per date: `file-group-id`, `file-datetime`, `is-available`, `last-modified`. Text mode prints `Found N files (M available)` followed by one tab-separated line per file. Use it to find the latest published date, spot gaps, and pick `--file-datetime` values for `download`.
+
+### 15. Check File Availability (single date)
+```bash
 dataquery availability --file-group-id DQ_FI_GO_NOTE_BOND_CATALOG --file-datetime 20260606 --json
 ```
-Returns: whether the file is ready for the given date. Useful before bulk download.
+Returns whether one file is ready for the given date. Always use `--json`, because the text output only echoes the inputs.
 
-### 15. Download a Single File
+### 16. Download a Single File
 ```bash
 # Direct download
 dataquery download --file-group-id DQ_FI_GO_NOTE_BOND_CATALOG --file-datetime 20260606 --destination ./downloads
@@ -195,9 +205,9 @@ dataquery download --watch --group-id FI_GO_NOTE_BOND --file-group-id DQ_CATALOG
 # Fresh subscription (discard persisted last-event-id)
 dataquery download --watch --group-id FI_GO_NOTE_BOND --destination ./downloads --reset-event-id
 ```
-Ctrl+C to stop. Uses server-side filtering when `--file-group-id` is set.
+Ctrl+C to stop. Uses server-side filtering when `--file-group-id` is set. This command never exits on its own: run it only when the user asks to watch, as a background process.
 
-### 16. Bulk Date-Range Download
+### 17. Bulk Date-Range Download
 Best for: pulling every file in a group across a date window (e.g., a full month of daily catalogs).
 ```bash
 # All files in the group, one month
@@ -209,9 +219,10 @@ dataquery download-group --group-id FI_GO_NOTE_BOND --start-date 20260501 --end-
 # Tune concurrency and parallelism
 dataquery download-group --group-id FI_GO_NOTE_BOND --start-date 20260501 --end-date 20260531 --destination ./downloads --max-concurrent 5 --num-parts 8
 ```
+Only files that `available-files` reports as available in the window are downloaded. The result reports successful and failed counts (`--json` returns the full operation report).
 
-### File API Output Format Note
-Unlike the API v2 endpoints above, file-API commands print results in their own format:
+### File Delivery API Output Format Note
+Unlike the API v2 endpoints above, File Delivery API commands print results in their own format:
 - **Text mode (default)**: human-readable lines (e.g. `Found 12 files`, `Downloaded to ./downloads/file.parquet`).
 - **`--json` mode**: pure JSON only (no `--- JSON ---` separator).
 

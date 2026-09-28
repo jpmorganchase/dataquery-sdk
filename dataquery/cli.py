@@ -202,6 +202,16 @@ def create_parser() -> argparse.ArgumentParser:
     p_avail.add_argument("--file-datetime", required=True)
     p_avail.add_argument("--json", action="store_true")
 
+    p_afiles = subparsers.add_parser(
+        "available-files",
+        help="List files published for a group across a date range",
+    )
+    p_afiles.add_argument("--group-id", required=True)
+    p_afiles.add_argument("--file-group-id", default=None)
+    p_afiles.add_argument("--start-date", default=None, help="YYYYMMDD")
+    p_afiles.add_argument("--end-date", default=None, help="YYYYMMDD")
+    p_afiles.add_argument("--json", action="store_true")
+
     p_dl = subparsers.add_parser(
         "download",
         help="Download a single file, or with --watch subscribe to the SSE notification stream",
@@ -531,6 +541,25 @@ async def cmd_availability(args: argparse.Namespace) -> int:
                 print(str(avail))
         else:
             print(f"{args.file_group_id} @ {args.file_datetime}")
+    return 0
+
+
+async def cmd_available_files(args: argparse.Namespace) -> int:
+    async with DataQuery(args.env_file) as dq:
+        items = await dq.list_available_files_async(
+            args.group_id,
+            file_group_id=args.file_group_id,
+            start_date=args.start_date,
+            end_date=args.end_date,
+        )
+        if args.json:
+            print(json.dumps(items, indent=2))
+        else:
+            available = [f for f in items if f.get("is-available") is True]
+            print(f"Found {len(items)} files ({len(available)} available)")
+            for f in items:
+                status = "available" if f.get("is-available") is True else "unavailable"
+                print(f"{f.get('file-group-id')}\t{f.get('file-datetime')}\t{status}")
     return 0
 
 
@@ -1067,6 +1096,7 @@ _ASYNC_COMMANDS = {
     "groups": cmd_groups,
     "files": cmd_files,
     "availability": cmd_availability,
+    "available-files": cmd_available_files,
     "download": cmd_download,
     "download-group": cmd_download_group,
     "search": cmd_search,

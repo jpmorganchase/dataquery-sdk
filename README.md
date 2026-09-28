@@ -42,7 +42,7 @@ built in for both.
 |---|---|---|
 | **What you get** | Binary file payloads (CSV, Parquet, etc.) streamed to disk | JSON responses for catalog metadata and time-series data |
 | **Typical methods** | `download_file_async`, `run_group_download_async`, `download_historical_async`, `auto_download_async`, `list_files_async`, `list_available_files_async`, `check_availability_async` | `list_groups_async`, `search_groups_async`, `list_instruments_async`, `search_instruments_async`, `get_group_attributes_async`, `get_group_filters_async`, `get_expressions_time_series_async`, `get_instrument_time_series_async`, `get_group_time_series_async`, `get_grid_data_async` |
-| **CLI surface** | `dataquery files`, `availability`, `download`, `download-group` | `dataquery groups` |
+| **CLI surface** | `dataquery files`, `available-files`, `availability`, `download`, `download-group` | `dataquery groups` |
 
 Both surfaces share the same host and the same OAuth credentials, and run
 through one `DataQuery` client — pick the methods that match what you need.
@@ -342,6 +342,9 @@ dataquery groups --search "fixed income" --json
 
 # List files in a group
 dataquery files --group-id JPMAQS_GENERIC_RETURNS --json
+
+# List which files were published across a date range
+dataquery available-files --group-id JPMAQS_GENERIC_RETURNS --start-date 20250101 --end-date 20250131
 
 # Check availability for a single file
 dataquery availability --file-group-id JPMAQS_GENERIC_RETURNS --file-datetime 20250115

@@ -91,6 +91,48 @@ async def test_cli_availability_json(monkeypatch, capsys):
     assert "FG" in out
 
 
+def _fake_dq_with_available_files(items):
+    fake_dq = MagicMock()
+    fake_dq.__aenter__ = AsyncMock(return_value=fake_dq)
+    fake_dq.__aexit__ = AsyncMock(return_value=None)
+    fake_dq.list_available_files_async = AsyncMock(return_value=items)
+    return fake_dq
+
+
+@pytest.mark.asyncio
+async def test_cli_available_files_text(monkeypatch, capsys):
+    args = _parser().parse_args(
+        ["available-files", "--group-id", "G", "--start-date", "20240101", "--end-date", "20240102"]
+    )
+    items = [
+        {"file-group-id": "FG", "file-datetime": "20240101", "is-available": True},
+        {"file-group-id": "FG", "file-datetime": "20240102", "is-available": False},
+    ]
+    fake_dq = _fake_dq_with_available_files(items)
+    monkeypatch.setattr(cli, "DataQuery", MagicMock(return_value=fake_dq))
+
+    rc = await cli.cmd_available_files(args)
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Found 2 files (1 available)" in out
+    assert "FG\t20240101\tavailable" in out
+    assert "FG\t20240102\tunavailable" in out
+    fake_dq.list_available_files_async.assert_awaited_once_with(
+        "G", file_group_id=None, start_date="20240101", end_date="20240102"
+    )
+
+
+@pytest.mark.asyncio
+async def test_cli_available_files_json(monkeypatch, capsys):
+    args = _parser().parse_args(["available-files", "--group-id", "G", "--file-group-id", "FG", "--json"])
+    items = [{"file-group-id": "FG", "file-datetime": "20240101", "is-available": True}]
+    monkeypatch.setattr(cli, "DataQuery", MagicMock(return_value=_fake_dq_with_available_files(items)))
+
+    rc = await cli.cmd_available_files(args)
+    assert rc == 0
+    assert json.loads(capsys.readouterr().out) == items
+
+
 @pytest.mark.asyncio
 async def test_cli_download_missing_group_id_in_watch(monkeypatch, capsys):
     parser = _parser()

@@ -63,3 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.2.8] - 2026-09-26
 - MCP: `mcp-connect` retries a request once with a fresh OAuth token when the endpoint answers 401, so a cached token the server no longer accepts (revoked, or issued for other credentials) no longer breaks the connection
 - MCP: `mcp-connect` caches its OAuth token under `~/.dataquery/tokens/<credential fingerprint>/` instead of `./downloads/.tokens` relative to wherever the MCP app launched it; an explicit `DATAQUERY_TOKEN_STORAGE_DIR` with `DATAQUERY_TOKEN_STORAGE_ENABLED=true` still wins
+## [Unreleased]
+- CLI: new `dataquery available-files` command lists the files a group published across a date range (`group/files/available-files`), with optional `--file-group-id`, `--start-date`, `--end-date` and `--json`
+- Skill: the `dataquery` skill now covers the full File Delivery API workflow: choosing files versus time-series, date-range availability, single and bulk downloads, and SSE watch
+- Skill: new "Local Setup" section walks users through installing uv and `dataquery-sdk`, saving credentials to `~/.dataquery/.env`, and verifying with `dataquery config validate` and `dataquery heartbeat`; preflight gains a credentials check that points back to it
