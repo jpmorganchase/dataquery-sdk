@@ -134,7 +134,10 @@ class ClientConfig(BaseModel):
     overwrite_existing: bool = Field(default=False, description="Overwrite existing files")
     token_storage_dir: Optional[str] = Field(
         default=None,
-        description="Optional directory to store OAuth tokens; defaults to '<download_dir>/.tokens'",
+        description=(
+            "Directory for the OAuth token cache when token_storage_enabled; "
+            "defaults to ~/.dataquery/tokens/<credential fingerprint>"
+        ),
     )
 
     max_concurrent_downloads: int = Field(default=5, description="Maximum concurrent downloads")
@@ -337,18 +340,26 @@ class OAuthToken(BaseModel):
 
     @property
     def is_expired(self) -> bool:
-        """Check if token is expired."""
+        """Check if token is expired, allowing a small safety margin.
+
+        The margin (10% of the lifetime, at most 30s) covers clock skew and
+        request latency, so a token is not sent in its last moments and
+        rejected by the time it arrives.
+        """
         if not self.expires_at:
             return False
-        return datetime.now(timezone.utc) >= self.expires_at
+        leeway = min(30.0, (self.expires_in or 0) * 0.1)
+        return datetime.now(timezone.utc) >= self.expires_at - timedelta(seconds=leeway)
 
     def is_expiring_soon(self, threshold: int = 300) -> bool:
         """Check if token is expiring soon."""
         if not self.expires_at:
             return False
         remaining_time = (self.expires_at - datetime.now(timezone.utc)).total_seconds()
-        if self.expires_in and threshold > self.expires_in:
-            return False
+        if self.expires_in and threshold >= self.expires_in:
+            # A threshold at or past the lifetime would mean "always expiring";
+            # refresh at half-life instead of never refreshing early.
+            threshold = int(self.expires_in / 2)
         return remaining_time < threshold
 
     def to_authorization_header(self) -> str:
@@ -870,8 +881,9 @@ class InstrumentWithAttributes(BaseModel):
     """Model representing an instrument with its attributes."""
 
     item: int = Field(..., description="Item number")
-    instrument_id: str = Field(..., alias="instrument-id", description="Unique instrument identifier")
-    instrument_name: str = Field(..., alias="instrument-name", description="Instrument short name")
+    # Null for computed expressions (e.g. VOL(30, DB(...))), which are not bound to one instrument.
+    instrument_id: Optional[str] = Field(None, alias="instrument-id", description="Unique instrument identifier")
+    instrument_name: Optional[str] = Field(None, alias="instrument-name", description="Instrument short name")
     instrument_cusip: Optional[str] = Field(None, alias="instrument-cusip", description="Instrument CUSIP")
     instrument_isin: Optional[str] = Field(None, alias="instrument-isin", description="Instrument ISIN")
     group: Optional[Dict[str, str]] = Field(None, description="Group information")
@@ -940,7 +952,8 @@ class GridDataResponse(BaseModel):
         alias="errorMessage",
         description="Error message for the entire API request",
     )
-    series: List[GridDataSeries] = Field(..., description="List of grid data series")
+    # Empty when the request fails as a whole; errorCode/errorMessage then say why.
+    series: List[GridDataSeries] = Field(default_factory=list, description="List of grid data series")
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 

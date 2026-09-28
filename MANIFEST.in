@@ -8,6 +8,7 @@ include pyproject.toml
 recursive-include dataquery *.py
 recursive-include dataquery *.typed
 recursive-include dataquery *.json
+recursive-include dataquery/skills *.md
 
 # Exclude development and testing files
 recursive-exclude tests *

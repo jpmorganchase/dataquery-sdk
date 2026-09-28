@@ -30,6 +30,7 @@ def export_timeseries_csv(response: Any, output_path: str) -> Dict[str, Any]:
         )
 
     rows: List[Dict[str, Any]] = []
+    messages: List[str] = []
     for inst in instruments:
         inst_id = inst.get("instrument-id") or inst.get("instrument_id", "")
         inst_name = inst.get("instrument-name") or inst.get("instrument_name", "")
@@ -42,6 +43,8 @@ def export_timeseries_csv(response: Any, output_path: str) -> Dict[str, Any]:
             expression = attr.get("expression", "")
             label = attr.get("label", "")
             last_pub = attr.get("last-published") or attr.get("last_published", "")
+            if attr.get("message"):
+                messages.append(f"{expression or attr_id or inst_id}: {attr['message']}")
             ts = attr.get("time-series") or attr.get("time_series") or []
             for point in ts:
                 if isinstance(point, list) and len(point) >= 2:
@@ -62,8 +65,9 @@ def export_timeseries_csv(response: Any, output_path: str) -> Dict[str, Any]:
                     )
 
     if not rows:
+        detail = f" Server messages: {'; '.join(messages)}" if messages else ""
         raise DataQueryError(
-            "Response contains instruments but no time-series data points.",
+            f"Response contains instruments but no time-series data points.{detail}",
         )
 
     fieldnames = [

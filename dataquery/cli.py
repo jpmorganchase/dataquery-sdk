@@ -3,7 +3,6 @@
 import argparse
 import asyncio
 import getpass
-import hashlib
 import importlib.util
 import json
 import os
@@ -11,9 +10,11 @@ import sys
 from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import parse_qs, urlsplit
 
 from dataquery import DataQuery
 from dataquery.types.exceptions import DataQueryError
+from dataquery.types.models import DownloadStatus, Paginated, TimeSeriesResponse
 
 
 def _to_dict(payload: Any) -> Dict[str, Any]:
@@ -25,14 +26,6 @@ def _to_dict(payload: Any) -> Dict[str, Any]:
     if isinstance(payload, dict):
         return payload
     return {"value": payload}
-
-
-def _split_csv_list(value: Optional[str]) -> Optional[List[str]]:
-    """Split a comma-separated string into a clean list, or return None."""
-    if value is None:
-        return None
-    items = [v.strip() for v in value.split(",") if v.strip()]
-    return items or None
 
 
 def _count_timeseries(data: Dict[str, Any]) -> tuple[int, int, str, str]:
@@ -69,6 +62,10 @@ def _print_endpoint_result(
         envelope["csv_rows"] = csv_info.get("rows", 0)
 
     print(summary)
+    info = data.get("info") if isinstance(data, dict) else None
+    if isinstance(info, dict) and (info.get("description") or info.get("message")):
+        # e.g. 204 "no content": the call succeeded but matched nothing.
+        print(f"Server info: [{info.get('code')}] {info.get('description') or info.get('message')}")
     if csv_info:
         print(f"CSV exported: {envelope['csv_exported']} ({envelope['csv_rows']} rows)")
     print("\n--- JSON ---")
@@ -361,7 +358,15 @@ def create_parser() -> argparse.ArgumentParser:
 
     p_gts = subparsers.add_parser("group-timeseries", help="Bulk time-series for a group")
     p_gts.add_argument("--group-id", required=True)
-    p_gts.add_argument("--attributes", required=True, help="Comma-separated attribute IDs (e.g. TR,YTDR)")
+    p_gts.add_argument(
+        "--attributes",
+        required=True,
+        action="append",
+        help=(
+            "Attribute ID, used verbatim (repeat for multiple). IDs often contain "
+            "commas, e.g. --attributes 'TR,,LOC' --attributes 'TR,1DR,LOC'"
+        ),
+    )
     p_gts.add_argument("--filter", default=None, help='Filter string (e.g. "currency(USD)")')
     _ts_args(p_gts)
 
@@ -372,7 +377,15 @@ def create_parser() -> argparse.ArgumentParser:
         action="append",
         help="Instrument ID (repeat for multiple, max 20)",
     )
-    p_its.add_argument("--attributes", required=True, help="Comma-separated attribute IDs")
+    p_its.add_argument(
+        "--attributes",
+        required=True,
+        action="append",
+        help=(
+            "Attribute ID, used verbatim (repeat for multiple). IDs often contain "
+            "commas, e.g. --attributes 'TR,,LOC' --attributes 'TR,1DR,LOC'"
+        ),
+    )
     _ts_args(p_its)
 
     p_ets = subparsers.add_parser("expression-timeseries", help="Time-series by DQ expressions")
@@ -482,6 +495,50 @@ def create_parser() -> argparse.ArgumentParser:
     )
     p_install.add_argument("--bearer-token", default=None, help="Use a bearer token instead of OAuth")
 
+    from dataquery.skill_install import SKILL_APPS
+
+    p_skill = subparsers.add_parser(
+        "skill-install",
+        help="Install the DataQuery agent skill into Claude Code, Codex, VS Code or Cursor",
+        description=(
+            "Copy the DataQuery agent skill bundled with this package into each app's\n"
+            "skills folder. All four apps read the same SKILL.md format:\n"
+            "  claude-code  ~/.claude/skills       project: .claude/skills\n"
+            "  codex        ~/.agents/skills       project: .agents/skills\n"
+            "  vscode       ~/.copilot/skills      project: .github/skills\n"
+            "  cursor       ~/.cursor/skills       project: .cursor/skills\n"
+            "Re-run after upgrading dataquery-sdk to refresh the installed copy.\n"
+            "The skill runs the `dataquery` CLI, so credentials must be set up\n"
+            "(~/.dataquery/.env); check with `dataquery config validate`."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p_skill.add_argument(
+        "--app",
+        nargs="+",
+        choices=[*SKILL_APPS, "all"],
+        default=["claude-code"],
+        help="App(s) to install into (default: claude-code); 'all' installs into every app",
+    )
+    p_skill.add_argument(
+        "--scope",
+        choices=["user", "project"],
+        default="user",
+        help="user: every project on this machine (default); project: this repository only",
+    )
+    p_skill.add_argument(
+        "--project-dir",
+        type=Path,
+        default=None,
+        help="Repository root for --scope project (default: current directory)",
+    )
+    p_skill.add_argument("--uninstall", action="store_true", help="Remove the skill instead of installing it")
+    p_skill.add_argument(
+        "--force",
+        action="store_true",
+        help="Replace or remove a 'dataquery' skill folder even if it was not installed by this command",
+    )
+
     return parser
 
 
@@ -540,7 +597,8 @@ async def cmd_availability(args: argparse.Namespace) -> int:
             except Exception:
                 print(str(avail))
         else:
-            print(f"{args.file_group_id} @ {args.file_datetime}")
+            state = "available" if getattr(avail, "is_available", False) else "not available"
+            print(f"{args.file_group_id} @ {args.file_datetime}: {state}")
     return 0
 
 
@@ -610,7 +668,8 @@ async def cmd_download(args: argparse.Namespace) -> int:
                 except Exception as e:
                     print(f"Failed to stop notification manager: {e}", file=sys.stderr)
             stats: dict = getattr(mgr, "get_stats", lambda: {})()
-            print(json.dumps(stats))
+            # Stats include datetimes (e.g. start time); plain json.dumps raised on Ctrl+C.
+            print(json.dumps(stats, default=str))
             return 0
 
         dest_path = Path(args.destination) if args.destination else None
@@ -628,11 +687,23 @@ async def cmd_download(args: argparse.Namespace) -> int:
             options=options,
             num_parts=args.num_parts,
         )
+        # The SDK reports download failures through ``status`` rather than raising,
+        # so the exit code and message must be derived from it.
+        status = getattr(result, "status", None)
+        ok = status in (DownloadStatus.COMPLETED, DownloadStatus.ALREADY_EXISTS)
         if args.json:
-            print(json.dumps(getattr(result, "model_dump")(), indent=2))
-        else:
+            print(json.dumps(result.model_dump(mode="json"), indent=2))
+        elif status == DownloadStatus.ALREADY_EXISTS:
+            print(f"Already exists at {result.local_path}")
+        elif ok:
             print(f"Downloaded to {result.local_path}")
-        return 0
+        else:
+            print(
+                f"Download failed for {file_group_id} @ {args.file_datetime}: "
+                f"{getattr(result, 'error_message', None) or status}",
+                file=sys.stderr,
+            )
+        return 0 if ok else 1
 
 
 async def cmd_download_group(args: argparse.Namespace) -> int:
@@ -647,15 +718,17 @@ async def cmd_download_group(args: argparse.Namespace) -> int:
             file_group_id=args.file_group_id,
         )
 
+        failed = results.counts.get("failed_downloads", 0)
         if args.json:
             print(results.model_dump_json(indent=2))
         else:
             successful = results.counts.get("successful_downloads", 0)
-            failed = results.counts.get("failed_downloads", 0)
             print(f"Downloaded {successful} files to {args.destination}")
             if failed > 0:
                 print(f"Failed: {failed}")
-    return 0
+                for f in (results.details or {}).get("failures", []):
+                    print(f"  {f.get('file_group_id')} @ {f.get('file_datetime')}: {f.get('error')}")
+    return 1 if failed else 0
 
 
 def cmd_config_show(args: argparse.Namespace) -> int:
@@ -702,7 +775,8 @@ async def cmd_search(args: argparse.Namespace) -> int:
         print(json.dumps(result, indent=2))
         return 0
 
-    results: list = []
+    # The search API returns a bare JSON list of datasets.
+    results: list = result if isinstance(result, list) else []
     if isinstance(result, dict):
         for key in ("results", "groups", "items"):
             value = result.get(key)
@@ -727,7 +801,7 @@ async def cmd_instruments(args: argparse.Namespace) -> int:
         resp = await dq.list_instruments_async(args.group_id, args.instrument_id, args.page)
     data = _to_dict(resp)
     n = len(data.get("instruments", []) or [])
-    summary = f"Found {n} instrument(s) in {args.group_id}"
+    summary = f"Found {n} instrument(s) in {args.group_id}" + _more_pages_note(resp)
     _print_endpoint_result(summary, resp)
     return 0
 
@@ -737,7 +811,7 @@ async def cmd_instruments_search(args: argparse.Namespace) -> int:
         resp = await dq.search_instruments_async(args.group_id, args.keywords, args.page)
     data = _to_dict(resp)
     n = len(data.get("instruments", []) or [])
-    summary = f"Found {n} instrument(s) in {args.group_id} matching '{args.keywords}'"
+    summary = f"Found {n} instrument(s) in {args.group_id} matching '{args.keywords}'" + _more_pages_note(resp)
     _print_endpoint_result(summary, resp)
     return 0
 
@@ -747,7 +821,7 @@ async def cmd_filters(args: argparse.Namespace) -> int:
         resp = await dq.get_group_filters_async(args.group_id, args.page)
     data = _to_dict(resp)
     n = len(data.get("filters", []) or [])
-    summary = f"Found {n} filter dimension(s) for {args.group_id}"
+    summary = f"Found {n} filter dimension(s) for {args.group_id}" + _more_pages_note(resp)
     _print_endpoint_result(summary, resp)
     return 0
 
@@ -757,7 +831,7 @@ async def cmd_attributes(args: argparse.Namespace) -> int:
         resp = await dq.get_group_attributes_async(args.group_id, args.instrument_id, args.page)
     data = _to_dict(resp)
     n = len(data.get("instruments", []) or [])
-    summary = f"Attributes for {n} instrument(s) in {args.group_id}"
+    summary = f"Attributes for {n} instrument(s) in {args.group_id}" + _more_pages_note(resp)
     _print_endpoint_result(summary, resp)
     return 0
 
@@ -784,11 +858,76 @@ def _ts_kwargs(args: argparse.Namespace) -> Dict[str, Any]:
     return kwargs
 
 
+def _timeseries_messages(data: Dict[str, Any]) -> List[str]:
+    """Collect per-series server messages (e.g. ``Expression syntax error!``)."""
+    messages: List[str] = []
+    for inst in data.get("instruments", []) or []:
+        for attr in inst.get("attributes", []) or []:
+            message = attr.get("message")
+            if message:
+                source = attr.get("expression") or attr.get("attribute-id") or inst.get("instrument-id") or "series"
+                messages.append(f"{source}: {message}")
+    return messages
+
+
+def _next_page_token(resp: Any) -> Optional[str]:
+    """Return the ``page`` token of the next page, or ``None`` on the last page."""
+    if not isinstance(resp, Paginated):
+        return None
+    link = resp.get_next_link()
+    if not link:
+        return None
+    token = parse_qs(urlsplit(link).query).get("page")
+    return token[0] if token else link
+
+
+def _more_pages_note(resp: Any) -> str:
+    token = _next_page_token(resp)
+    return f"\nMore pages available; fetch the next one with --page {token}" if token else ""
+
+
+async def _collect_all_pages(dq: Any, resp: Any, page: Optional[str]) -> tuple[Any, Optional[str]]:
+    """Merge every following page into ``resp`` unless one page was asked for via ``--page``.
+
+    Returns ``(resp, warning)``. If a later page fails, the pages already fetched
+    are kept and ``warning`` says the result is incomplete, instead of losing them.
+    """
+    if page is not None or not isinstance(resp, TimeSeriesResponse):
+        return resp, None
+    last = resp
+    pages = 1
+    warning: Optional[str] = None
+    while last.has_next_page():
+        try:
+            nxt = await dq.get_next_page_async(last)
+        except DataQueryError as exc:
+            total = resp.items or "?"
+            warning = (
+                f"INCOMPLETE: page {pages + 1} failed ({exc}); kept {pages} page(s), "
+                f"{len(resp.instruments)} of {total} instrument(s)"
+            )
+            break
+        if nxt is None:
+            break
+        resp.instruments.extend(nxt.instruments)
+        last = nxt
+        pages += 1
+    resp.links = last.links
+    return resp, warning
+
+
+def _with_warning(summary: str, warning: Optional[str]) -> str:
+    return f"{summary}\n{warning}" if warning else summary
+
+
 def _timeseries_summary(label: str, resp: Any) -> str:
     data = _to_dict(resp)
     n_inst, n_pts, first, last = _count_timeseries(data)
     date_range = f"{first} to {last}" if first and last else "no dates"
-    return f"{label}: {n_inst} instrument(s), {n_pts} data point(s) ({date_range})"
+    summary = f"{label}: {n_inst} instrument(s), {n_pts} data point(s) ({date_range})"
+    for message in _timeseries_messages(data):
+        summary += f"\nServer message for {message}"
+    return summary + _more_pages_note(resp)
 
 
 def _maybe_export_csv(resp: Any, output_csv: Optional[str], is_grid: bool = False) -> Optional[Dict[str, Any]]:
@@ -804,7 +943,7 @@ def _maybe_export_csv(resp: Any, output_csv: Optional[str], is_grid: bool = Fals
 
 
 async def cmd_group_timeseries(args: argparse.Namespace) -> int:
-    attributes = _split_csv_list(args.attributes) or []
+    attributes = args.attributes
     async with DataQuery(args.env_file) as dq:
         resp = await dq.get_group_time_series_async(
             args.group_id,
@@ -812,22 +951,28 @@ async def cmd_group_timeseries(args: argparse.Namespace) -> int:
             filter=args.filter,
             **_ts_kwargs(args),
         )
+        resp, warning = await _collect_all_pages(dq, resp, args.page)
     csv_info = _maybe_export_csv(resp, args.output_csv)
-    _print_endpoint_result(_timeseries_summary("Group time-series", resp), resp, csv_info=csv_info)
-    return 0
+    _print_endpoint_result(
+        _with_warning(_timeseries_summary("Group time-series", resp), warning), resp, csv_info=csv_info
+    )
+    return 1 if warning else 0
 
 
 async def cmd_instrument_timeseries(args: argparse.Namespace) -> int:
-    attributes = _split_csv_list(args.attributes) or []
+    attributes = args.attributes
     async with DataQuery(args.env_file) as dq:
         resp = await dq.get_instrument_time_series_async(
             args.instruments,
             attributes,
             **_ts_kwargs(args),
         )
+        resp, warning = await _collect_all_pages(dq, resp, args.page)
     csv_info = _maybe_export_csv(resp, args.output_csv)
-    _print_endpoint_result(_timeseries_summary("Instrument time-series", resp), resp, csv_info=csv_info)
-    return 0
+    _print_endpoint_result(
+        _with_warning(_timeseries_summary("Instrument time-series", resp), warning), resp, csv_info=csv_info
+    )
+    return 1 if warning else 0
 
 
 async def cmd_expression_timeseries(args: argparse.Namespace) -> int:
@@ -836,9 +981,12 @@ async def cmd_expression_timeseries(args: argparse.Namespace) -> int:
             args.expressions,
             **_ts_kwargs(args),
         )
+        resp, warning = await _collect_all_pages(dq, resp, args.page)
     csv_info = _maybe_export_csv(resp, args.output_csv)
-    _print_endpoint_result(_timeseries_summary("Expression time-series", resp), resp, csv_info=csv_info)
-    return 0
+    _print_endpoint_result(
+        _with_warning(_timeseries_summary("Expression time-series", resp), warning), resp, csv_info=csv_info
+    )
+    return 1 if warning else 0
 
 
 async def cmd_grid_data(args: argparse.Namespace) -> int:
@@ -854,6 +1002,11 @@ async def cmd_grid_data(args: argparse.Namespace) -> int:
     series = data.get("series", []) or []
     total_records = sum(len(s.get("records", []) or []) for s in series)
     summary = f"Grid: {len(series)} series, {total_records} record(s)"
+    if data.get("errorMessage") or data.get("errorCode"):
+        summary += f"\nServer error: [{data.get('errorCode')}] {data.get('errorMessage')}"
+    for s in series:
+        if s.get("errorMessage") or s.get("errorCode"):
+            summary += f"\nServer error for {s.get('expr')}: [{s.get('errorCode')}] {s.get('errorMessage')}"
     csv_info = _maybe_export_csv(resp, args.output_csv, is_grid=True)
     _print_endpoint_result(summary, resp, csv_info=csv_info)
     return 0
@@ -861,10 +1014,19 @@ async def cmd_grid_data(args: argparse.Namespace) -> int:
 
 async def cmd_heartbeat(args: argparse.Namespace) -> int:
     async with DataQuery(args.env_file) as dq:
-        ok = await dq.health_check_async()
-    summary = "DataQuery is UP" if ok else "DataQuery is DOWN"
-    _print_endpoint_result(summary, {"status": "ok" if ok else "down"})
-    return 0 if ok else 1
+        status = await dq.service_status_async()
+    http_status = status.get("http_status")
+    if status["up"]:
+        summary = "DataQuery is UP"
+    elif http_status in (401, 403):
+        # The service answered, so it is not down: the credentials were rejected.
+        summary = f"DataQuery authentication failed (HTTP {http_status})"
+    elif http_status is not None:
+        summary = f"DataQuery is DOWN (HTTP {http_status})"
+    else:
+        summary = f"DataQuery is unreachable: {status.get('error')}"
+    _print_endpoint_result(summary, {"status": "ok" if status["up"] else "error", **status})
+    return 0 if status["up"] else 1
 
 
 def cmd_function_help(args: argparse.Namespace) -> int:
@@ -927,14 +1089,12 @@ def cmd_function_help(args: argparse.Namespace) -> int:
 def _mcp_token_storage_dir(config: Any) -> Path:
     """Token cache for ``mcp-connect``, fixed per credential set.
 
-    MCP apps launch the bridge from arbitrary working directories, so the
-    SDK default (``<download_dir>/.tokens``, relative) would pick up whatever
-    token happens to sit there, possibly one issued for other credentials.
+    Same per-credential cache the SDK uses by default, so ``mcp-connect`` and
+    the CLI share one token per credential set.
     """
-    from dataquery.config import EnvConfig
+    from dataquery.transport.auth import default_token_storage_dir
 
-    fingerprint = "\n".join([config.client_id or "", config.oauth_token_url or "", config.aud or ""])
-    return EnvConfig.user_config_dir() / "tokens" / hashlib.sha256(fingerprint.encode()).hexdigest()[:16]
+    return default_token_storage_dir(config)
 
 
 def _authe_auth(token_manager: Any) -> Any:
@@ -1080,6 +1240,34 @@ def cmd_mcp_install(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_skill_install(args: argparse.Namespace) -> int:
+    """Install (or remove) the bundled agent skill for each requested app."""
+    from dataquery import skill_install
+    from dataquery.types.exceptions import ConfigurationError
+
+    if args.project_dir is not None and args.scope != "project":
+        print("skill-install: --project-dir needs --scope project", file=sys.stderr)
+        return 1
+    apps = list(skill_install.SKILL_APPS) if "all" in args.app else list(dict.fromkeys(args.app))
+    failed = False
+    for app in apps:
+        label = skill_install.SKILL_APPS[app].label
+        try:
+            if args.uninstall:
+                removed = skill_install.uninstall(app, args.scope, args.project_dir, force=args.force)
+                print(f"{label}: {'removed ' + str(removed) if removed else 'not installed'}")
+            else:
+                path, replaced = skill_install.install(app, args.scope, args.project_dir, force=args.force)
+                print(f"{label}: {'updated' if replaced else 'installed'} {path}")
+        except (ConfigurationError, OSError) as exc:
+            print(f"{label}: {exc}", file=sys.stderr)
+            failed = True
+    if not args.uninstall and not failed:
+        print("Start a new session (or reload the window) in each app to pick up the skill.")
+        print("The skill runs the `dataquery` CLI; check credentials with: dataquery config validate")
+    return 1 if failed else 0
+
+
 def main_sync(ns: argparse.Namespace) -> int:
     if ns.command == "config":
         if ns.config_command == "show":
@@ -1128,6 +1316,8 @@ def main() -> int:
         return cmd_function_help(args)
     if args.command == "mcp-install":
         return cmd_mcp_install(args)
+    if args.command == "skill-install":
+        return cmd_skill_install(args)
 
     handler = _ASYNC_COMMANDS.get(args.command)
     if handler is None:

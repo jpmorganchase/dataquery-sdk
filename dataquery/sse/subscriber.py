@@ -362,11 +362,18 @@ class NotificationDownloadManager:
 
         event_type = event.event
 
+        if not file_group_id and not file_date_time:
+            # Subscription confirmations and heartbeats carry neither field.
+            logger.debug("SSE control/heartbeat event — skipping: %s", event.data[:200])
+            return
         if not file_group_id or not file_date_time:
             logger.warning(
                 "SSE event missing file-group-id or file-datetime: %s",
                 event.data[:200],
             )
+            return
+        if not self._subscribed_to(file_group_id):
+            logger.debug("File group %s is outside the subscription — skipping", file_group_id)
             return
 
         file_key = f"{file_group_id}_{file_date_time}"
@@ -439,6 +446,10 @@ class NotificationDownloadManager:
                 continue
             if not item.get("is-available"):
                 continue
+            # The catch-up lists every file in the group; the --file-group-id
+            # subscription filter only applies server-side to the SSE stream.
+            if not self._subscribed_to(fid):
+                continue
             if self.file_filter and not self.file_filter(item):
                 continue
             file_key = f"{fid}_{dstr}"
@@ -467,6 +478,11 @@ class NotificationDownloadManager:
             *(asyncio.create_task(worker(f, d, k)) for f, d, k in eligible),
             return_exceptions=True,
         )
+
+    def _subscribed_to(self, file_group_id: str) -> bool:
+        """True when no file-group filter is set or ``file_group_id`` is in it."""
+        wanted = self.subscription.file_group_ids
+        return not wanted or file_group_id in wanted
 
     def _file_exists_locally(self, file_group_id: str, date_str: str) -> bool:
         """Heuristic check: does a local file contain both the id and date?"""

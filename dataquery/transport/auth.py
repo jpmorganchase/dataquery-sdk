@@ -1,6 +1,7 @@
 """Authentication module for the DATAQUERY SDK."""
 
 import asyncio
+import hashlib
 import json
 import os
 from datetime import datetime
@@ -14,6 +15,23 @@ from ..types.exceptions import AuthenticationError, ConfigurationError, NetworkE
 from ..types.models import ClientConfig, OAuthToken, TokenRequest, TokenResponse
 
 logger = structlog.get_logger(__name__)
+
+
+def credential_fingerprint(config: ClientConfig) -> str:
+    """Short hash identifying the credential set a token was issued for."""
+    raw = "\n".join([config.client_id or "", config.oauth_token_url or "", getattr(config, "aud", None) or ""])
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
+def default_token_storage_dir(config: ClientConfig) -> Path:
+    """Per-user, per-credential token cache: ``~/.dataquery/tokens/<fingerprint>``.
+
+    Not relative to the working directory, so a token cached by one project,
+    tool or test run is never picked up by a process using other credentials.
+    """
+    from ..config import EnvConfig
+
+    return EnvConfig.user_config_dir() / "tokens" / credential_fingerprint(config)
 
 
 class TokenManager:
@@ -35,25 +53,29 @@ class TokenManager:
         return self._token_lock
 
     def _setup_token_storage(self):
-        """Setup token storage file."""
+        """Setup token storage file.
+
+        ``token_storage_enabled`` + ``token_storage_dir`` pick an explicit
+        directory; otherwise OAuth tokens are cached per credential set under
+        the user config dir. Bearer-token-only configs cache nothing.
+        """
+        self._fingerprint = credential_fingerprint(self.config)
         base_dir: Optional[Path] = None
         token_storage_enabled = bool(getattr(self.config, "token_storage_enabled", False))
         token_storage_dir = getattr(self.config, "token_storage_dir", None)
         if token_storage_enabled and token_storage_dir:
             base_dir = Path(token_storage_dir)
-        elif getattr(self.config, "download_dir", None):
-            try:
-                if str(self.config.download_dir).strip():
-                    base_dir = Path(self.config.download_dir) / ".tokens"
-            except Exception:
-                base_dir = None
+        elif self.config.has_oauth_credentials:
+            base_dir = default_token_storage_dir(self.config)
 
         if base_dir:
-            base_dir.mkdir(parents=True, exist_ok=True)
             try:
+                base_dir.mkdir(parents=True, exist_ok=True)
                 os.chmod(base_dir, 0o700)
-            except OSError:
-                pass
+            except OSError as e:
+                logger.warning("Token storage unavailable; tokens will not be cached", error=str(e))
+                self.token_file = None
+                return
             self.token_file = base_dir / "oauth_token.json"
         else:
             self.token_file = None
@@ -79,7 +101,14 @@ class TokenManager:
                         and self.current_token.is_expiring_soon(self.config.token_refresh_threshold)
                     ):
                         logger.info("Token expiring soon, refreshing...")
-                        await self._refresh_token()
+                        try:
+                            await self._refresh_token()
+                        except (AuthenticationError, NetworkError) as e:
+                            # The current token still works until it expires;
+                            # use it and try again on the next request.
+                            if self.current_token.is_expired:
+                                raise
+                            logger.warning("Token refresh failed; using current token until expiry", error=str(e))
 
             if self.current_token:
                 return self.current_token.to_authorization_header()
@@ -151,21 +180,20 @@ class TokenManager:
             raise AuthenticationError(f"Failed to get OAuth token: {e}") from e
 
     async def _refresh_token(self) -> Optional[OAuthToken]:
-        """Refresh the current OAuth token."""
+        """Refresh the current OAuth token, falling back to a new client-credentials token."""
         if not self.current_token or not self.current_token.refresh_token:
             return await self._get_new_token()
 
+        if not self.config.oauth_token_url:
+            raise ConfigurationError("OAuth token URL not configured")
+
+        refresh_data = {
+            "grant_type": "refresh_token",
+            "refresh_token": self.current_token.refresh_token,
+            "client_id": self.config.client_id,
+            "client_secret": self.config.get_client_secret(),
+        }
         try:
-            refresh_data = {
-                "grant_type": "refresh_token",
-                "refresh_token": self.current_token.refresh_token,
-                "client_id": self.config.client_id,
-                "client_secret": self.config.get_client_secret(),
-            }
-
-            if not self.config.oauth_token_url:
-                raise ConfigurationError("OAuth token URL not configured")
-
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     self.config.oauth_token_url,
@@ -190,18 +218,18 @@ class TokenManager:
                             expires_in=self.current_token.expires_in,
                         )
                         return self.current_token
-                    else:
-                        error_data = await response.text()
-                        logger.error(
-                            "Failed to refresh OAuth token",
-                            status=response.status,
-                            error=error_data,
-                        )
-                        return await self._get_new_token()
-
+                    error_data = await response.text()
+                    logger.error(
+                        "Failed to refresh OAuth token",
+                        status=response.status,
+                        error=error_data,
+                    )
         except Exception as e:
             logger.error("Error refreshing OAuth token", error=str(e))
-            return await self._get_new_token()
+
+        # Outside the try, so a failure here is raised once instead of
+        # being caught and retried with a second token request.
+        return await self._get_new_token()
 
     async def _load_token(self) -> Optional[OAuthToken]:
         """Load token from storage."""
@@ -212,15 +240,21 @@ class TokenManager:
             with open(self.token_file, "r") as f:
                 token_data = json.load(f)
 
+            if token_data.pop("credential_fingerprint", None) != self._fingerprint:
+                # Issued for other credentials (or written by an older SDK
+                # that did not record them): never send it.
+                logger.info("Ignoring stored token issued for different credentials")
+                return None
+
             if "issued_at" in token_data:
                 token_data["issued_at"] = datetime.fromisoformat(token_data["issued_at"])
 
-            self.current_token = OAuthToken(**token_data)
-
-            if self.current_token.is_expired:
-                logger.info("Stored token is expired")
-                self.current_token = None
+            token = OAuthToken(**token_data)
+            if token.expires_at is None or token.is_expired:
+                logger.info("Stored token is expired or has no expiry")
                 return None
+
+            self.current_token = token
 
             logger.info("Token loaded from storage", expires_at=self.current_token.expires_at)
             return self.current_token
@@ -233,17 +267,23 @@ class TokenManager:
         """Save token to storage."""
         if not self.token_file or not self.current_token:
             return
+        if self.current_token.expires_in is None:
+            # Another process could not tell when it goes stale; keep it in memory only.
+            logger.debug("Token has no expires_in; not persisting it")
+            return
 
+        # Per-process temp name so concurrent writers never share (and clobber) one file.
+        temp_file = self.token_file.with_name(f"{self.token_file.name}.{os.getpid()}.tmp")
         try:
             token_data = self.current_token.model_dump()
             if "issued_at" in token_data and token_data["issued_at"] is not None:
                 token_data["issued_at"] = token_data["issued_at"].isoformat()
+            token_data["credential_fingerprint"] = self._fingerprint
 
             self.token_file.parent.mkdir(parents=True, exist_ok=True)
 
             # Create the temp file with owner-only permissions from the start
             # (no TOCTOU window between open() and chmod()).
-            temp_file = self.token_file.with_suffix(".tmp")
             flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
             fd = os.open(temp_file, flags, 0o600)
             try:
@@ -262,7 +302,6 @@ class TokenManager:
 
         except Exception as e:
             logger.warning("Failed to save token to storage", error=str(e))
-            temp_file = self.token_file.with_suffix(".tmp")
             try:
                 temp_file.unlink(missing_ok=True)
             except OSError as cleanup_err:
@@ -316,6 +355,24 @@ class OAuthManager:
         """Discard the cached token and fetch a new one."""
         self.token_manager.clear_token()
         return await self.token_manager.get_valid_token()
+
+    async def refresh_after_rejection(self, rejected_header: str) -> Optional[str]:
+        """Replace a token the API rejected (401) and return the new header.
+
+        Only an OAuth token is replaced, and only if it is still the rejected
+        one: when concurrent requests all get 401, the first discards it and
+        the rest reuse the replacement instead of each fetching another.
+        """
+        if self.config.has_bearer_token or not self.config.has_oauth_credentials:
+            return None
+        tm = self.token_manager
+        async with tm._get_token_lock():
+            current = tm.current_token.to_authorization_header() if tm.current_token else None
+            if current and current != rejected_header:
+                return current
+            logger.info("API rejected the cached OAuth token; fetching a new one")
+            tm.clear_token()
+        return await tm.get_valid_token()
 
     def is_authenticated(self) -> bool:
         """Check if authentication is configured."""

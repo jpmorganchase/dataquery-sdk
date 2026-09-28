@@ -3,7 +3,7 @@
 import json
 import os
 import tempfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
@@ -242,7 +242,7 @@ class TestTokenManager:
         assert token_manager.token_file is not None
 
     def test_token_manager_initialization_without_download_dir(self):
-        """Test TokenManager initialization without download directory."""
+        """Token storage no longer depends on download_dir: it lives in the user config dir."""
         config = ClientConfig(
             base_url="https://api.example.com",
             oauth_enabled=True,
@@ -255,7 +255,8 @@ class TestTokenManager:
         token_manager = TokenManager(config)
         assert token_manager.config == config
         assert token_manager.current_token is None
-        assert token_manager.token_file is None
+        assert token_manager.token_file is not None
+        assert token_manager.token_file.parent.parent.name == "tokens"
 
     @pytest.mark.asyncio
     async def test_token_manager_get_valid_token_bearer(self):
@@ -557,12 +558,14 @@ class TestTokenManager:
 
         token_manager = TokenManager(config)
 
-        # Create token data
+        # Create token data, recorded for this credential set
         token_data = {
             "access_token": "test_access_token",
             "token_type": "Bearer",
-            "expires_at": (datetime.now() + timedelta(hours=1)).isoformat(),
+            "expires_in": 3600,
+            "issued_at": datetime.now(timezone.utc).isoformat(),
             "refresh_token": "test_refresh_token",
+            "credential_fingerprint": token_manager._fingerprint,
         }
 
         with patch("pathlib.Path.exists", return_value=True):

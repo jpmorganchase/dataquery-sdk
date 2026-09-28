@@ -148,8 +148,8 @@ The SDK comes with the following sensible defaults, so you only need to configur
 | `DATAQUERY_DEFAULT_DIR` | `files` | Default files subdirectory |
 | **Security** | | |
 | `DATAQUERY_MASK_SECRETS` | `true` | Mask secrets in logs |
-| `DATAQUERY_TOKEN_STORAGE_ENABLED` | `false` | Enable token storage |
-| `DATAQUERY_TOKEN_STORAGE_DIR` | `.tokens` | Token storage directory |
+| `DATAQUERY_TOKEN_STORAGE_ENABLED` | `false` | Use `DATAQUERY_TOKEN_STORAGE_DIR` for the OAuth token cache. When `false`, tokens are cached per credential set in `~/.dataquery/tokens/<fingerprint>/` |
+| `DATAQUERY_TOKEN_STORAGE_DIR` | (none) | Explicit token cache directory; used only when `DATAQUERY_TOKEN_STORAGE_ENABLED=true` |
 
 ## Configuration File
 

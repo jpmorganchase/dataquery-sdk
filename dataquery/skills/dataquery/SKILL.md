@@ -1,22 +1,18 @@
 ---
 name: dataquery
 description: >-
-  Query JP Morgan DataQuery API v2 for financial market data. Use when the user mentions
-  DataQuery, DQ, or wants to fetch datasets, instruments, time-series, grid data, bond yields,
-  index returns, CSV exports, or CUSIPs/ISINs. Also use
-  for computed analytics: moving averages, volatility, correlation, beta, regression,
-  z-scores, spreads, rolling statistics, or RSI on financial time-series.
-  Also use for the File Delivery API: listing published files, listing which files were
-  published across a date range, checking file availability, downloading individual files,
-  bulk date-range downloads, and live SSE file-watch.
-  Trigger phrases: "dataquery", "DQ", "pull time-series", "fetch yields", "get bond data",
-  "search datasets", "list instruments", "export to csv", "grid data",
-  "heartbeat", "moving average", "volatility", "correlation", "beta", "z-score",
-  "regression", "spread", "RSI", "function help", "list functions", "treasury rate",
-  "swap rate", "download file", "download catalog", "bulk download",
-  "file availability", "available files", "file delivery", "which files were published",
-  "backfill files", "watch files", "list files", "subscribe to files".
-disable-model-invocation: false
+  Query J.P. Morgan DataQuery (API v2 and File Delivery API) through the local
+  `dataquery` CLI. Use when the user mentions DataQuery or DQ, or wants market data:
+  searching datasets, listing instruments or attributes, pulling time series (bond
+  yields, index returns, swap and treasury rates, CUSIPs/ISINs), grid data, or CSV
+  exports. Also use for computed analytics on those series (moving averages,
+  volatility, correlation, beta, regression, z-scores, spreads, RSI, DQ function
+  syntax), and for published files: which files a dataset publishes, availability
+  by date or date range, single and bulk downloads, and live SSE file watching.
+  Trigger phrases: "dataquery", "DQ", "pull time-series", "fetch yields",
+  "search datasets", "list instruments", "export to csv", "moving average",
+  "volatility", "correlation", "z-score", "download file", "bulk download",
+  "file availability", "available files", "watch files".
 ---
 
 # JP Morgan DataQuery API v2
@@ -50,7 +46,7 @@ setx UV_TOOL_DIR "%USERPROFILE%\.uv\tools"
 ```bash
 uv tool install dataquery-sdk
 ```
-This puts the `dataquery` executable on PATH. If the command is not found afterwards, run `uv tool update-shell` and open a new terminal. To upgrade later, run `uv tool upgrade dataquery-sdk`. On a corporate network that blocks PyPI, add `--index-url <internal registry URL>`.
+This puts the `dataquery` executable on PATH. If the command is not found afterwards, run `uv tool update-shell` and open a new terminal. To upgrade later, run `uv tool upgrade dataquery-sdk`, then `dataquery skill-install --app <app>` to refresh this skill (`claude-code`, `codex`, `vscode`, `cursor` or `all`). On a corporate network that blocks PyPI, add `--index-url <internal registry URL>`.
 
 ### Step 3: Configure credentials
 
@@ -141,11 +137,11 @@ This confirms OAuth authentication works and the API is reachable end to end.
 dataquery heartbeat
 ```
 - If the summary line reads `DataQuery is UP`, the preflight is complete. Proceed to search.
-- If it reads `DataQuery is DOWN` or returns a non-zero exit code, inspect the JSON envelope:
-  - `401`: Authentication token expired or invalid. Re-run the command to refresh the token; if it persists, ask the user to check the client ID and secret in `~/.dataquery/.env` (Local Setup Step 3).
-  - `403`: Account lacks DataQuery entitlement. Contact `DataQuery_Sales@jpmorgan.com`.
-  - `503`: DataQuery maintenance window. Retry later and do not proceed.
-  - Network or DNS error: verify VPN and corporate network connectivity.
+- Otherwise the command exits non-zero, and the summary line and the `http_status` / `error` fields in the JSON say why:
+  - `DataQuery authentication failed (HTTP 401)`: credentials rejected. Re-run once; if it persists, ask the user to check the client ID and secret in `~/.dataquery/.env` (Local Setup Step 3).
+  - `DataQuery authentication failed (HTTP 403)`: the account lacks DataQuery entitlement. Contact `DataQuery_Sales@jpmorgan.com`.
+  - `DataQuery is DOWN (HTTP 503)`: DataQuery maintenance window. Retry later and do not proceed.
+  - `DataQuery is unreachable: ...`: network or DNS error. Verify VPN and corporate network connectivity.
 
 After all five checks pass, proceed to the search step below. Treat the preflight as session state. Once it passes, do not run it again unless a later command surfaces an environment-related error.
 
@@ -168,6 +164,8 @@ Workflow:
 3. Parse the response to identify relevant group IDs, instruments, and expressions.
 4. Use those identifiers to call the specific data endpoints (time-series, and similar).
 
+Search is not deterministic: the same query can return a different set of datasets on each call. If the expected dataset is missing, run the search once more or use `groups-search --keywords`.
+
 Text search replaces manual guessing of group IDs. Even when the routing rules below suggest a group, prefer the search result for accuracy. Fall back to routing rules only when search returns no results.
 
 When the user asks something like:
@@ -178,7 +176,7 @@ When the user asks something like:
 - "Is DQ up?": `heartbeat`
 - "What files does this group publish?": `files --group-id <id>`
 - "Which files were published last week?": `available-files --group-id <id> --start-date --end-date`
-- "Download yesterday's catalog for FI_GO_NOTE_BOND": `files`, then `availability`, then `download`
+- "Download yesterday's catalog for CDS_INDEX_TRANCHES": `files`, then `availability`, then `download`
 - "Download the last 30 days of catalogs": `available-files` to preview, then `download-group --start-date --end-date`
 - "Watch for new files" or "subscribe to publications": `download --watch --group-id <id>`
 
@@ -200,8 +198,8 @@ These rules are mandatory and override any urge to be helpful by guessing. DataQ
 **Every identifier must come from a real API response or be supplied verbatim by the user — never from memory or inference:**
 - Group IDs (e.g. `FI_GO_NOTE_BOND`) → from `search`, `groups`, or `groups-search`.
 - Instrument IDs, CUSIPs, ISINs → from `instruments` or `instruments-search`.
-- Attribute IDs (e.g. `TR`, `YTDR`, `MIDYLD`) → from `attributes --group-id <id>`.
-- File group IDs (e.g. `DQ_FI_GO_NOTE_BOND_CATALOG`) → from `files --group-id <id>`.
+- Attribute IDs (e.g. `TR,,LOC`, `TR,YTDR,LOC`, `01M,FWD_YIELD`) → from `attributes --group-id <id>`. Most contain commas, so pass each one exactly as returned in its own `--attributes` flag (`--attributes "TR,,LOC" --attributes "TR,YTDR,LOC"`). Never split, shorten or join them.
+- File group IDs (e.g. `CDS_INDEX_TRANCHES_CORE_DAILY`) → from `files --group-id <id>`.
 - File datetimes (`--file-datetime`) → from `available-files` or `availability`. Do not assume a file exists for a date (weekends, holidays, and publication lags leave gaps).
 - `DB(...)` and `DBGRID(...)` expressions → assembled only from group/instrument/attribute values verified above. Do not build an expression out of guessed components.
 
@@ -346,12 +344,12 @@ There are three ways to retrieve time-series. Select the one that best fits the 
 
 By group (bulk), best for pulling all instruments in a group:
 ```bash
-dataquery group-timeseries --group-id IN_CR_USD_ABS --attributes TR,YTDR,LOC --filter "currency(USD)" --data ALL --start-date TODAY-1M
+dataquery group-timeseries --group-id IN_CR_USD_ABS --attributes "TR,,LOC" --attributes "TR,YTDR,LOC" --filter "currency(USD)" --data ALL --start-date TODAY-1M
 ```
 
 By instrument ID, best when the user knows specific instruments:
 ```bash
-dataquery instrument-timeseries --instruments <ID1> --instruments <ID2> --attributes TR,YTDR --data ALL --start-date TODAY-5D
+dataquery instrument-timeseries --instruments <ID1> --instruments <ID2> --attributes "TR,,LOC" --attributes "TR,YTDR,LOC" --data ALL --start-date TODAY-5D
 ```
 
 By DQ expression, best for users familiar with traditional DQ syntax:
@@ -390,7 +388,7 @@ Note: when presenting results from function expressions, always show the full ex
 Add `--output-csv <filename>` to any time-series command. This also works with function expressions.
 ```bash
 # Group time-series to CSV
-dataquery group-timeseries --group-id FI_GO_BO_CE --attributes AM_CAP_ACCR --data ALL --start-date TODAY-1M --output-csv bonds.csv
+dataquery group-timeseries --group-id FI_GO_BO_CE --attributes AM_CAP_ACCR --filter "currency(EUR)" --data ALL --start-date TODAY-1M --output-csv bonds.csv
 
 # Expression time-series to CSV
 dataquery expression-timeseries --expressions "DB(BIGI,ABS,Q10,TR,YTDR,LOC)" --start-date TODAY-1Y --output-csv abs_returns.csv
@@ -409,54 +407,56 @@ Choosing between the two APIs:
 - Use the API v2 time-series commands (Workflows 2 to 4) when the user wants specific values, instruments, or computed analytics to view or export as CSV.
 - If a dataset is only delivered as files (`files` lists file group IDs but time-series calls return nothing), switch to this workflow and tell the user.
 
+Only datasets with file delivery enabled publish files: `groups --json` shows `"is-file-delivery-enabled": true` for them. Many time-series datasets (including `FI_GO_NOTE_BOND`, `FI_GO_HOT_RUN` and `IN_CR_USD_ABS`) have none, and `files` answers them with a generic `400 The request received was malformed or invalid`. Treat that as "this dataset has no files", not as a syntax problem.
+
 Step 1: discover which file types a group publishes.
 ```bash
-dataquery files --group-id FI_GO_NOTE_BOND --json
+dataquery files --group-id CDS_INDEX_TRANCHES --json
 ```
 Returns the `file-group-id` and `file-type` values for that dataset. Use `--file-group-id` to narrow to one file type and `--limit` to cap results. Every file group ID used in later steps must come from this output or from the user.
 
 Step 2: see which files were actually published for a date range.
 ```bash
-dataquery available-files --group-id FI_GO_NOTE_BOND --start-date 20260501 --end-date 20260531 --json
+dataquery available-files --group-id CDS_INDEX_TRANCHES --start-date 20260501 --end-date 20260531 --json
 
 # Restrict to a single file type
-dataquery available-files --group-id FI_GO_NOTE_BOND --file-group-id DQ_FI_GO_NOTE_BOND_CATALOG \
+dataquery available-files --group-id CDS_INDEX_TRANCHES --file-group-id CDS_INDEX_TRANCHES_CORE_DAILY \
     --start-date 20260501 --end-date 20260531 --json
 ```
 Each record has `file-group-id`, `file-datetime`, `is-available`, and `last-modified`. Use this step to answer "what was published?" questions, find the latest available date, spot gaps before a bulk download, and pick exact `--file-datetime` values for Step 3a.
 
 Step 2b (single date): check one file on one date.
 ```bash
-dataquery availability --file-group-id DQ_FI_GO_NOTE_BOND_CATALOG --file-datetime 20260606 --json
+dataquery availability --file-group-id CDS_INDEX_TRANCHES_CORE_DAILY --file-datetime 20260925 --json
 ```
-Always pass `--json`; the text output only echoes the inputs and does not say whether the file is available.
+Text mode prints `<file-group-id> @ <datetime>: available` (or `not available`); `--json` returns the full record. Intraday file groups (whose `available-files` datetimes look like `20260915T020214`) need that exact timestamp: a date-only value makes the server fail with HTTP 500.
 
 Step 3a: download a single file.
 ```bash
-dataquery download --file-group-id DQ_FI_GO_NOTE_BOND_CATALOG --file-datetime 20260606 --destination ./downloads --json
+dataquery download --file-group-id CDS_INDEX_TRANCHES_CORE_DAILY --file-datetime 20260925 --destination ./downloads --json
 ```
 `--file-datetime` accepts `YYYYMMDD`, `YYYYMMDDTHHMM`, or `YYYYMMDDTHHMMSS`. Use the exact value returned by `available-files` for intraday files. Tune chunking for very large files with `--num-parts 8 --chunk-size 4194304`.
 
 Step 3b: bulk date-range download (best for "give me a month of daily catalogs" or backfills).
 ```bash
-dataquery download-group --group-id FI_GO_NOTE_BOND --start-date 20260501 --end-date 20260531 --destination ./downloads --json
+dataquery download-group --group-id CDS_INDEX_TRANCHES --start-date 20260501 --end-date 20260531 --destination ./downloads --json
 
 # Restrict to specific file-group-ids
-dataquery download-group --group-id FI_GO_NOTE_BOND --start-date 20260501 --end-date 20260531 \
-    --file-group-id DQ_FI_GO_NOTE_BOND_CATALOG --destination ./downloads --max-concurrent 5 --num-parts 8 --json
+dataquery download-group --group-id CDS_INDEX_TRANCHES --start-date 20260501 --end-date 20260531 \
+    --file-group-id CDS_INDEX_TRANCHES_CORE_DAILY --destination ./downloads --max-concurrent 5 --num-parts 8 --json
 ```
-Only files flagged available in the window are downloaded. Report the successful and failed counts from the result. For a failed file, retry it once with `download`, then report it to the user if it still fails. For windows longer than a few months, split the request into monthly `download-group` calls so one failure does not force a restart of the whole range.
+Only files flagged available in the window are downloaded. Report the successful and failed counts from the result; text mode prints one `<file-group-id> @ <datetime>: <error>` line per failure (`--json`: `details.failures`). A file that `available-files` lists as available can still fail with `404 File not found` (seen for some catalog file groups): that is a server-side inconsistency, so report it as such rather than retrying repeatedly. For a failed file, retry it once with `download`, then report it to the user if it still fails. For windows longer than a few months, split the request into monthly `download-group` calls so one failure does not force a restart of the whole range.
 
 Step 3c: live watch for new publications (SSE).
 ```bash
 # Watch every new file in a group
-dataquery download --watch --group-id FI_GO_NOTE_BOND --destination ./downloads
+dataquery download --watch --group-id CDS_INDEX_TRANCHES --destination ./downloads
 
 # Server-side filter to specific file-group-ids
-dataquery download --watch --group-id FI_GO_NOTE_BOND --file-group-id DQ_CATALOG DQ_TRADES --destination ./downloads
+dataquery download --watch --group-id CDS_INDEX_TRANCHES --file-group-id CDS_INDEX_TRANCHES_CORE_DAILY CDS_INDEX_TRANCHES_CORE_DELTA --destination ./downloads
 
 # Discard persisted last-event-id and start fresh
-dataquery download --watch --group-id FI_GO_NOTE_BOND --destination ./downloads --reset-event-id
+dataquery download --watch --group-id CDS_INDEX_TRANCHES --destination ./downloads --reset-event-id
 ```
 Watch mode runs until it is stopped (Ctrl+C) and never returns on its own. Start it only when the user explicitly asks to watch or subscribe, run it as a background process, and tell the user how to stop it. On stop, it prints JSON stats for the session. The CLI keeps a last-event-id checkpoint across sessions so restarts resume cleanly; `--no-event-replay` disables that and falls back to an availability check on startup.
 
@@ -517,11 +517,14 @@ Always include the data source identifier (expression, or instrument and attribu
 
 - Time-series: present a table with columns Date, Value, Instrument, and Expression. For large result sets, summarize the first and last few rows plus the total count.
 - Groups and instruments: present a table with columns ID, Name, and Description.
-- Heartbeat: report "DataQuery is UP" or "DataQuery is DOWN".
-- If a `page` cursor is returned, fetch the next page automatically (the token expires after 30 minutes).
+- Heartbeat: report the summary line as printed (UP, authentication failed, DOWN, or unreachable).
+- Time-series commands fetch every page automatically; do not pass `--page` unless the user asks for one page. Listing commands (`instruments`, `filters`, `attributes`) return one page: when the summary says `More pages available; fetch the next one with --page <token>`, fetch it (the token expires after 30 minutes).
+- If the summary includes `INCOMPLETE: page N failed (...)`, the server stopped paging part-way (it can reject its own page token with `498`). The data and CSV hold only the pages listed, and the command exits 1. Tell the user the result is partial and give the counts; for large groups, narrow the request with `--filter` or a shorter date range and retry.
+- If the summary includes `Server info: [204] ...`, the call succeeded but nothing matched (for example an unknown group ID or an attribute ID the group does not have). Say so; do not report it as an error or as empty data without explanation.
+- If the summary includes `Server message for <expression>: ...`, that series failed or returned a warning. Report the message to the user, even when other series in the same call returned data.
 - If CSV was exported, confirm the filename and row count.
 - File listings: present a table with columns File Group ID, File Type (or File Datetime), and Available. Call out missing dates explicitly.
-- Downloads: report the local path of each file, plus successful and failed counts for bulk downloads. Never claim a file was downloaded unless the command reported it.
+- Downloads: report the local path of each file, plus successful and failed counts for bulk downloads. Never claim a file was downloaded unless the command reported it. `download` and `download-group` exit non-zero when any file failed; `download` then prints `Download failed for <id> @ <date>: <reason>`.
 
 ## Error Handling
 
@@ -530,7 +533,7 @@ Always include the data source identifier (expression, or instrument and attribu
 | 400 | Bad Request | Check parameter values and format |
 | 401 | Authentication Error | Auth token may have expired; re-run to refresh the token |
 | 403 | Forbidden | Premium dataset; contact DataQuery_Sales@jpmorgan.com |
-| 404 | Not Found | Verify the group ID or instrument ID exists; for downloads, the file may not be published for that date (check `available-files`) |
+| 404 | Not Found | Verify the group ID or instrument ID exists; for downloads, the file may not be published for that date (check `available-files`). If `grid-data` returns 404 for every expression, the grid service is not available to this account: tell the user rather than retrying variants |
 | 500 | Server Error | Retry in a few minutes |
 | 503 | Service Down | DataQuery maintenance; retry later |
 

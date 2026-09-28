@@ -382,6 +382,12 @@ class DataQuery:
         client = self._ensure_client()
         return await client.health_check_async()
 
+    async def service_status_async(self) -> Dict[str, Any]:
+        """Heartbeat with the failure reason: ``{"up", "http_status", "error"}``."""
+        await self.connect_async()
+        client = self._ensure_client()
+        return await client.service_status_async()
+
     async def list_instruments_async(
         self,
         group_id: str,
@@ -698,7 +704,7 @@ class DataQuery:
         group_id: str,
         start_date: str,
         end_date: str,
-        destination_dir: Path = Path("./downloads"),
+        destination_dir: Union[str, Path] = Path("./downloads"),
         max_concurrent: int = 5,
         num_parts: int = 1,
         progress_callback: Optional[Callable] = None,
@@ -804,7 +810,8 @@ class DataQuery:
 
             logger.info("Step 2: Downloading Available Files with parallel range requests")
 
-            dest_dir = destination_dir / group_id
+            # Accept str as well as Path (the CLI passes --destination as a string).
+            dest_dir = Path(destination_dir) / group_id
             dest_dir.mkdir(parents=True, exist_ok=True)
 
             total_concurrent_requests = max_concurrent * num_parts
@@ -913,6 +920,14 @@ class DataQuery:
                     "success_rate": success_rate,
                     "downloaded_files": [r.file_group_id for r in successful],
                     "failed_files": [f.get("file-group-id", f.get("file_group_id", "unknown")) for f in failed],
+                    "failures": [
+                        {
+                            "file_group_id": f.get("file-group-id", f.get("file_group_id", "unknown")),
+                            "file_datetime": f.get("file-datetime", f.get("file_datetime")),
+                            "error": f.get("error"),
+                        }
+                        for f in failed
+                    ],
                     "num_parts": num_parts,
                     "max_concurrent": max_concurrent,
                     "total_concurrent_requests": total_concurrent_requests,
@@ -1514,6 +1529,10 @@ class DataQuery:
     def health_check(self) -> bool:
         """Synchronous wrapper for health_check."""
         return self._run_sync(self.health_check_async())
+
+    def service_status(self) -> Dict[str, Any]:
+        """Synchronous wrapper for service_status."""
+        return self._run_sync(self.service_status_async())
 
     def list_instruments(
         self,

@@ -381,6 +381,42 @@ dataquery auth test
 goes *before* the subcommand: `dataquery --env-file .env.prod groups`. Most
 subcommands accept `--json` for machine-readable output.
 
+## Agent skill (`skill-install`)
+
+The package ships a `dataquery` agent skill that teaches a coding agent to use
+the CLI: dataset search, time series, DQ functions, CSV export and the File
+Delivery API, with rules against inventing identifiers. Install it into your
+agent with one command:
+
+```bash
+dataquery skill-install                        # Claude Code (the default)
+dataquery skill-install --app codex cursor     # one or more apps
+dataquery skill-install --app all              # every app below
+dataquery skill-install --app vscode --scope project   # this repository only
+```
+
+| `--app` | User scope (default) | `--scope project` |
+|---|---|---|
+| `claude-code` | `~/.claude/skills/dataquery` | `.claude/skills/dataquery` |
+| `codex` | `~/.agents/skills/dataquery` | `.agents/skills/dataquery` |
+| `vscode` | `~/.copilot/skills/dataquery` (GitHub Copilot) | `.github/skills/dataquery` |
+| `cursor` | `~/.cursor/skills/dataquery` | `.cursor/skills/dataquery` |
+
+All four apps read the same [Agent Skills](https://agentskills.io) format, so
+each gets an identical copy. Start a new session (or reload the window) to pick
+it up.
+
+- The skill runs the `dataquery` CLI, so set up [credentials](#configure-credentials)
+  first and check them with `dataquery config validate`.
+- Re-run it after `uv tool upgrade dataquery-sdk` (or `pip install -U`) to refresh
+  the installed copy; each copy records the SDK version that wrote it.
+- It replaces only a folder it installed (or an earlier copy of this skill). A
+  different `dataquery` skill folder or a symlink is left alone unless you pass
+  `--force`.
+- `--uninstall` removes it again.
+- VS Code and Cursor also read `~/.claude/skills`, so if you install for Claude
+  Code too, they may list the skill twice; install only where you need it.
+
 ## MCP bridge (`mcp-connect`)
 
 `dataquery mcp-connect` connects a desktop MCP client — Claude Desktop, Claude

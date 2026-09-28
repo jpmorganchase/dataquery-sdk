@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
 import aiohttp
 import structlog
+from yarl import URL
 
 from .. import constants as C
 from ..config import LogFormat, LoggingConfig, LoggingManager, LogLevel
@@ -70,6 +71,7 @@ from ._mixins import (
     MetadataMixin,
     SearchMixin,
     TimeSeriesMixin,
+    check_envelope,
 )
 from ._sync import SyncRunner
 
@@ -366,11 +368,16 @@ class DataQueryClient(
 
     def _validate_request_url(self, url: str, params: Optional[Dict[str, Any]] = None) -> None:
         """Validate complete request URL length including parameters."""
+        complete_url = url
         if params:
-            param_str = "&".join(f"{k}={v}" for k, v in params.items() if v is not None)
-            complete_url = f"{url}?{param_str}" if param_str else url
-        else:
-            complete_url = url
+            query = {k: v for k, v in params.items() if v is not None}
+            try:
+                # Measure the URL as sent: percent-encoded, with list values
+                # repeated as key=value pairs (not their Python repr).
+                complete_url = str(URL(url).with_query(query))
+            except (TypeError, ValueError):
+                param_str = "&".join(f"{k}={v}" for k, v in query.items())
+                complete_url = f"{url}?{param_str}" if param_str else url
 
         max_url_length = 2080
         if len(complete_url) > max_url_length:
@@ -462,6 +469,16 @@ class DataQueryClient(
             raise NetworkError("Failed to establish connection")
 
         response = await self.session.request(method, url, **kwargs)
+
+        if response.status == 401:
+            # A cached token can be rejected before its recorded expiry (revoked,
+            # credentials rotated, issued elsewhere). Replace it and retry once.
+            refresh = getattr(self.auth_manager, "refresh_after_rejection", None)
+            new_header = await refresh(kwargs["headers"].get("Authorization", "")) if refresh else None
+            if new_header:
+                response.release()
+                kwargs["headers"]["Authorization"] = new_header
+                response = await self.session.request(method, url, **kwargs)
 
         # Raise 429 inside the retry scope so the retry manager backs off and retries.
         if response.status == 429:
@@ -768,24 +785,32 @@ class DataQueryClient(
             async with await self._make_authenticated_request("GET", url, params=params) as response:
                 await self._handle_response(response)
                 data = await response.json()
-                items: List[Dict[str, Any]] = data.get("availability") or [] if isinstance(data, dict) else []
-                selected = None
-                for it in items:
-                    if isinstance(it, dict) and it.get("file-datetime") == file_datetime:
-                        selected = it
-                        break
+                no_content = check_envelope(data, ("availability", "is-available"), "availability")
+                items: List[Dict[str, Any]]
+                if no_content:
+                    items = []
+                elif "is-available" in data:
+                    # The live endpoint answers with the single record itself.
+                    items = [data]
+                else:
+                    items = data.get("availability") or []
+                dict_items = [it for it in items if isinstance(it, dict)]
+                # Exact match first; then a date-only request against a timestamped
+                # record (20240101 vs 20240101T0930). Never fall back to another date.
+                selected = next((it for it in dict_items if it.get("file-datetime") == file_datetime), None)
                 if selected is None:
-                    selected = (
-                        items[0]
-                        if items
-                        else {
-                            "file-datetime": file_datetime,
-                            "is-available": False,
-                            "file-name": None,
-                            "first-created-on": None,
-                            "last-modified": None,
-                        }
+                    selected = next(
+                        (it for it in dict_items if str(it.get("file-datetime") or "").startswith(file_datetime)),
+                        None,
                     )
+                if selected is None:
+                    selected = {
+                        "file-datetime": file_datetime,
+                        "is-available": False,
+                        "file-name": None,
+                        "first-created-on": None,
+                        "last-modified": None,
+                    }
                 availability_info = AvailabilityInfo(**selected)
                 self.logger.info(
                     "Availability checked",
@@ -1043,8 +1068,9 @@ class DataQueryClient(
             async with await self._make_authenticated_request("GET", url, params=params) as response:
                 await self._handle_response(response)
                 data = await response.json()
+                no_content = check_envelope(data, ("available-files",), "available-files")
 
-                available_files = data.get("available-files", [])
+                available_files = [] if no_content else (data.get("available-files") or [])
                 self.logger.info(
                     "Available files listed",
                     group_id=group_id,
@@ -1059,13 +1085,26 @@ class DataQueryClient(
 
     async def health_check_async(self) -> bool:
         """Check if the DataQuery service is available."""
+        return (await self.service_status_async())["up"]
+
+    async def service_status_async(self) -> Dict[str, Any]:
+        """Heartbeat with the reason for a failure.
+
+        Returns ``{"up": bool, "http_status": int | None, "error": str | None}`` so
+        callers can tell an outage from rejected credentials or a network error.
+        """
         try:
             url = self._build_api_url(C.API_HEARTBEAT)
             async with await self._make_authenticated_request("GET", url) as response:
-                return response.status == 200
+                if response.status == 200:
+                    return {"up": True, "http_status": 200, "error": None}
+                body = (await response.text())[:500]
+                return {"up": False, "http_status": response.status, "error": body or response.reason}
         except Exception as e:
             logger.error("Health check failed", error=str(e))
-            return False
+            details = getattr(e, "details", None)
+            http_status = details.get("status_code") if isinstance(details, dict) else None
+            return {"up": False, "http_status": http_status, "error": f"{type(e).__name__}: {e}"}
 
     def get_pool_stats(self) -> Dict[str, Any]:
         """Get connection pool statistics including active, idle, and total connections."""

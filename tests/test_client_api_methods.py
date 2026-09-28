@@ -373,7 +373,10 @@ async def test_instruments_and_time_series(monkeypatch):
     assert ts.items == 0
 
     # expressions time series
+    sent_params = {}
+
     def cm_ts2(*a, **k):
+        sent_params.update(k.get("params") or {})
         data = {"items": 0, "page-size": 50, "links": [], "instruments": []}
         r = DummyResponse()
 
@@ -386,6 +389,12 @@ async def test_instruments_and_time_series(monkeypatch):
     monkeypatch.setattr(client, "_make_authenticated_request", cm_ts2)
     ts2 = await client.get_expressions_time_series_async(["DB(X)"])
     assert ts2.items == 0
+
+    # Expressions contain commas, so each one must go out as its own repeated
+    # query param rather than being comma-joined into a single value.
+    exprs = ["VOL(30, DB(A,B,C))", "CORR(60, DB(A,X), DB(A,Y))"]
+    await client.get_expressions_time_series_async(exprs)
+    assert sent_params["expressions"] == exprs
 
 
 @pytest.mark.asyncio
@@ -1150,3 +1159,180 @@ async def test_auth_and_connect_close_paths(monkeypatch):
     # close non-async close path
     await client.close()
     assert client.session is None
+
+
+def _serve(client, monkeypatch, payload, status=200, text=""):
+    """Make every authenticated request answer with ``payload`` (JSON) and ``status``."""
+
+    async def req(method, url, **kwargs):
+        resp = DummyResponse()
+        resp.status = status
+
+        async def json():
+            return payload
+
+        async def _text():
+            return text
+
+        resp.json = json
+        resp.text = _text
+        resp.reason = "Unauthorized" if status == 401 else "OK"
+        return resp
+
+    monkeypatch.setattr(client, "_make_authenticated_request", req)
+    monkeypatch.setattr(client, "_enter_request_cm", req, raising=False)
+
+
+@pytest.mark.asyncio
+async def test_check_availability_never_answers_for_another_date(monkeypatch):
+    client = make_client(monkeypatch)
+    _serve(client, monkeypatch, {"availability": [{"file-datetime": "20240102", "is-available": True}]})
+
+    info = await client.check_availability_async("F1", "20240101")
+    assert info.file_date == "20240101"
+    assert info.is_available is False
+
+
+@pytest.mark.asyncio
+async def test_check_availability_matches_a_timestamped_record(monkeypatch):
+    client = make_client(monkeypatch)
+    _serve(client, monkeypatch, {"availability": [{"file-datetime": "20240101T0930", "is-available": True}]})
+
+    info = await client.check_availability_async("F1", "20240101")
+    assert info.is_available is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("call", ["availability", "available_files"])
+async def test_file_endpoints_raise_on_2xx_error_envelope(monkeypatch, call):
+    """An errors envelope inside a 200 must not read as "no files" / "not available"."""
+    client = make_client(monkeypatch)
+    _serve(client, monkeypatch, {"errors": [{"code": 498, "description": "Unrecognized Page Token"}]})
+
+    with pytest.raises(APIResponseError, match=r"\[498\] Unrecognized Page Token"):
+        if call == "availability":
+            await client.check_availability_async("F1", "20240101")
+        else:
+            await client.list_available_files_async("G")
+
+
+@pytest.mark.asyncio
+async def test_file_endpoints_treat_info_envelope_as_empty(monkeypatch):
+    client = make_client(monkeypatch)
+    _serve(client, monkeypatch, {"info": {"code": 204, "description": "No content"}})
+
+    assert await client.list_available_files_async("G") == []
+    assert (await client.check_availability_async("F1", "20240101")).is_available is False
+
+
+@pytest.mark.asyncio
+async def test_grid_data_envelopes(monkeypatch):
+    client = make_client(monkeypatch)
+    _serve(client, monkeypatch, {"errors": [{"code": 400, "description": "Bad grid"}]})
+    with pytest.raises(APIResponseError, match=r"\[400\] Bad grid"):
+        await client.get_grid_data_async(expr="DBGRID(X)")
+
+    # A whole-request failure carries errorCode/errorMessage and no series.
+    _serve(client, monkeypatch, {"errorCode": "E1", "errorMessage": "Grid not found"})
+    resp = await client.get_grid_data_async(expr="DBGRID(X)")
+    assert resp.series == [] and resp.error_message == "Grid not found"
+
+
+@pytest.mark.asyncio
+async def test_service_status_distinguishes_auth_failure_from_outage(monkeypatch):
+    client = make_client(monkeypatch)
+    _serve(client, monkeypatch, {}, status=401, text='{"message":"Unauthorized"}')
+    status = await client.service_status_async()
+    assert status == {"up": False, "http_status": 401, "error": '{"message":"Unauthorized"}'}
+    assert await client.health_check_async() is False
+
+    _serve(client, monkeypatch, {}, status=200)
+    assert (await client.service_status_async())["up"] is True
+
+
+def test_validate_request_url_measures_repeated_list_params(monkeypatch):
+    """Each list item repeats ``&key=`` on the wire; the old str(list) estimate undercounted."""
+    client = make_client(monkeypatch)
+    url = "https://api.example.com/api/v2/instruments/time-series"
+    # 1,947 chars by the old str(list) estimate, 2,114 as actually sent.
+    instruments = [f"{i:02d}" + "x" * 88 for i in range(20)]
+    naive = len(url) + 1 + len("instruments=" + str(instruments))
+    assert naive <= 2080
+    with pytest.raises(ValidationError, match="exceeds maximum"):
+        client._validate_request_url(url, {"instruments": instruments})
+
+
+class _SeqSession:
+    """Session answering each request with the next status in ``statuses``."""
+
+    closed = False
+
+    def __init__(self, statuses):
+        self.statuses = list(statuses)
+        self.sent_auth = []
+
+    async def request(self, method, url, **kwargs):
+        self.sent_auth.append(kwargs["headers"]["Authorization"])
+        resp = DummyResponse()
+        resp.status = self.statuses.pop(0)
+        resp.release = lambda: None
+        return resp
+
+
+class _RotatingAuth(DummyAuth):
+    def __init__(self):
+        super().__init__()
+        self.rejected = []
+
+    async def get_headers(self):
+        return {"Authorization": "Bearer stale"}
+
+    async def refresh_after_rejection(self, header):
+        self.rejected.append(header)
+        return "Bearer fresh"
+
+
+@pytest.mark.asyncio
+async def test_401_retries_once_with_a_fresh_token(monkeypatch):
+    client = make_client(monkeypatch)
+    client.auth_manager = _RotatingAuth()
+    client.session = _SeqSession([401, 200])
+    monkeypatch.setattr(client, "_ensure_connected", lambda: asyncio.sleep(0))
+
+    resp = await client._execute_request("GET", "https://api.example.com/x")
+    assert resp.status == 200
+    assert client.session.sent_auth == ["Bearer stale", "Bearer fresh"]
+    assert client.auth_manager.rejected == ["Bearer stale"]
+
+
+@pytest.mark.asyncio
+async def test_401_is_returned_after_one_retry(monkeypatch):
+    client = make_client(monkeypatch)
+    client.auth_manager = _RotatingAuth()
+    client.session = _SeqSession([401, 401])
+    monkeypatch.setattr(client, "_ensure_connected", lambda: asyncio.sleep(0))
+
+    resp = await client._execute_request("GET", "https://api.example.com/x")
+    assert resp.status == 401
+    assert len(client.session.sent_auth) == 2
+
+
+@pytest.mark.asyncio
+async def test_check_availability_accepts_a_single_record(monkeypatch):
+    """The live endpoint returns one flat record; it was previously always read as unavailable."""
+    client = make_client(monkeypatch)
+    _serve(
+        client,
+        monkeypatch,
+        {
+            "group-id": "G",
+            "file-group-id": "F1",
+            "file-datetime": "20240101",
+            "file-name": "f.parquet",
+            "is-available": True,
+            "last-modified": "20240101T0930",
+        },
+    )
+    info = await client.check_availability_async("F1", "20240101")
+    assert info.is_available is True
+    assert info.file_name == "f.parquet"

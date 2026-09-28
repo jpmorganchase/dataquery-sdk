@@ -97,3 +97,45 @@ async def test_run_group_download_async_filters_availability(monkeypatch):
         assert report.counts["successful_downloads"] == 2
         assert report.counts["failed_downloads"] == 0
         assert report.details["success_rate"] == 100.0
+
+
+@pytest.mark.asyncio
+async def test_run_group_download_accepts_str_destination(tmp_path):
+    """The CLI passes --destination as a string; ``str / str`` used to raise TypeError."""
+    with patch("dataquery.dataquery.EnvConfig.validate_config"):
+        with patch("dataquery.dataquery.DataQueryClient") as mock_client_cls:
+            mock_client = mock_client_cls.return_value
+            mock_client.connect = AsyncMock(return_value=None)
+            mock_client.close = AsyncMock(return_value=None)
+            mock_client.list_available_files_async = AsyncMock(
+                return_value=[{"file-group-id": "a", "file-datetime": "20240101", "is-available": True}]
+            )
+            mock_rate_limiter = AsyncMock()
+            mock_rate_limiter.config.requests_per_minute = 100
+            mock_rate_limiter.config.burst_capacity = 20
+            mock_client.rate_limiter = mock_rate_limiter
+            result = type(
+                "DownloadResult",
+                (),
+                {
+                    "file_group_id": "a",
+                    "local_path": tmp_path / "a.bin",
+                    "file_size": 1,
+                    "download_time": 1.0,
+                    "bytes_downloaded": 1,
+                    "speed_mbps": 1.0,
+                    "status": type("Status", (), {"value": "completed"})(),
+                    "error_message": None,
+                },
+            )()
+
+            dq = DataQuery()
+            await dq.connect_async()
+            with patch("dataquery.download.parallel.download_file_parallel", new=AsyncMock(return_value=result)):
+                report = await dq.run_group_download_async(
+                    group_id="G", start_date="20240101", end_date="20240101", destination_dir=str(tmp_path)
+                )
+            await dq.close_async()
+
+    assert report.counts["successful_downloads"] == 1
+    assert (tmp_path / "G").is_dir()

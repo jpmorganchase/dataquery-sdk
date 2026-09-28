@@ -548,7 +548,7 @@ def _classify(
     failed: list[dict] = []
     for file_info, result in zip(files, results):
         if isinstance(result, BaseException):
-            failed.append(file_info)
+            failed.append({**file_info, "error": f"{type(result).__name__}: {result}"})
         elif (
             result
             and hasattr(result, "status")
@@ -557,7 +557,9 @@ def _classify(
         ):
             succeeded.append(result)
         else:
-            failed.append(file_info)
+            # Keep the reason so the report can say why each file failed.
+            reason = getattr(result, "error_message", None) or getattr(getattr(result, "status", None), "value", None)
+            failed.append({**file_info, "error": reason or "download failed"})
     return succeeded, failed
 
 

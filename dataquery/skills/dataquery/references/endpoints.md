@@ -36,7 +36,7 @@ Tip: Prefer `search` (command 0) — use `groups-search` only as a fallback when
 ```bash
 dataquery instruments --group-id IN_CR_USD_ABS
 dataquery instruments --group-id FI_GO_NOTE_BOND
-dataquery instruments --group-id FI_GO_BO_CE --instrument-id 42588b17d59a1e4f06033d187d98f11f-DQGNMTBNDFIM
+dataquery instruments --group-id FI_GO_BO_CE --instrument-id b8920263059b3d5fa42f63f4ab8f1cd7-DQGNMTBNDFIM
 ```
 Returns: instrument-id, instrument-name, country, currency, CUSIP, ISIN. Max 20 instrument IDs per call.
 
@@ -55,7 +55,7 @@ Returns currency/country filters you can use with `--filter` on time-series call
 ### 6. Get Attributes
 ```bash
 dataquery attributes --group-id IN_CR_USD_ABS
-dataquery attributes --group-id FI_GO_BO_CE --instrument-id 42588b17d59a1e4f06033d187d98f11f-DQGNMTBNDFIM
+dataquery attributes --group-id FI_GO_BO_CE --instrument-id b8920263059b3d5fa42f63f4ab8f1cd7-DQGNMTBNDFIM
 ```
 Returns: attribute-id (e.g., TR, YTDR, MIDYLD, AM_CAP_ACCR), attribute-name, expression.
 
@@ -67,26 +67,26 @@ Returns: attribute-id (e.g., TR, YTDR, MIDYLD, AM_CAP_ACCR), attribute-name, exp
 Best for: pulling all instruments in a group at once with filters.
 ```bash
 # ABS index returns - USD only
-dataquery group-timeseries --group-id IN_CR_USD_ABS --attributes TR,YTDR,LOC --filter "currency(USD)" --data ALL --start-date TODAY-1M
+dataquery group-timeseries --group-id IN_CR_USD_ABS --attributes "TR,,LOC" --attributes "TR,YTDR,LOC" --filter "currency(USD)" --data ALL --start-date TODAY-1M
 
 # Central European govt bonds - last 5 days
 dataquery group-timeseries --group-id FI_GO_BO_CE --attributes AM_CAP_ACCR --filter "currency(EUR)" --data ALL --start-date TODAY-5D
 
 # Export to CSV for Excel
-dataquery group-timeseries --group-id FI_GO_BO_CE --attributes AM_CAP_ACCR --data ALL --start-date TODAY-1M --output-csv bonds_data.csv
+dataquery group-timeseries --group-id FI_GO_BO_CE --attributes AM_CAP_ACCR --filter "currency(EUR)" --data ALL --start-date TODAY-1M --output-csv bonds_data.csv
 ```
 
 ### 8. Instrument Time-Series (specific instruments)
 Best for: when you know exactly which instruments you need.
 ```bash
 # Single instrument
-dataquery instrument-timeseries --instruments 2f4835580ae2f8973886f44004823c0b-DQAGGRABSSEI --attributes TR,YTDR,LOC --data REFERENCE_DATA
+dataquery instrument-timeseries --instruments b969ffc5fd7b84e7a08c6f6ea553bcde-DQAGGRABSSEI --attributes "TR,,LOC" --attributes "TR,YTDR,LOC" --data REFERENCE_DATA
 
 # Multiple instruments + time-series
-dataquery instrument-timeseries --instruments 2f4835580ae2f8973886f44004823c0b-DQAGGRABSSEI --instruments 42588b17d59a1e4f06033d187d98f11f-DQGNMTBNDFIM --attributes AM_CAP_ACCR --data ALL --start-date TODAY-5D
+dataquery instrument-timeseries --instruments b969ffc5fd7b84e7a08c6f6ea553bcde-DQAGGRABSSEI --instruments b8920263059b3d5fa42f63f4ab8f1cd7-DQGNMTBNDFIM --attributes AM_CAP_ACCR --data ALL --start-date TODAY-5D
 
 # Weekly frequency with CSV
-dataquery instrument-timeseries --instruments <ID> --attributes TR --data ALL --start-date TODAY-1Y --frequency FREQ_WEEK --output-csv weekly.csv
+dataquery instrument-timeseries --instruments <ID> --attributes "TR,,LOC" --data ALL --start-date TODAY-1Y --frequency FREQ_WEEK --output-csv weekly.csv
 ```
 
 ### 9. Expression Time-Series (traditional DQ syntax)
@@ -157,39 +157,39 @@ These commands work with **published files** (parquet, CSV, etc.) rather than ti
 
 ### 13. List Files in a Group
 ```bash
-dataquery files --group-id FI_GO_NOTE_BOND
-dataquery files --group-id FI_GO_NOTE_BOND --file-group-id DQ_FI_GO_NOTE_BOND_CATALOG
-dataquery files --group-id FI_GO_NOTE_BOND --limit 10 --json
+dataquery files --group-id CDS_INDEX_TRANCHES
+dataquery files --group-id CDS_INDEX_TRANCHES --file-group-id CDS_INDEX_TRANCHES_CORE_DAILY
+dataquery files --group-id CDS_INDEX_TRANCHES --limit 10 --json
 ```
-Returns: file_group_id, file_type, description. Use this to discover what files a dataset publishes.
+Returns: file_group_id, file_type, description. Use this to discover what files a dataset publishes. Works only for datasets with `is-file-delivery-enabled: true` (see `groups --json`); other datasets get a generic 400.
 
 ### 14. List Available Files by Date Range
 Endpoint: `GET group/files/available-files`
 ```bash
 # Every file published for the group in May
-dataquery available-files --group-id FI_GO_NOTE_BOND --start-date 20260501 --end-date 20260531 --json
+dataquery available-files --group-id CDS_INDEX_TRANCHES --start-date 20260501 --end-date 20260531 --json
 
 # One file type only
-dataquery available-files --group-id FI_GO_NOTE_BOND --file-group-id DQ_FI_GO_NOTE_BOND_CATALOG --start-date 20260501 --end-date 20260531
+dataquery available-files --group-id CDS_INDEX_TRANCHES --file-group-id CDS_INDEX_TRANCHES_CORE_DAILY --start-date 20260501 --end-date 20260531
 ```
 Returns one record per file per date: `file-group-id`, `file-datetime`, `is-available`, `last-modified`. Text mode prints `Found N files (M available)` followed by one tab-separated line per file. Use it to find the latest published date, spot gaps, and pick `--file-datetime` values for `download`.
 
 ### 15. Check File Availability (single date)
 ```bash
-dataquery availability --file-group-id DQ_FI_GO_NOTE_BOND_CATALOG --file-datetime 20260606 --json
+dataquery availability --file-group-id CDS_INDEX_TRANCHES_CORE_DAILY --file-datetime 20260925 --json
 ```
-Returns whether one file is ready for the given date. Always use `--json`, because the text output only echoes the inputs.
+Returns whether one file is ready for the given date (text: `... : available` / `not available`). Intraday files need the exact `file-datetime` from `available-files`; a date-only value makes the server fail with HTTP 500.
 
 ### 16. Download a Single File
 ```bash
 # Direct download
-dataquery download --file-group-id DQ_FI_GO_NOTE_BOND_CATALOG --file-datetime 20260606 --destination ./downloads
+dataquery download --file-group-id CDS_INDEX_TRANCHES_CORE_DAILY --file-datetime 20260925 --destination ./downloads
 
 # Custom chunking for very large files
-dataquery download --file-group-id DQ_BIG_FILE --file-datetime 20260606 --destination ./downloads --num-parts 8 --chunk-size 4194304
+dataquery download --file-group-id CDS_INDEX_TRANCHES_CORE_HISTORICAL --file-datetime 20260831 --destination ./downloads --num-parts 8 --chunk-size 4194304
 
 # JSON output for scripting
-dataquery download --file-group-id FG --file-datetime 20260606 --destination ./downloads --json
+dataquery download --file-group-id CDS_INDEX_TRANCHES_CORE_DAILY --file-datetime 20260925 --destination ./downloads --json
 ```
 Streams via parallel HTTP range requests. Returns the local path on success.
 
@@ -197,13 +197,13 @@ Streams via parallel HTTP range requests. Returns the local path on success.
 Subscribe to the notification stream and auto-download new files as they're published.
 ```bash
 # Watch all new files for a group
-dataquery download --watch --group-id FI_GO_NOTE_BOND --destination ./downloads
+dataquery download --watch --group-id CDS_INDEX_TRANCHES --destination ./downloads
 
 # Server-side filter to specific file-group-ids
-dataquery download --watch --group-id FI_GO_NOTE_BOND --file-group-id DQ_CATALOG DQ_TRADES --destination ./downloads
+dataquery download --watch --group-id CDS_INDEX_TRANCHES --file-group-id CDS_INDEX_TRANCHES_CORE_DAILY CDS_INDEX_TRANCHES_CORE_DELTA --destination ./downloads
 
 # Fresh subscription (discard persisted last-event-id)
-dataquery download --watch --group-id FI_GO_NOTE_BOND --destination ./downloads --reset-event-id
+dataquery download --watch --group-id CDS_INDEX_TRANCHES --destination ./downloads --reset-event-id
 ```
 Ctrl+C to stop. Uses server-side filtering when `--file-group-id` is set. This command never exits on its own: run it only when the user asks to watch, as a background process.
 
@@ -211,13 +211,13 @@ Ctrl+C to stop. Uses server-side filtering when `--file-group-id` is set. This c
 Best for: pulling every file in a group across a date window (e.g., a full month of daily catalogs).
 ```bash
 # All files in the group, one month
-dataquery download-group --group-id FI_GO_NOTE_BOND --start-date 20260501 --end-date 20260531 --destination ./downloads
+dataquery download-group --group-id CDS_INDEX_TRANCHES --start-date 20260501 --end-date 20260531 --destination ./downloads
 
 # Filter to one or more file-group-ids
-dataquery download-group --group-id FI_GO_NOTE_BOND --start-date 20260501 --end-date 20260531 --file-group-id DQ_FI_GO_NOTE_BOND_CATALOG --destination ./downloads
+dataquery download-group --group-id CDS_INDEX_TRANCHES --start-date 20260501 --end-date 20260531 --file-group-id CDS_INDEX_TRANCHES_CORE_DAILY --destination ./downloads
 
 # Tune concurrency and parallelism
-dataquery download-group --group-id FI_GO_NOTE_BOND --start-date 20260501 --end-date 20260531 --destination ./downloads --max-concurrent 5 --num-parts 8
+dataquery download-group --group-id CDS_INDEX_TRANCHES --start-date 20260501 --end-date 20260531 --destination ./downloads --max-concurrent 5 --num-parts 8
 ```
 Only files that `available-files` reports as available in the window are downloaded. The result reports successful and failed counts (`--json` returns the full operation report).
 

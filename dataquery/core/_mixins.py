@@ -9,6 +9,7 @@ from typing import (
     Awaitable,
     Callable,
     Dict,
+    Iterable,
     List,
     Optional,
     Type,
@@ -87,6 +88,36 @@ class _RequestProto:
         raise NotImplementedError
 
 
+def check_envelope(payload: Any, known_keys: Iterable[str], source: str = "endpoint") -> bool:
+    """Vet a 2xx body that should carry one of ``known_keys``.
+
+    DataQuery reports some errors and "no content" inside a 2xx body. Returns
+    ``True`` for an ``info`` envelope, which callers treat as an empty result;
+    raises :class:`APIResponseError` for an ``errors`` envelope or any other shape.
+    """
+    if not isinstance(payload, dict):
+        raise APIResponseError(
+            f"Unrecognized response shape from {source}",
+            details={"type": type(payload).__name__},
+        )
+    if set(known_keys) & payload.keys():
+        return False
+    raw_errors = payload.get("errors") or payload.get("error")
+    if raw_errors:
+        err_items = raw_errors if isinstance(raw_errors, list) else [raw_errors]
+        first = next((e for e in err_items if isinstance(e, dict)), {})
+        code = first.get("code")
+        description = first.get("description") or first.get("message") or "API returned an error response"
+        message = f"[{code}] {description}" if code is not None else description
+        raise APIResponseError(message, code=code, details={"errors": err_items})
+    if "info" in payload:
+        return True
+    raise APIResponseError(
+        f"Unrecognized response shape from {source}",
+        details={"keys": sorted(payload.keys())},
+    )
+
+
 class PaginationMixin(_RequestProto):
     """Client-driven and SDK-driven pagination over any ``Paginated`` response."""
 
@@ -99,19 +130,8 @@ class PaginationMixin(_RequestProto):
                 known.add(name)
                 if field.alias:
                     known.add(field.alias)
-            if not (known & payload.keys()):
-                raw_errors = payload.get("errors") or payload.get("error")
-                if raw_errors:
-                    err_items = raw_errors if isinstance(raw_errors, list) else [raw_errors]
-                    first = next((e for e in err_items if isinstance(e, dict)), {})
-                    code = first.get("code")
-                    description = first.get("description") or first.get("message") or "API returned an error response"
-                    message = f"[{code}] {description}" if code is not None else description
-                    raise APIResponseError(message, code=code, details={"errors": err_items})
-                raise APIResponseError(
-                    "Unrecognized response shape from paginated endpoint",
-                    details={"keys": sorted(payload.keys())},
-                )
+            # ``info`` is a Paginated field, so a no-content envelope parses as an empty page.
+            check_envelope(payload, known, "paginated endpoint")
         return model_cls(**payload)
 
     async def get_next_page_async(self, page: P) -> Optional[P]:
@@ -419,7 +439,9 @@ class TimeSeriesMixin(PaginationMixin):
             validate_date_format(end_date, "end-date")
 
         params: dict = {
-            "expressions": ",".join(expressions),
+            # Repeated query params, like "instruments": expressions contain commas
+            # (DB(a,b,c)), so a comma-joined value cannot be split back apart.
+            "expressions": expressions,
             "format": format,
             "calendar": calendar,
             "frequency": frequency,
@@ -622,6 +644,8 @@ class GridMixin(_RequestProto):
         async with await self._enter_request_cm("GET", url, params=params) as response:
             await self._handle_response(response)
             payload = await response.json()
+            if check_envelope(payload, ("series", "errorCode", "errorMessage"), "grid-data"):
+                return GridDataResponse.model_validate({"series": []})
             return GridDataResponse(**payload)
 
 

@@ -109,7 +109,7 @@ namespaces = false
 version = {attr = "dataquery.__version__"}
 
 [tool.setuptools.package-data]
-dataquery = ["py.typed", "data/*.json"]
+dataquery = ["py.typed", "data/*.json", "skills/*/*.md", "skills/*/references/*.md"]
 
 [tool.ruff]
 line-length = 120

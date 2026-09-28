@@ -814,3 +814,55 @@ async def test_get_stats_serialises_errors_as_plain_list(tmp_path):
     assert isinstance(snap["errors"], list)
     # Round-trips through json.dumps without a TypeError.
     json.dumps({k: v for k, v in snap.items() if k not in ("start_time",)})
+
+
+@pytest.mark.asyncio
+async def test_initial_check_respects_the_file_group_filter(tmp_path):
+    """The startup catch-up lists every file in the group; only subscribed ones may download."""
+    client = _FakeClient()
+    client.list_available_files_async.return_value = [
+        {"file-group-id": "DAILY", "file-datetime": "20240101", "is-available": True},
+        {"file-group-id": "DELTA", "file-datetime": "20240101T0930", "is-available": True},
+    ]
+    client.download_file_async.return_value = _download_result(DownloadStatus.COMPLETED)
+
+    mgr = NotificationDownloadManager(
+        client=client, group_id="G", destination_dir=str(tmp_path), file_group_id="DAILY", initial_check=False
+    )
+    mgr._running = True
+    await mgr._check_and_download()
+
+    assert client.download_file_async.await_count == 1
+    assert "DAILY" in str(client.download_file_async.await_args)
+    assert "DELTA" not in str(client.download_file_async.await_args)
+
+
+@pytest.mark.asyncio
+async def test_notification_outside_subscription_is_ignored(tmp_path):
+    client = _FakeClient()
+    mgr = NotificationDownloadManager(
+        client=client, group_id="G", destination_dir=str(tmp_path), file_group_id="DAILY", initial_check=False
+    )
+    mgr._running = True
+    await mgr._handle_notification(_event(file_group_id="DELTA"))
+    client.download_file_async.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "raw",
+    [
+        '{"stream":"notification","filters":{"group-id":"G"},"heartbeat-interval-seconds":30}',
+        '{"timestamp":"2026-09-28T20:58:14Z"}',
+    ],
+)
+async def test_control_and_heartbeat_events_are_not_warnings(tmp_path, caplog, raw):
+    import logging
+
+    client = _FakeClient()
+    mgr = NotificationDownloadManager(client=client, group_id="G", destination_dir=str(tmp_path), initial_check=False)
+    mgr._running = True
+    with caplog.at_level(logging.WARNING):
+        await mgr._handle_notification(_event(raw_data=raw))
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+    client.download_file_async.assert_not_called()

@@ -401,3 +401,27 @@ async def test_download_files_with_retry_forwards_on_file_complete(monkeypatch):
     )
     assert failed == []
     assert sorted(seen) == ["f1", "f2"]  # exactly once per successful file
+
+
+def test_classify_records_why_each_file_failed():
+    from dataquery.download.parallel import _classify
+    from dataquery.types.models import DownloadResult, DownloadStatus
+
+    files = [
+        {"file-group-id": "OK", "file-datetime": "20240101"},
+        {"file-group-id": "CAT", "file-datetime": "20240101"},
+        {"file-group-id": "BOOM", "file-datetime": "20240102"},
+    ]
+    results = [
+        DownloadResult(file_group_id="OK", status=DownloadStatus.COMPLETED),
+        DownloadResult(
+            file_group_id="CAT", status=DownloadStatus.FAILED, error_message="NotFoundError: File not found"
+        ),
+        RuntimeError("connection reset"),
+    ]
+    ok, failed = _classify(files, results)
+    assert [r.file_group_id for r in ok] == ["OK"]
+    assert failed == [
+        {"file-group-id": "CAT", "file-datetime": "20240101", "error": "NotFoundError: File not found"},
+        {"file-group-id": "BOOM", "file-datetime": "20240102", "error": "RuntimeError: connection reset"},
+    ]

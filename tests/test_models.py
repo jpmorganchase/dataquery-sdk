@@ -317,3 +317,23 @@ class TestRegressionCases:
         )
         # Test that alias is handled correctly
         assert error.interaction_id == "test-123"
+
+
+def test_time_series_response_accepts_expression_without_instrument():
+    """Computed expressions (e.g. VOL(30, DB(...))) come back with null instrument id/name."""
+    from dataquery.types.models import TimeSeriesResponse
+
+    resp = TimeSeriesResponse(
+        **{
+            "instruments": [
+                {
+                    "item": 1,
+                    "instrument-id": None,
+                    "instrument-name": None,
+                    "attributes": [{"expression": "VOL(30, DB(BIGI,ABS,TRADED,TR,,LOC))"}],
+                }
+            ]
+        }
+    )
+    assert resp.instruments[0].instrument_id is None
+    assert resp.instruments[0].instrument_name is None

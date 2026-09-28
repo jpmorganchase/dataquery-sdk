@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from dataquery import cli, mcp_install
+from dataquery.types.models import DownloadResult, DownloadStatus
 
 
 def _parser():
@@ -156,22 +157,60 @@ async def test_cli_download_single_json(monkeypatch, tmp_path, capsys):
         ["download", "--file-group-id", "FG", "--file-datetime", "20240101", "--destination", str(dest), "--json"]
     )  # type: ignore[arg-type]
 
-    fake_result = MagicMock()
-    fake_result.model_dump = lambda: {"status": "completed", "local_path": str(dest)}
-    fake_result.status.value = "completed"
-
-    fake_dq = MagicMock()
-    fake_dq.__aenter__ = AsyncMock(return_value=fake_dq)
-    fake_dq.__aexit__ = AsyncMock(return_value=None)
-    fake_dq.download_file_async = AsyncMock(return_value=fake_result)
-    monkeypatch.setattr(cli, "DataQuery", MagicMock(return_value=fake_dq))
+    # A real result: local_path is a Path, which plain json.dumps cannot serialise.
+    fake_result = DownloadResult(file_group_id="FG", local_path=dest, status=DownloadStatus.COMPLETED)
+    monkeypatch.setattr(cli, "DataQuery", MagicMock(return_value=_fake_dq_with_download(fake_result)))
 
     rc = await cli.cmd_download(args)
     out = capsys.readouterr().out
     assert rc == 0
-    # Parse JSON output and compare paths properly
     json_output = json.loads(out)
     assert json_output["local_path"] == str(dest)
+
+
+def _fake_dq_with_download(result):
+    fake_dq = MagicMock()
+    fake_dq.__aenter__ = AsyncMock(return_value=fake_dq)
+    fake_dq.__aexit__ = AsyncMock(return_value=None)
+    fake_dq.download_file_async = AsyncMock(return_value=result)
+    return fake_dq
+
+
+@pytest.mark.asyncio
+async def test_cli_download_failure_exits_nonzero(monkeypatch, capsys):
+    """The SDK returns a FAILED result instead of raising; the CLI must not report success."""
+    args = _parser().parse_args(["download", "--file-group-id", "FG", "--file-datetime", "20240101"])
+    failed = DownloadResult(
+        file_group_id="FG",
+        local_path=Path("downloads/FG.tmp"),
+        status=DownloadStatus.FAILED,
+        error_message="NotFoundError: Resource not found",
+    )
+    monkeypatch.setattr(cli, "DataQuery", MagicMock(return_value=_fake_dq_with_download(failed)))
+
+    rc = await cli.cmd_download(args)
+    captured = capsys.readouterr()
+    assert rc == 1
+    assert "Downloaded to" not in captured.out
+    assert "Download failed for FG @ 20240101: NotFoundError: Resource not found" in captured.err
+
+
+@pytest.mark.asyncio
+async def test_cli_download_group_exits_nonzero_on_failures(monkeypatch, capsys):
+    args = _parser().parse_args(
+        ["download-group", "--group-id", "G", "--start-date", "20240101", "--end-date", "20240102"]
+    )
+    report = MagicMock()
+    report.counts = {"successful_downloads": 1, "failed_downloads": 2}
+    fake_dq = MagicMock()
+    fake_dq.__aenter__ = AsyncMock(return_value=fake_dq)
+    fake_dq.__aexit__ = AsyncMock(return_value=None)
+    fake_dq.run_group_download_async = AsyncMock(return_value=report)
+    monkeypatch.setattr(cli, "DataQuery", MagicMock(return_value=fake_dq))
+
+    rc = await cli.cmd_download_group(args)
+    assert rc == 1
+    assert "Failed: 2" in capsys.readouterr().out
 
 
 def test_cli_config_show_and_validate(monkeypatch, capsys, tmp_path):
@@ -752,3 +791,180 @@ async def test_mcp_connect_honors_explicit_token_storage_dir(mcp_env, tmp_path):
     config = await _connect_and_capture_config(_mcp_args("--client-id", "cid", "--client-secret", "sec"))
 
     assert config.token_storage_dir == str(tmp_path / "mine")
+
+
+def _ts_page(instrument_ids, next_link=None, message=None):
+    from dataquery.types.models import TimeSeriesResponse
+
+    return TimeSeriesResponse(
+        **{
+            "links": [{"self": "/x", "next": next_link}],
+            "instruments": [
+                {
+                    "item": i,
+                    "instrument-id": inst_id,
+                    "instrument-name": inst_id,
+                    "attributes": [
+                        {
+                            "expression": f"DB({inst_id})",
+                            "message": message,
+                            "time-series": [] if message else [["20240101", 1.0]],
+                        }
+                    ],
+                }
+                for i, inst_id in enumerate(instrument_ids)
+            ],
+        }
+    )
+
+
+def _fake_dq_for_group_ts(first, *rest):
+    fake_dq = MagicMock()
+    fake_dq.__aenter__ = AsyncMock(return_value=fake_dq)
+    fake_dq.__aexit__ = AsyncMock(return_value=None)
+    fake_dq.get_group_time_series_async = AsyncMock(return_value=first)
+    fake_dq.get_next_page_async = AsyncMock(side_effect=list(rest))
+    return fake_dq
+
+
+@pytest.mark.asyncio
+async def test_cli_group_timeseries_follows_every_page_into_csv(monkeypatch, tmp_path, capsys):
+    """Without --page, all pages are merged so the summary and CSV are not truncated."""
+    out_csv = tmp_path / "ts.csv"
+    args = _parser().parse_args(
+        ["group-timeseries", "--group-id", "G", "--attributes", "TR", "--output-csv", str(out_csv)]
+    )
+    fake_dq = _fake_dq_for_group_ts(
+        _ts_page(["A", "B"], next_link="/group/time-series?group-id=G&page=tok2"), _ts_page(["C"])
+    )
+    monkeypatch.setattr(cli, "DataQuery", MagicMock(return_value=fake_dq))
+
+    rc = await cli.cmd_group_timeseries(args)
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Group time-series: 3 instrument(s), 3 data point(s)" in out
+    assert "More pages available" not in out
+    assert len(out_csv.read_text().strip().splitlines()) == 4  # header + 3 rows
+
+
+@pytest.mark.asyncio
+async def test_cli_group_timeseries_with_page_reports_the_next_token(monkeypatch, capsys):
+    args = _parser().parse_args(["group-timeseries", "--group-id", "G", "--attributes", "TR", "--page", "tok1"])
+    fake_dq = _fake_dq_for_group_ts(_ts_page(["A"], next_link="/group/time-series?group-id=G&page=tok2"))
+    monkeypatch.setattr(cli, "DataQuery", MagicMock(return_value=fake_dq))
+
+    rc = await cli.cmd_group_timeseries(args)
+    assert rc == 0
+    assert "More pages available; fetch the next one with --page tok2" in capsys.readouterr().out
+    fake_dq.get_next_page_async.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_cli_timeseries_summary_shows_server_messages(monkeypatch, capsys):
+    args = _parser().parse_args(["group-timeseries", "--group-id", "G", "--attributes", "TR"])
+    fake_dq = _fake_dq_for_group_ts(_ts_page(["A"], message="Expression syntax error!"))
+    monkeypatch.setattr(cli, "DataQuery", MagicMock(return_value=fake_dq))
+
+    await cli.cmd_group_timeseries(args)
+    assert "Server message for DB(A): Expression syntax error!" in capsys.readouterr().out
+
+
+def test_csv_export_error_includes_server_messages(tmp_path):
+    from dataquery.export import export_timeseries_csv
+    from dataquery.types.exceptions import DataQueryError
+
+    with pytest.raises(DataQueryError, match="Server messages: DB\\(A\\): Expression syntax error!"):
+        export_timeseries_csv(_ts_page(["A"], message="Expression syntax error!"), str(tmp_path / "x.csv"))
+
+
+@pytest.mark.asyncio
+async def test_cli_search_counts_a_bare_list_response(monkeypatch, capsys):
+    """The live search API returns a JSON list, not an object."""
+    args = _parser().parse_args(["search", "--query", "abs"])
+    fake_dq = MagicMock()
+    fake_dq.__aenter__ = AsyncMock(return_value=fake_dq)
+    fake_dq.__aexit__ = AsyncMock(return_value=None)
+    fake_dq.search_async = AsyncMock(return_value=[{"group-id": "IN_CR_USD_ABS"}])
+    monkeypatch.setattr(cli, "DataQuery", MagicMock(return_value=fake_dq))
+
+    await cli.cmd_search(args)
+    assert "Search returned 1 result(s) for: abs" in capsys.readouterr().out
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "status,summary,rc",
+    [
+        ({"up": True, "http_status": 200, "error": None}, "DataQuery is UP", 0),
+        ({"up": False, "http_status": 401, "error": "Unauthorized"}, "DataQuery authentication failed (HTTP 401)", 1),
+        ({"up": False, "http_status": 503, "error": "maintenance"}, "DataQuery is DOWN (HTTP 503)", 1),
+        ({"up": False, "http_status": None, "error": "ClientConnectorError: dns"}, "DataQuery is unreachable", 1),
+    ],
+)
+async def test_cli_heartbeat_reports_why_it_failed(monkeypatch, capsys, status, summary, rc):
+    fake_dq = MagicMock()
+    fake_dq.__aenter__ = AsyncMock(return_value=fake_dq)
+    fake_dq.__aexit__ = AsyncMock(return_value=None)
+    fake_dq.service_status_async = AsyncMock(return_value=status)
+    monkeypatch.setattr(cli, "DataQuery", MagicMock(return_value=fake_dq))
+
+    assert await cli.cmd_heartbeat(_parser().parse_args(["heartbeat"])) == rc
+    out = capsys.readouterr().out
+    assert out.startswith(summary)
+    assert json.loads(out.split("--- JSON ---")[1])["data"]["http_status"] == status["http_status"]
+
+
+@pytest.mark.asyncio
+async def test_cli_attributes_are_passed_verbatim(monkeypatch, capsys):
+    """Attribute IDs contain commas ('TR,,LOC'); splitting on commas corrupted them."""
+    args = _parser().parse_args(
+        ["group-timeseries", "--group-id", "G", "--attributes", "TR,,LOC", "--attributes", "TR,1DR,LOC"]
+    )
+    fake_dq = _fake_dq_for_group_ts(_ts_page(["A"]))
+    monkeypatch.setattr(cli, "DataQuery", MagicMock(return_value=fake_dq))
+
+    await cli.cmd_group_timeseries(args)
+    assert fake_dq.get_group_time_series_async.await_args.args[1] == ["TR,,LOC", "TR,1DR,LOC"]
+
+
+@pytest.mark.asyncio
+async def test_cli_summary_shows_no_content_info(monkeypatch, capsys):
+    from dataquery.types.models import TimeSeriesResponse
+
+    args = _parser().parse_args(["group-timeseries", "--group-id", "G", "--attributes", "X"])
+    empty = TimeSeriesResponse(
+        **{"info": {"code": "204", "description": "Request successfully processed but no content available."}}
+    )
+    monkeypatch.setattr(cli, "DataQuery", MagicMock(return_value=_fake_dq_for_group_ts(empty)))
+
+    await cli.cmd_group_timeseries(args)
+    assert "Server info: [204] Request successfully processed but no content available." in capsys.readouterr().out
+
+
+@pytest.mark.asyncio
+async def test_cli_keeps_fetched_pages_when_a_later_page_fails(monkeypatch, tmp_path, capsys):
+    """The server can reject its own page token mid-walk (498); keep what was fetched and flag it."""
+    from dataquery.types.exceptions import APIResponseError
+
+    out_csv = tmp_path / "ts.csv"
+    args = _parser().parse_args(
+        ["group-timeseries", "--group-id", "G", "--attributes", "X", "--output-csv", str(out_csv)]
+    )
+    first = _ts_page(["A", "B"], next_link="/group/time-series?page=t2")
+    first.items = 6
+    fake_dq = _fake_dq_for_group_ts(
+        first,
+        _ts_page(["C", "D"], next_link="/group/time-series?page=t3"),
+        APIResponseError("[498] The page token provided is invalid."),
+    )
+    monkeypatch.setattr(cli, "DataQuery", MagicMock(return_value=fake_dq))
+
+    rc = await cli.cmd_group_timeseries(args)
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "Group time-series: 4 instrument(s)" in out
+    assert (
+        "INCOMPLETE: page 3 failed ([498] The page token provided is invalid.); kept 2 page(s), 4 of 6 instrument(s)"
+        in out
+    )
+    assert len(out_csv.read_text().strip().splitlines()) == 5  # header + 4 rows
