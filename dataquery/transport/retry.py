@@ -1,6 +1,7 @@
 """Enhanced retry logic for the DATAQUERY SDK."""
 
 import asyncio
+import inspect
 import math
 import random
 import time
@@ -191,7 +192,7 @@ class RetryManager:
                 raise NetworkError("Circuit breaker is open - service temporarily unavailable")
 
             try:
-                if asyncio.iscoroutinefunction(func):
+                if inspect.iscoroutinefunction(func):
                     result = await func(*args, **kwargs)
                 else:
                     result = func(*args, **kwargs)

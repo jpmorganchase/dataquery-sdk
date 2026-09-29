@@ -3,6 +3,7 @@ Pytest configuration and shared fixtures for DataQuery SDK tests.
 """
 
 import asyncio
+import inspect
 import os
 import shutil
 import tempfile
@@ -35,9 +36,7 @@ def pytest_pyfunc_call(pyfuncitem):  # noqa: D401
     if _HAS_PYTEST_ASYNCIO:
         return None
     testfunction = pyfuncitem.obj
-    if asyncio.iscoroutinefunction(testfunction):
-        import inspect
-
+    if inspect.iscoroutinefunction(testfunction):
         sig = inspect.signature(testfunction)
         allowed = set(sig.parameters.keys())
         kwargs = {k: v for k, v in (pyfuncitem.funcargs or {}).items() if k in allowed}
