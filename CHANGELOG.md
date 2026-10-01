@@ -75,3 +75,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - `dataquery config validate` ignored `--env-file` and only checked the shell environment and `~/.dataquery/.env`; it now validates the file you pass
 - `--env-file` pointing at a missing file is now an error (`--env-file not found: …`, exit 1) for every command, instead of being skipped silently in favour of other settings
+
+### Security
+- `mcp` extra: require `pyjwt>=2.15.0` (pulled in by `fastmcp` → `mcp[crypto]`); 2.13.0 had 14 advisories, including claim-verification bypass and denial of service (PYSEC-2026-4140 to 4152)
+- Dev and docs tooling upgraded past known advisories: `urllib3` 2.8.0 (minimum raised in the `dev`/`all` extras), `mkdocs-material` 9.7.7 (minimum raised), `pip` 26.2.1 and `virtualenv` 21.14.2 (lockfile). `pip-audit` reports no known vulnerabilities in the locked dependency set
