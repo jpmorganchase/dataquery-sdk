@@ -745,7 +745,8 @@ def cmd_config_validate(args: argparse.Namespace) -> int:
     )
 
     try:
-        EnvConfig.validate_config(EnvConfig.create_client_config())
+        env_file = Path(args.env_file) if getattr(args, "env_file", None) else None
+        EnvConfig.validate_config(EnvConfig.create_client_config(env_file=env_file))
         print("Configuration valid")
         return 0
     except Exception as e:
@@ -1307,6 +1308,11 @@ def main() -> int:
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
+        return 1
+    if args.env_file and not Path(args.env_file).is_file():
+        # The loader skips a missing file silently, which would quietly fall
+        # back to other settings (e.g. ~/.dataquery/.env) for a mistyped path.
+        _print_error(f"--env-file not found: {args.env_file}")
         return 1
     if args.command == "config":
         return main_sync(args)

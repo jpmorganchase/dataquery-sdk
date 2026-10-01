@@ -70,3 +70,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CLI time-series commands now fetch every page (one request per page); pass `--page` to fetch a single page
 - The OAuth token cache moved to `~/.dataquery/tokens/<credential fingerprint>/`; the first run after upgrading fetches a fresh token, and `./downloads/.tokens/` can be deleted
 - After upgrading, run `dataquery skill-install --app <app>` to install or refresh the agent skill
+
+## [1.3.1] - 2026-10-01
+### Fixed
+- `dataquery config validate` ignored `--env-file` and only checked the shell environment and `~/.dataquery/.env`; it now validates the file you pass
+- `--env-file` pointing at a missing file is now an error (`--env-file not found: …`, exit 1) for every command, instead of being skipped silently in favour of other settings

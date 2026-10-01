@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import sys
 import tomllib
 from pathlib import Path
 from types import SimpleNamespace
@@ -968,3 +969,34 @@ async def test_cli_keeps_fetched_pages_when_a_later_page_fails(monkeypatch, tmp_
         in out
     )
     assert len(out_csv.read_text().strip().splitlines()) == 5  # header + 4 rows
+
+
+def _clean_dq_env(monkeypatch):
+    keys = {k for k in os.environ if k.startswith("DATAQUERY_")} | {"DATAQUERY_CLIENT_ID", "DATAQUERY_CLIENT_SECRET"}
+    for key in keys - {"DATAQUERY_CONFIG_DIR"}:
+        # setenv first so teardown also removes values load_dotenv adds during the test.
+        monkeypatch.setenv(key, "")
+        monkeypatch.delenv(key)
+
+
+def test_config_validate_uses_env_file(monkeypatch, tmp_path, capsys):
+    """Regression: validate ignored --env-file and only saw the shell and ~/.dataquery/.env."""
+    _clean_dq_env(monkeypatch)
+    env_file = tmp_path / "creds.env"
+    env_file.write_text("DATAQUERY_CLIENT_ID=from-file\nDATAQUERY_CLIENT_SECRET=secret\n")
+
+    args = _parser().parse_args(["--env-file", str(env_file), "config", "validate"])
+    assert cli.cmd_config_validate(args) == 0
+    assert "Configuration valid" in capsys.readouterr().out
+
+
+def test_config_validate_without_env_file_reports_missing_credentials(monkeypatch, capsys):
+    _clean_dq_env(monkeypatch)
+    assert cli.cmd_config_validate(_parser().parse_args(["config", "validate"])) == 1
+    assert "CLIENT_ID is required" in capsys.readouterr().out
+
+
+def test_missing_env_file_is_an_error(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(sys, "argv", ["dataquery", "--env-file", str(tmp_path / "typo.env"), "config", "validate"])
+    assert cli.main() == 1
+    assert "--env-file not found" in capsys.readouterr().out
