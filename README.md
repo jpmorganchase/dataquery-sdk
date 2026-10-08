@@ -375,6 +375,7 @@ dataquery config template --output .env
 
 # Verify auth
 dataquery auth test
+dataquery --env-file .env.prod auth test   # non-default .env
 ```
 
 `--env-file PATH` (to point at a non-default `.env`) is a top-level flag, so it
@@ -439,8 +440,10 @@ pip install "dataquery-sdk[mcp]"
 ```bash
 pip install "dataquery-sdk[mcp]"
 dataquery mcp-install                  # Claude Desktop (the default)
-dataquery mcp-install --app <app>      # one of the apps below
-dataquery mcp-install --config-file ~/.some-app/mcp.json   # any other app with an mcpServers JSON file
+# --env-file PATH (a non-default .env) is a top-level flag, so it goes before the subcommand:
+dataquery --env-file .env mcp-install
+dataquery --env-file .env mcp-install --app <app>
+dataquery --env-file .env mcp-install --config-file ~/.some-app/mcp.json
 ```
 
 | `--app` | Where the server goes |

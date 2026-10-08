@@ -764,7 +764,9 @@ def cmd_config_template(args: argparse.Namespace) -> int:
 
 async def cmd_auth_test(args: argparse.Namespace) -> int:
     async with DataQuery(args.env_file) as dq:
-        _ = await dq.list_groups_async(limit=1)
+        # The groups endpoint rejects limit < 100, so use its minimum.
+        _ = await dq.list_groups_async(limit=100)
+    print("Authentication successful.")
     return 0
 
 
