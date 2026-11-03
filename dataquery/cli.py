@@ -149,7 +149,7 @@ def _mcp_extra_installed() -> bool:
 
 
 # `mcp-install --app` targets: the JSON-config apps, plus Claude Code (its CLI) and ChatGPT (the Codex TOML).
-MCP_INSTALL_APPS = ("claude-desktop", "claude-code", "chatgpt", "cursor", "vscode")
+MCP_INSTALL_APPS = ("claude-desktop", "claude-code", "chatgpt", "cursor", "vscode", "windsurf")
 
 
 def _mcp_server_name(value: str) -> str:

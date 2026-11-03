@@ -453,6 +453,7 @@ dataquery --env-file .env mcp-install --config-file ~/.some-app/mcp.json
 | `chatgpt` | `~/.codex/config.toml`, which the ChatGPT desktop app shares with the Codex CLI and IDE extension; ChatGPT on the web can't run local servers |
 | `cursor` | `~/.cursor/mcp.json` |
 | `vscode` | VS Code's user-profile `mcp.json` (default profile) |
+| `windsurf` | `~/.codeium/windsurf/mcp_config.json` |
 
 It prompts for your client ID and secret (the secret without echo) and saves
 them to `~/.dataquery/.env`, owner-only (see [Credentials](#credentials)). It
