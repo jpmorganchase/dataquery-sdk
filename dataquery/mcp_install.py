@@ -78,6 +78,7 @@ JSON_APPS: Dict[str, JsonApp] = {
     "vscode": JsonApp(
         "VS Code", ("Code", "User", "mcp.json"), in_app_data=True, servers_key="servers", stdio_type=True
     ),
+    "windsurf": JsonApp("Windsurf", (".codeium", "windsurf", "mcp_config.json"), in_app_data=False),
 }
 
 

@@ -565,6 +565,19 @@ def test_mcp_install_json_apps(install_env, mcp_app_dirs, capsys, app, servers_k
     assert f"Restart {label}" in capsys.readouterr().out
 
 
+def test_mcp_install_windsurf_writes_mcp_config(install_env, mcp_app_dirs, capsys):
+    home, _ = mcp_app_dirs
+
+    rc = cli.cmd_mcp_install(_install_args("--app", "windsurf", "--client-id", "cid", "--client-secret", "sec"))
+
+    assert rc == 0
+    path = home / ".codeium" / "windsurf" / "mcp_config.json"
+    entry = json.loads(path.read_text())["mcpServers"]["dataquery"]
+    assert "type" not in entry
+    assert entry["args"][-1] == "mcp-connect"
+    assert "Restart Windsurf" in capsys.readouterr().out
+
+
 def test_mcp_install_chatgpt_writes_the_shared_codex_config(install_env, mcp_app_dirs, capsys):
     home, _ = mcp_app_dirs
 

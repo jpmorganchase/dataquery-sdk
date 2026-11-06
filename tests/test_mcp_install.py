@@ -63,6 +63,7 @@ class TestAppConfigPaths:
             ("claude-desktop", "app_data", ("Claude", "claude_desktop_config.json")),
             ("vscode", "app_data", ("Code", "User", "mcp.json")),
             ("cursor", "home", (".cursor", "mcp.json")),
+            ("windsurf", "home", (".codeium", "windsurf", "mcp_config.json")),
         ],
     )
     def test_json_app_paths(self, mcp_app_dirs, app, base, parts):
@@ -165,6 +166,11 @@ class TestJsonApps:
     def test_cursor_entry_is_typed_under_mcp_servers(self, mcp_app_dirs):
         path, _ = mcp_install.JSON_APPS["cursor"].add("dataquery", ENTRY)
         assert json.loads(path.read_text()) == {"mcpServers": {"dataquery": {"type": "stdio", **ENTRY}}}
+
+    def test_windsurf_entry_is_untyped_under_mcp_servers(self, mcp_app_dirs):
+        path, replaced = mcp_install.JSON_APPS["windsurf"].add("dataquery", ENTRY)
+        assert replaced is False
+        assert json.loads(path.read_text()) == {"mcpServers": {"dataquery": ENTRY}}
 
     def test_vscode_entry_is_typed_under_servers_and_keeps_inputs(self, mcp_app_dirs):
         path = mcp_install.JSON_APPS["vscode"].config_path()
